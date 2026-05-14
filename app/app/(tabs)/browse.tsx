@@ -1,8 +1,11 @@
+import { useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
+  Dimensions,
   FlatList,
   Pressable,
   RefreshControl,
@@ -24,6 +27,12 @@ import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 
 const THUMB_SIZE = 56;
+const GRID_COLUMNS = 3;
+const GRID_SPACING = 4;
+const GRID_TILE =
+  (Dimensions.get('window').width - GRID_SPACING * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
+
+type ViewMode = 'list' | 'grid';
 
 type Row =
   | { kind: 'folder'; prefix: string; name: string }
@@ -82,6 +91,7 @@ export default function BrowseScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
@@ -201,6 +211,30 @@ export default function BrowseScreen() {
     load(path);
     setSelection(emptySelection());
   }, [path, load]);
+
+  function goUp() {
+    if (path === '') return;
+    const trimmed = path.replace(/\/$/, '');
+    const idx = trimmed.lastIndexOf('/');
+    setPath(idx === -1 ? '' : trimmed.slice(0, idx + 1));
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (selectionActive) {
+          setSelection(emptySelection());
+          return true;
+        }
+        if (path !== '') {
+          goUp();
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+    }, [path, selectionActive]),
+  );
 
   function onRefresh() {
     setRefreshing(true);
@@ -362,32 +396,50 @@ export default function BrowseScreen() {
           <Breadcrumb
             segments={segments}
             onTap={(segs) => setPath(segs.length === 0 ? '' : segs.join('/') + '/')}
+            onUp={goUp}
             accent={colors.tint}
             muted={colors.icon}
           />
           {rows.length > 0 && (
-            <View style={[styles.sortBar, { borderColor: colors.icon }]}>
-              <ThemedText style={styles.sortLabel}>Sort</ThemedText>
+            <View style={[styles.toolbar, { borderColor: colors.icon }]}>
               <Pressable
                 onPress={cycleSortField}
+                hitSlop={6}
                 style={({ pressed }) => [
                   styles.sortChip,
                   { borderColor: colors.tint, opacity: pressed ? 0.6 : 1 },
-                ]}>
-                <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>
+                ]}
+                accessibilityLabel={`Sort by ${SORT_LABELS[sortField]} (tap to cycle)`}>
+                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
                   {SORT_LABELS[sortField]}
                 </ThemedText>
               </Pressable>
               <Pressable
                 onPress={toggleSortDir}
+                hitSlop={6}
                 style={({ pressed }) => [
                   styles.sortChip,
                   { borderColor: colors.tint, opacity: pressed ? 0.6 : 1 },
                 ]}
                 accessibilityLabel={`Sort direction: ${sortDir === 'asc' ? 'ascending' : 'descending'}`}>
-                <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>
+                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
                   {sortDir === 'asc' ? '↑' : '↓'}
                 </ThemedText>
+              </Pressable>
+              <View style={{ flex: 1 }} />
+              <Pressable
+                onPress={() => setViewMode((m) => (m === 'list' ? 'grid' : 'list'))}
+                hitSlop={6}
+                accessibilityLabel={`Switch to ${viewMode === 'list' ? 'grid' : 'list'} view`}
+                style={({ pressed }) => [
+                  styles.viewToggle,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}>
+                <IconSymbol
+                  name={viewMode === 'list' ? 'square.grid.2x2' : 'list.bullet'}
+                  size={20}
+                  color={colors.tint}
+                />
               </Pressable>
             </View>
           )}
@@ -412,88 +464,40 @@ export default function BrowseScreen() {
         </View>
       ) : (
         <FlatList
+          key={viewMode}
           data={sortedRows}
           keyExtractor={(item) => (item.kind === 'folder' ? `f:${item.prefix}` : `k:${item.key}`)}
+          numColumns={viewMode === 'grid' ? GRID_COLUMNS : 1}
+          {...(viewMode === 'grid'
+            ? {
+                contentContainerStyle: { padding: GRID_SPACING },
+                columnWrapperStyle: { gap: GRID_SPACING, marginBottom: GRID_SPACING },
+              }
+            : {})}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <ThemedText style={styles.empty}>This folder is empty.</ThemedText>
           }
           renderItem={({ item }) => {
             const selected = isSelected(item);
-            const isFolder = item.kind === 'folder';
-            return (
-              <Pressable
-                onPress={() => onTapRow(item)}
-                onLongPress={() => onLongPressRow(item)}
-                style={({ pressed }) => [
-                  styles.row,
-                  {
-                    borderColor: colors.icon,
-                    backgroundColor: selected ? colors.tint + '22' : undefined,
-                    opacity: pressed ? 0.6 : 1,
-                  },
-                ]}>
-                {selectionActive && (
-                  <View
-                    style={[
-                      styles.checkbox,
-                      {
-                        borderColor: selected ? colors.tint : colors.icon,
-                        backgroundColor: selected ? colors.tint : 'transparent',
-                      },
-                    ]}>
-                    {selected && (
-                      <ThemedText
-                        lightColor="#fff"
-                        darkColor="#000"
-                        style={styles.checkboxMark}>
-                        ✓
-                      </ThemedText>
-                    )}
-                  </View>
-                )}
-                {isFolder ? (
-                  <View style={styles.thumbSlot}>
-                    <IconSymbol name="folder" size={28} color={colors.icon} />
-                  </View>
-                ) : item.previewUrl ? (
-                  <Image
-                    source={{ uri: item.previewUrl }}
-                    style={styles.thumb}
-                    contentFit="cover"
-                    transition={120}
-                    recyclingKey={item.key}
-                    cachePolicy="memory-disk"
-                  />
-                ) : item.mediaKind === 'video' ? (
-                  <View style={[styles.thumb, styles.videoThumb]}>
-                    <ThemedText
-                      lightColor="#fff"
-                      darkColor="#fff"
-                      style={styles.videoThumbText}>
-                      ▶
-                    </ThemedText>
-                  </View>
-                ) : (
-                  <View style={styles.thumbSlot}>
-                    <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
-                  </View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.rowLabel} numberOfLines={1}>
-                    {item.name}
-                  </ThemedText>
-                  {!isFolder && (
-                    <ThemedText style={styles.rowMeta}>
-                      {formatBytes(item.size)} · {formatDate(item.lastModified)}
-                    </ThemedText>
-                  )}
-                </View>
-                {!selectionActive && isFolder && (
-                  <IconSymbol name="chevron.right" size={18} color={colors.icon} />
-                )}
-              </Pressable>
-            );
+            if (viewMode === 'grid') {
+              return renderGridTile({
+                item,
+                selected,
+                selectionActive,
+                colors,
+                onTap: () => onTapRow(item),
+                onLongPress: () => onLongPressRow(item),
+              });
+            }
+            return renderListRow({
+              item,
+              selected,
+              selectionActive,
+              colors,
+              onTap: () => onTapRow(item),
+              onLongPress: () => onLongPressRow(item),
+            });
           }}
         />
       )}
@@ -571,31 +575,50 @@ export default function BrowseScreen() {
 function Breadcrumb({
   segments,
   onTap,
+  onUp,
   accent,
   muted,
 }: {
   segments: string[];
   onTap: (segments: string[]) => void;
+  onUp: () => void;
   accent: string;
   muted: string;
 }) {
+  const atRoot = segments.length === 0;
   return (
     <View style={[styles.breadcrumb, { borderColor: muted }]}>
+      <Pressable
+        onPress={onUp}
+        disabled={atRoot}
+        hitSlop={8}
+        accessibilityLabel="Up one folder"
+        style={({ pressed }) => [
+          styles.upButton,
+          { opacity: atRoot ? 0.25 : pressed ? 0.5 : 1 },
+        ]}>
+        <IconSymbol name="chevron.left" size={22} color={accent} />
+      </Pressable>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.breadcrumbInner}>
+        contentContainerStyle={styles.breadcrumbInner}
+        style={{ flex: 1 }}>
         <Pressable onPress={() => onTap([])} accessibilityRole="button">
-          <ThemedText style={{ color: accent, fontWeight: '600' }}>/ root</ThemedText>
+          <ThemedText style={{ color: accent, fontWeight: atRoot ? '700' : '600' }}>
+            root
+          </ThemedText>
         </Pressable>
         {segments.map((seg, i) => {
           const upto = segments.slice(0, i + 1);
           const isLast = i === segments.length - 1;
           return (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ThemedText style={{ marginHorizontal: 4, opacity: 0.5 }}>/</ThemedText>
+              <ThemedText style={{ marginHorizontal: 6, color: muted }}>/</ThemedText>
               <Pressable onPress={() => onTap(upto)} accessibilityRole="button">
-                <ThemedText style={{ color: isLast ? undefined : accent }}>{seg}</ThemedText>
+                <ThemedText style={{ color: accent, fontWeight: isLast ? '700' : '500' }}>
+                  {seg}
+                </ThemedText>
               </Pressable>
             </View>
           );
@@ -612,16 +635,181 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString();
 }
 
+type RowRenderProps = {
+  item: Row;
+  selected: boolean;
+  selectionActive: boolean;
+  colors: { tint: string; icon: string; text: string; background: string };
+  onTap: () => void;
+  onLongPress: () => void;
+};
+
+function renderListRow({
+  item,
+  selected,
+  selectionActive,
+  colors,
+  onTap,
+  onLongPress,
+}: RowRenderProps) {
+  const isFolder = item.kind === 'folder';
+  return (
+    <Pressable
+      onPress={onTap}
+      onLongPress={onLongPress}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          borderColor: colors.icon,
+          backgroundColor: selected ? colors.tint + '22' : undefined,
+          opacity: pressed ? 0.6 : 1,
+        },
+      ]}>
+      {selectionActive && (
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: selected ? colors.tint : colors.icon,
+              backgroundColor: selected ? colors.tint : 'transparent',
+            },
+          ]}>
+          {selected && (
+            <ThemedText lightColor="#fff" darkColor="#000" style={styles.checkboxMark}>
+              ✓
+            </ThemedText>
+          )}
+        </View>
+      )}
+      {isFolder ? (
+        <View style={styles.thumbSlot}>
+          <IconSymbol name="folder" size={28} color={colors.icon} />
+        </View>
+      ) : item.previewUrl ? (
+        <Image
+          source={{ uri: item.previewUrl }}
+          style={styles.thumb}
+          contentFit="cover"
+          transition={120}
+          recyclingKey={item.key}
+          cachePolicy="memory-disk"
+        />
+      ) : item.mediaKind === 'video' ? (
+        <View style={[styles.thumb, styles.videoThumb]}>
+          <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoThumbText}>
+            ▶
+          </ThemedText>
+        </View>
+      ) : (
+        <View style={styles.thumbSlot}>
+          <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <ThemedText style={styles.rowLabel} numberOfLines={1}>
+          {item.name}
+        </ThemedText>
+        {item.kind === 'file' && (
+          <ThemedText style={styles.rowMeta}>
+            {formatBytes(item.size)} · {formatDate(item.lastModified)}
+          </ThemedText>
+        )}
+      </View>
+      {!selectionActive && isFolder && (
+        <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+      )}
+    </Pressable>
+  );
+}
+
+function renderGridTile({
+  item,
+  selected,
+  selectionActive,
+  colors,
+  onTap,
+  onLongPress,
+}: RowRenderProps) {
+  const isFolder = item.kind === 'folder';
+  return (
+    <Pressable
+      onPress={onTap}
+      onLongPress={onLongPress}
+      style={({ pressed }) => [styles.gridTile, { opacity: pressed ? 0.7 : 1 }]}>
+      {isFolder ? (
+        <View style={[styles.gridTile, styles.gridFolderTile]}>
+          <IconSymbol name="folder" size={40} color={colors.icon} />
+          <ThemedText style={styles.gridLabel} numberOfLines={2}>
+            {item.name}
+          </ThemedText>
+        </View>
+      ) : item.previewUrl ? (
+        <Image
+          source={{ uri: item.previewUrl }}
+          style={styles.gridImage}
+          contentFit="cover"
+          transition={120}
+          recyclingKey={item.key}
+          cachePolicy="memory-disk"
+        />
+      ) : item.mediaKind === 'video' ? (
+        <View style={[styles.gridTile, styles.videoThumb]}>
+          <ThemedText lightColor="#fff" darkColor="#fff" style={{ fontSize: 32 }}>
+            ▶
+          </ThemedText>
+        </View>
+      ) : (
+        <View style={[styles.gridTile, styles.gridFolderTile]}>
+          <IconSymbol name="photo.on.rectangle" size={40} color={colors.icon} />
+          <ThemedText style={styles.gridLabel} numberOfLines={2}>
+            {item.name}
+          </ThemedText>
+        </View>
+      )}
+      {!isFolder && item.mediaKind === 'video' && (
+        <View style={styles.videoBadge}>
+          <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoBadgeText}>
+            VIDEO
+          </ThemedText>
+        </View>
+      )}
+      {selected && (
+        <View style={[styles.gridSelectOverlay, { borderColor: colors.tint }]}>
+          <View style={[styles.gridCheck, { backgroundColor: colors.tint }]}>
+            <ThemedText lightColor="#fff" darkColor="#000" style={styles.gridCheckMark}>
+              ✓
+            </ThemedText>
+          </View>
+        </View>
+      )}
+      {selectionActive && !selected && (
+        <View
+          style={[
+            styles.gridCheck,
+            { borderColor: '#fff', borderWidth: 1.5, backgroundColor: 'rgba(0,0,0,0.3)' },
+          ]}
+        />
+      )}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   breadcrumb: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   breadcrumbInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingRight: 16,
+    paddingVertical: 10,
+  },
+  upButton: {
+    paddingHorizontal: 12,
     paddingVertical: 10,
   },
   selectionHeader: {
@@ -669,21 +857,74 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   videoThumbText: { fontSize: 22 },
-  sortBar: {
+  toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  sortLabel: { fontSize: 13, opacity: 0.6 },
-  sortChip: {
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  sortChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sortChipText: { fontSize: 12, fontWeight: '600' },
+  viewToggle: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  gridTile: {
+    width: GRID_TILE,
+    height: GRID_TILE,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  gridFolderTile: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 8,
+  },
+  gridImage: { width: '100%', height: '100%' },
+  gridLabel: {
+    fontSize: 11,
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+  gridSelectOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 3,
+    borderRadius: 6,
+  },
+  gridCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCheckMark: { fontWeight: '700', fontSize: 14 },
+  videoBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  videoBadgeText: { fontSize: 10, fontWeight: '700' },
   empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
   retryButton: {
     paddingHorizontal: 20,
