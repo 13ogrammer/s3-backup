@@ -7,6 +7,7 @@ import { list } from './handlers/list.js';
 import { signUpload } from './handlers/signUpload.js';
 import { signDownload } from './handlers/signDownload.js';
 import { del } from './handlers/del.js';
+import { exists } from './handlers/exists.js';
 import { move } from './handlers/move.js';
 
 type Route = (body: any) => Promise<unknown>;
@@ -16,6 +17,7 @@ const routes: Record<string, Route> = {
   'POST /sign-upload': signUpload,
   'POST /sign-download': signDownload,
   'POST /delete': del,
+  'POST /exists': exists,
   'POST /move': move,
 };
 
