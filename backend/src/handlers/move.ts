@@ -78,7 +78,8 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
 
     await copyAndDelete(from, to);
 
-    if (classifyKey(from) === 'image') {
+    const fromKind = classifyKey(from);
+    if (fromKind === 'image' || fromKind === 'video') {
       const thumbFrom = thumbKey(from);
       if (await exists(thumbFrom)) {
         await copyAndDelete(thumbFrom, thumbKey(to));

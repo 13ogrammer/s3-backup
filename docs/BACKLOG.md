@@ -9,11 +9,7 @@ Tick items off as they land.
 
 ## Thumbnails & previews
 
-- [ ] **Video thumbnails on upload**
-  For each video picked, extract a frame at ~1 s via `expo-video-thumbnails`
-  and upload as `<key>.thumb.jpg` alongside the original. Backend already
-  returns it as `previewUrl` when the sidecar exists (no backend change
-  needed). Replace the ▶ tile in Browse with the actual thumb.
+- [x] **Video thumbnails on upload** — videos go through `expo-video-thumbnails` (frame at ~1 s) → `expo-image-manipulator` to resize to the same 320 px JPEG → upload to `.thumbnails/<key>.thumb.jpg`. Backend `list` / `del` / `move` now also handle the video kind. Backfill script doesn't generate video thumbs (needs ffmpeg, not in scope); pre-existing videos still show the ▶ placeholder tile.
 
 - [x] **Backfill thumbnails for existing bucket content** — `backend/scripts/backfill-thumbnails.ts` walks the bucket, generates missing thumbs at `.thumbnails/<key>.thumb.jpg` using sharp. Idempotent. `npm run backfill:thumbs`.
 
@@ -61,6 +57,32 @@ Tick items off as they land.
 - [x] **Skip-if-exists upload dedup** — before upload, `/exists` returns the subset of destination keys already present; user is prompted to skip / overwrite / cancel.
 
 ---
+
+## Background uploads
+
+Currently uploads pause when the app is backgrounded — both upload paths
+(`expo-file-system` `createUploadTask` and the multipart `fetch()` chunks)
+run on the JS thread, which iOS / Android suspend within seconds of
+backgrounding. Three escalating mitigations:
+
+- [ ] **Keep-awake + warning** (~10 min)
+  Use `expo-keep-awake` to hold the screen on while an upload is running,
+  plus a one-line hint in the overlay that backgrounding pauses uploads.
+  Doesn't solve real backgrounding; just makes "leave the screen open"
+  reliable.
+
+- [ ] **Resume after foreground** (~half day)
+  Persist in-flight multipart state (`uploadId` + completed parts +
+  remote key) to `secure-store`. On next foreground, offer "resume"
+  instead of restart. Single-PUT files just retry the whole. Buys real
+  reliability without a custom dev build.
+
+- [ ] **Real native background uploads** (multi-day)
+  Wire iOS `URLSession.background` + Android WorkManager / foreground
+  service so uploads keep going when the app is backgrounded or the
+  screen is off. Requires a custom dev client (which #27 also needs).
+  Options: `react-native-background-upload` or a small expo native
+  module. End-state.
 
 ## Manage / Auth
 
