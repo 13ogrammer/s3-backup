@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ApiError } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import {
   UploadError,
@@ -93,15 +93,43 @@ export default function GalleryScreen() {
   }
 
   async function uploadAll(prefix: string) {
+    // Pre-flight: ask the backend which destination keys already exist.
+    const plan = selected.map((asset) => ({
+      asset,
+      filename: filenameFor(asset),
+    }));
+    const destKeys = plan.map((p) => prefix + p.filename);
+    let toUpload = plan;
+    try {
+      const { existing } = await api.exists(destKeys);
+      if (existing.length > 0) {
+        const choice = await promptForCollision(existing.length, plan.length);
+        if (choice === 'cancel') return;
+        if (choice === 'skip') {
+          const existingSet = new Set(existing);
+          toUpload = plan.filter((p) => !existingSet.has(prefix + p.filename));
+          if (toUpload.length === 0) {
+            Alert.alert('Nothing to upload', 'All selected items already exist.');
+            return;
+          }
+        }
+        // 'overwrite' falls through with toUpload unchanged.
+      }
+    } catch (err) {
+      // Pre-flight failure is non-fatal — proceed with the upload, which
+      // will either succeed (overwrite) or surface its own error.
+      console.warn('pre-flight /exists failed', err);
+    }
+
     setUploadState({
-      total: selected.length,
+      total: toUpload.length,
       done: 0,
       failed: 0,
       inFlight: [],
     });
 
     const failed = await runWithConcurrency(
-      selected,
+      toUpload.map((p) => p.asset),
       async (asset) => {
         const filename = filenameFor(asset);
         const contentType =
@@ -144,14 +172,14 @@ export default function GalleryScreen() {
 
     if (failed.length === 0) {
       setSelected([]);
-      Alert.alert('Upload complete', `${selected.length} item(s) uploaded to /${prefix}.`);
+      Alert.alert('Upload complete', `${toUpload.length} item(s) uploaded to /${prefix}.`);
       return;
     }
 
     // Surface failures and leave the failed items selected so the user
     // can retry.
     const failedFilenames = new Set(failed.map(({ item }) => filenameFor(item)));
-    const succeeded = selected.length - failed.length;
+    const succeeded = toUpload.length - failed.length;
     setSelected((prev) => prev.filter((a) => failedFilenames.has(filenameFor(a))));
     const sample = failed
       .slice(0, 3)
@@ -163,8 +191,35 @@ export default function GalleryScreen() {
     const more = failed.length > 3 ? `\n…and ${failed.length - 3} more.` : '';
     Alert.alert(
       'Some uploads failed',
-      `${succeeded}/${selected.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
+      `${succeeded}/${toUpload.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
     );
+  }
+
+  async function promptForCollision(
+    existingCount: number,
+    totalCount: number,
+  ): Promise<'skip' | 'overwrite' | 'cancel'> {
+    return new Promise((resolve) => {
+      const remaining = totalCount - existingCount;
+      const message =
+        existingCount === totalCount
+          ? `All ${existingCount} selected item(s) already exist in this folder.`
+          : `${existingCount} of ${totalCount} selected item(s) already exist in this folder.`;
+      Alert.alert(
+        'Items already exist',
+        `${message}\n\nSkip existing (upload ${remaining}), overwrite them, or cancel?`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+          { text: 'Skip existing', onPress: () => resolve('skip') },
+          {
+            text: 'Overwrite',
+            style: 'destructive',
+            onPress: () => resolve('overwrite'),
+          },
+        ],
+        { cancelable: true, onDismiss: () => resolve('cancel') },
+      );
+    });
   }
 
   return (

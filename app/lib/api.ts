@@ -24,6 +24,8 @@ export type DeleteResponse = {
 
 export type MoveResponse = { moved: number };
 
+export type ExistsResponse = { existing: string[] };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -69,6 +71,7 @@ export const api = {
   signDownload: (key: string) => call<SignedUrlResponse>('/sign-download', { key }),
   delete: (params: { keys?: string[]; prefixes?: string[] }) =>
     call<DeleteResponse>('/delete', params),
+  exists: (keys: string[]) => call<ExistsResponse>('/exists', { keys }),
   moveFile: (from: string, to: string) =>
     call<MoveResponse>('/move', { kind: 'file', from, to }),
   moveFolder: (fromPrefix: string, toPrefix: string) =>

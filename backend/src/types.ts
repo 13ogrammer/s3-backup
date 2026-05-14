@@ -26,3 +26,6 @@ export type MoveRequest =
   | { kind: 'file'; from: string; to: string }
   | { kind: 'folder'; fromPrefix: string; toPrefix: string };
 export type MoveResponse = { moved: number };
+
+export type ExistsRequest = { keys: string[] };
+export type ExistsResponse = { existing: string[] };
