@@ -5,6 +5,7 @@ import { BUCKET, s3, sanitizePrefix } from '../s3.js';
 import type { ListResponse, ListedFile } from '../types.js';
 
 const PREVIEW_TTL = 60 * 10;
+const THUMB_SUFFIX = '.thumb.jpg';
 
 export async function list(body: { prefix?: string }): Promise<ListResponse> {
   const prefix = sanitizePrefix(body.prefix);
@@ -38,17 +39,26 @@ export async function list(body: { prefix?: string }): Promise<ListResponse> {
     continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
   } while (continuationToken);
 
+  const thumbKeys = new Set<string>();
+  const userFiles: typeof rawFiles = [];
+  for (const f of rawFiles) {
+    if (f.key.endsWith(THUMB_SUFFIX)) thumbKeys.add(f.key);
+    else userFiles.push(f);
+  }
+
   const files: ListedFile[] = await Promise.all(
-    rawFiles.map(async (f) => {
+    userFiles.map(async (f) => {
       const kind = classifyKey(f.key);
-      const previewUrl =
-        kind === 'image'
-          ? await getSignedUrl(
-              s3,
-              new GetObjectCommand({ Bucket: BUCKET, Key: f.key }),
-              { expiresIn: PREVIEW_TTL },
-            )
-          : undefined;
+      let previewUrl: string | undefined;
+      if (kind === 'image') {
+        const thumbKey = `${f.key}${THUMB_SUFFIX}`;
+        const urlKey = thumbKeys.has(thumbKey) ? thumbKey : f.key;
+        previewUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({ Bucket: BUCKET, Key: urlKey }),
+          { expiresIn: PREVIEW_TTL },
+        );
+      }
       return { ...f, kind, previewUrl };
     }),
   );

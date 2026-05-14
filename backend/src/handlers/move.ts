@@ -2,10 +2,34 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import type { MoveRequest, MoveResponse } from '../types.js';
+
+const THUMB_SUFFIX = '.thumb.jpg';
+
+async function copyAndDelete(from: string, to: string): Promise<void> {
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: to,
+      CopySource: `/${BUCKET}/${encodeURIComponent(from).replace(/%2F/g, '/')}`,
+    }),
+  );
+  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: from }));
+}
+
+async function exists(key: string): Promise<boolean> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function move(body: MoveRequest): Promise<MoveResponse> {
   if (body.kind === 'file') {
@@ -13,14 +37,16 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
     const to = sanitizeKey(body.to);
     if (from === to) return { moved: 0 };
 
-    await s3.send(
-      new CopyObjectCommand({
-        Bucket: BUCKET,
-        Key: to,
-        CopySource: `/${BUCKET}/${encodeURIComponent(from).replace(/%2F/g, '/')}`,
-      }),
-    );
-    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: from }));
+    await copyAndDelete(from, to);
+
+    if (classifyKey(from) === 'image' && !from.endsWith(THUMB_SUFFIX)) {
+      const thumbFrom = `${from}${THUMB_SUFFIX}`;
+      const thumbTo = `${to}${THUMB_SUFFIX}`;
+      if (await exists(thumbFrom)) {
+        await copyAndDelete(thumbFrom, thumbTo);
+      }
+    }
+
     return { moved: 1 };
   }
 

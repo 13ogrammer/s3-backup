@@ -1,9 +1,15 @@
 import {
   FileSystemUploadType,
   createUploadTask,
+  deleteAsync,
 } from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 import { api } from './api';
+
+const THUMB_MAX_WIDTH = 320;
+const THUMB_QUALITY = 0.7;
+const THUMB_SUFFIX = '.thumb.jpg';
 
 export type UploadProgress = { bytesSent: number; bytesTotal: number };
 
@@ -36,6 +42,35 @@ export async function uploadFile(
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`upload failed: HTTP ${result.status}`);
   }
+}
+
+// Upload an asset to S3, plus a small thumb sidecar for images.
+// The thumb upload is best-effort — if it fails, the original still uploads
+// and the app falls back to using the original for thumbnails.
+export async function uploadAsset(
+  localUri: string,
+  remoteKey: string,
+  contentType: string,
+  isImage: boolean,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<void> {
+  if (isImage) {
+    try {
+      const thumb = await ImageManipulator.manipulateAsync(
+        localUri,
+        [{ resize: { width: THUMB_MAX_WIDTH } }],
+        { compress: THUMB_QUALITY, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      try {
+        await uploadFile(thumb.uri, `${remoteKey}${THUMB_SUFFIX}`, 'image/jpeg');
+      } finally {
+        await deleteAsync(thumb.uri, { idempotent: true });
+      }
+    } catch (err) {
+      console.warn('thumb generation failed for', remoteKey, err);
+    }
+  }
+  await uploadFile(localUri, remoteKey, contentType, onProgress);
 }
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {

@@ -1,8 +1,10 @@
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import type { DeleteRequest, DeleteResponse } from '../types.js';
 
 const BATCH_SIZE = 1000;
+const THUMB_SUFFIX = '.thumb.jpg';
 
 export async function del(body: DeleteRequest): Promise<DeleteResponse> {
   const keys = (body.keys ?? []).map(sanitizeKey);
@@ -17,6 +19,11 @@ export async function del(body: DeleteRequest): Promise<DeleteResponse> {
   }
 
   const allKeys = new Set<string>(keys);
+  for (const k of keys) {
+    if (classifyKey(k) === 'image' && !k.endsWith(THUMB_SUFFIX)) {
+      allKeys.add(`${k}${THUMB_SUFFIX}`);
+    }
+  }
 
   for (const prefix of prefixes) {
     let continuationToken: string | undefined;
