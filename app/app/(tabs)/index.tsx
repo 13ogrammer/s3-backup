@@ -18,7 +18,14 @@ import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiError } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
-import { inferContentType, uploadAsset } from '@/lib/upload';
+import {
+  UploadError,
+  inferContentType,
+  runWithConcurrency,
+  uploadAsset,
+} from '@/lib/upload';
+
+const UPLOAD_CONCURRENCY = 3;
 
 const COLUMNS = 3;
 const SPACING = 4;
@@ -29,9 +36,8 @@ type PickedAsset = ImagePicker.ImagePickerAsset & { id: string };
 type UploadState = {
   total: number;
   done: number;
-  currentName: string;
-  currentBytesSent: number;
-  currentBytesTotal: number;
+  failed: number;
+  inFlight: string[];
 };
 
 export default function GalleryScreen() {
@@ -90,50 +96,75 @@ export default function GalleryScreen() {
     setUploadState({
       total: selected.length,
       done: 0,
-      currentName: '',
-      currentBytesSent: 0,
-      currentBytesTotal: 0,
+      failed: 0,
+      inFlight: [],
     });
 
-    for (let i = 0; i < selected.length; i++) {
-      const asset = selected[i]!;
-      const filename = filenameFor(asset);
-      const contentType = asset.mimeType ?? inferContentType(filename, asset.type ?? 'unknown');
-      const key = prefix + filename;
-
-      setUploadState((s) =>
-        s ? { ...s, currentName: filename, currentBytesSent: 0, currentBytesTotal: 0 } : s,
-      );
-
-      try {
+    const failed = await runWithConcurrency(
+      selected,
+      async (asset) => {
+        const filename = filenameFor(asset);
+        const contentType =
+          asset.mimeType ?? inferContentType(filename, asset.type ?? 'unknown');
+        const key = prefix + filename;
         const isImage = asset.type === 'image' || contentType.startsWith('image/');
-        await uploadAsset(asset.uri, key, contentType, isImage, (p) => {
+
+        setUploadState((s) =>
+          s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
+        );
+        try {
+          await uploadAsset(asset.uri, key, contentType, isImage);
           setUploadState((s) =>
             s
-              ? { ...s, currentBytesSent: p.bytesSent, currentBytesTotal: p.bytesTotal }
+              ? {
+                  ...s,
+                  done: s.done + 1,
+                  inFlight: s.inFlight.filter((n) => n !== filename),
+                }
               : s,
           );
-        });
-        setUploadState((s) => (s ? { ...s, done: s.done + 1 } : s));
-      } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? `(${err.status}) ${err.message}`
-            : err instanceof Error
-              ? err.message
-              : 'Unknown error';
-        setUploadState(null);
-        Alert.alert(
-          'Upload failed',
-          `${filename}: ${message}\n\n${i} of ${selected.length} succeeded before this failure.`,
-        );
-        return;
-      }
+        } catch (err) {
+          setUploadState((s) =>
+            s
+              ? {
+                  ...s,
+                  failed: s.failed + 1,
+                  inFlight: s.inFlight.filter((n) => n !== filename),
+                }
+              : s,
+          );
+          throw err;
+        }
+      },
+      UPLOAD_CONCURRENCY,
+    );
+
+    // Aggregate counts after the run completes.
+    setUploadState(null);
+
+    if (failed.length === 0) {
+      setSelected([]);
+      Alert.alert('Upload complete', `${selected.length} item(s) uploaded to /${prefix}.`);
+      return;
     }
 
-    setUploadState(null);
-    setSelected([]);
-    Alert.alert('Upload complete', `${selected.length} item(s) uploaded to /${prefix}.`);
+    // Surface failures and leave the failed items selected so the user
+    // can retry.
+    const failedFilenames = new Set(failed.map(({ item }) => filenameFor(item)));
+    const succeeded = selected.length - failed.length;
+    setSelected((prev) => prev.filter((a) => failedFilenames.has(filenameFor(a))));
+    const sample = failed
+      .slice(0, 3)
+      .map(({ item, error }) => {
+        const msg = describeError(error);
+        return `• ${filenameFor(item)}: ${msg}`;
+      })
+      .join('\n');
+    const more = failed.length > 3 ? `\n…and ${failed.length - 3} more.` : '';
+    Alert.alert(
+      'Some uploads failed',
+      `${succeeded}/${selected.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
+    );
   }
 
   return (
@@ -237,34 +268,39 @@ export default function GalleryScreen() {
           <ThemedView style={styles.uploadCard}>
             <ActivityIndicator />
             <ThemedText type="defaultSemiBold">
-              Uploading {uploadState.done + 1} of {uploadState.total}
+              Uploading {uploadState.done} / {uploadState.total}
             </ThemedText>
-            <ThemedText style={{ opacity: 0.7 }} numberOfLines={1}>
-              {uploadState.currentName}
-            </ThemedText>
-            {uploadState.currentBytesTotal > 0 && (
-              <View style={styles.progressBarBg}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      backgroundColor: colors.tint,
-                      width: `${Math.min(
-                        100,
-                        Math.round(
-                          (uploadState.currentBytesSent / uploadState.currentBytesTotal) * 100,
-                        ),
-                      )}%`,
-                    },
-                  ]}
-                />
-              </View>
+            <View style={styles.progressBarBg}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    backgroundColor: colors.tint,
+                    width: `${Math.min(
+                      100,
+                      Math.round((uploadState.done / uploadState.total) * 100),
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
+            {uploadState.inFlight.length > 0 && (
+              <ThemedText style={{ opacity: 0.65, fontSize: 12 }} numberOfLines={3}>
+                In flight: {uploadState.inFlight.join(', ')}
+              </ThemedText>
             )}
           </ThemedView>
         </View>
       )}
     </ThemedView>
   );
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof UploadError) return `HTTP ${err.status}`;
+  if (err instanceof ApiError) return `(${err.status}) ${err.message}`;
+  if (err instanceof Error) return err.message;
+  return 'Unknown error';
 }
 
 function filenameFor(asset: ImagePicker.ImagePickerAsset): string {
