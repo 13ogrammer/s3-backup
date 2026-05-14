@@ -1,25 +1,10 @@
 # s3-backup
 
-Cross-platform mobile app for backing up phone photos and videos to your own
-private S3 bucket. The app talks to a tiny serverless backend you deploy to
-your own AWS account — your AWS credentials never live on your phone, and
-your photo/video bytes never traverse the backend.
-
-## Repository layout
-
-```
-s3-backup/
-├── app/       Expo (React Native) mobile app — iOS + Android
-├── backend/   AWS Lambda + API Gateway (SAM) — deploys to your AWS account
-└── docs/      Architecture, monetisation, backlog
-```
-
-## Documentation
-
-- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design, tech stack, endpoint reference.
-- [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) — cost model and the open-source / hosted-tier plan.
-- [`docs/BACKLOG.md`](./docs/BACKLOG.md) — deferred improvements; pick the next thing to build here.
-- [`CLAUDE.md`](./CLAUDE.md) — conventions and gotchas when continuing development.
+Cross-platform mobile app for backing up phone photos and videos to your
+own private S3 bucket. The app talks to a tiny serverless backend you
+deploy to **your own AWS account** — your AWS credentials never live on
+your phone, your photo and video bytes never traverse the backend, and
+your data stays in your bucket.
 
 ## How it works
 
@@ -35,15 +20,94 @@ s3-backup/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Photo/video bytes flow phone ↔ bucket directly. The backend only mints
-short-lived pre-signed URLs and lists bucket contents.
+See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the system
+design.
 
-## Deploying
+## Install (BYO-AWS)
 
-See [`backend/README.md`](./backend/README.md) for one-click "Launch Stack"
-deploy and CLI deploy instructions.
+### 1. Deploy the backend to your AWS account
 
-## Running the app
+The backend is a single AWS Lambda + API Gateway behind a SAM
+CloudFormation stack. Two paths:
 
-See [`app/README.md`](./app/README.md) for dev setup and EAS Build
-instructions for iOS / Android.
+**One-click (Launch Stack):** *(coming once a public template URL is
+published — see [`backend/README.md`](./backend/README.md#deploy-launch-stack--no-cli))*
+
+**CLI:**
+
+```bash
+# Generate a bootstrap token — copy this, you'll paste it into the app too
+openssl rand -hex 32
+
+cd backend
+npm install
+sam build && sam deploy --guided
+```
+
+Leave `BucketName` blank to have the stack create a new bucket with
+versioning + public-access-block on; or supply an existing bucket name
+to reuse one. After deploy, copy the `ApiUrl` output.
+
+### 2. Build the app for your phone
+
+```bash
+cd app
+npm install
+```
+
+Update `app.json`: change `ios.bundleIdentifier` and `android.package`
+from `com.example.s3backup` to a reverse-DNS string you own.
+
+Then either:
+
+- **EAS Build** (recommended) — see [`app/README.md`](./app/README.md#eas-build-installable-apk--ipa).
+- **Expo Go** for quick iOS testing — `npm start`, scan the QR code.
+  Note: Gallery doesn't work in Expo Go on Android because of
+  `expo-media-library` permission constraints.
+
+### 3. Connect the app to your backend
+
+Open the **Settings** tab in the app. Paste:
+
+- **API URL** — the `ApiUrl` from your SAM deploy outputs.
+- **Bootstrap token** — the value you supplied during deploy.
+
+Tap **Test**. If it turns green, you're ready to upload.
+
+### 4. (Optional) Backfill thumbnails for existing photos
+
+If you connected to a bucket that already had photos in it, Browse will
+work but thumbnails fall back to fetching originals (slow). Generate
+proper thumbnail sidecars for everything once:
+
+```bash
+cd backend
+BUCKET_NAME=your-bucket npm run backfill:thumbs
+```
+
+See [`backend/README.md`](./backend/README.md#backfilling-thumbnails-for-existing-buckets)
+for details.
+
+## Repository layout
+
+```
+s3-backup/
+├── app/       Expo (React Native) mobile app — iOS + Android
+├── backend/   AWS Lambda + API Gateway (SAM) — deploys to your AWS account
+└── docs/      Architecture, monetisation, backlog
+```
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design, tech stack, endpoint reference, thumbnail tree contract.
+- [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) — cost model, the open-source + optional hosted tier plan.
+- [`docs/BACKLOG.md`](./docs/BACKLOG.md) — deferred improvements; pick the next thing to build here.
+- [`CLAUDE.md`](./CLAUDE.md) — conventions and gotchas when continuing development.
+
+## Status
+
+V1 features (gallery → pick → upload to a folder, browse with
+thumbnails / sort / list-or-grid, preview with pinch-zoom and swipe,
+move / rename / delete, MinIO-based local dev loop, thumbnail backfill
+script) all in `main`. See [`docs/BACKLOG.md`](./docs/BACKLOG.md) for
+what's next.
