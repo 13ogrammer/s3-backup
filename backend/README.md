@@ -37,39 +37,37 @@ reuse one.
 After deploy, the `ApiUrl` output is what you paste into the app's
 Settings screen along with your bootstrap token.
 
-## Deploy (Launch Stack — no CLI)
+## Publishing the Launch Stack template
 
-The CloudFormation template `template.yaml` can be deployed via a
-"Launch Stack" button in the AWS Console, no CLI needed. To make the
-button work in this repo:
+The CloudFormation template can be deployed via a "Launch Stack" button
+in the root README — one-click install for users who don't want to
+touch the CLI. To wire that button up to a working template, you need
+to publish the packaged template (and its Lambda code artifacts) to a
+public-read S3 bucket you control.
 
-1. Build and package the template, uploading assets to a public S3
-   bucket you control:
+### One-time setup
 
-   ```bash
-   sam build
-   sam package \
-     --s3-bucket your-public-template-bucket \
-     --output-template-file packaged.yaml
-   aws s3 cp packaged.yaml \
-     s3://your-public-template-bucket/s3-backup-template.yaml \
-     --acl public-read
-   ```
+```bash
+DIST_BUCKET=my-s3backup-templates npm run bootstrap:dist-bucket
+```
 
-2. The resulting public template URL is what the Launch Stack button
-   points at. The button HTML is:
+Creates the bucket and applies a tight bucket policy granting only
+anonymous `s3:GetObject`. No listings, no writes.
 
-   ```html
-   <a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new?templateURL=https://your-public-template-bucket.s3.amazonaws.com/s3-backup-template.yaml">
-     <img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" alt="Launch Stack">
-   </a>
-   ```
+### Publish (re-run on every template change)
 
-   Put it in the root README under "Deploy". One-click install: the
-   user picks region, fills in `BootstrapToken` (and optionally
-   `BucketName`), and clicks Create.
+```bash
+DIST_BUCKET=my-s3backup-templates npm run publish:template
+```
 
-Until a public template URL exists, fall back to `sam deploy --guided`.
+Builds the SAM artifact, packages Lambda code into the bucket, uploads
+the rewritten template at `s3://<bucket>/s3-backup-template.yaml`, and
+prints both the public template URL and the ready-to-paste Launch Stack
+markdown for the README.
+
+Until the bucket is set up, the root README's Launch Stack button
+points at a placeholder URL — users have to fall back to
+`sam deploy --guided` (the CLI path documented above).
 
 ## Local dev (MinIO + Node, no SAM/Docker for the backend itself)
 
