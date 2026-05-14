@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.aws-sam/
+samconfig.toml
+packaged.yaml
+.minio-data/
+.env
