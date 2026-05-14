@@ -146,13 +146,18 @@ export default function GalleryScreen() {
         const contentType =
           asset.mimeType ?? inferContentType(filename, asset.type ?? 'unknown');
         const key = prefix + filename;
-        const isImage = asset.type === 'image' || contentType.startsWith('image/');
+        const mediaKind: 'image' | 'video' | 'other' =
+          asset.type === 'image' || contentType.startsWith('image/')
+            ? 'image'
+            : asset.type === 'video' || contentType.startsWith('video/')
+              ? 'video'
+              : 'other';
 
         setUploadState((s) =>
           s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
         );
         try {
-          await uploadAsset(asset.uri, key, contentType, isImage);
+          await uploadAsset(asset.uri, key, contentType, mediaKind);
           setUploadState((s) =>
             s
               ? {

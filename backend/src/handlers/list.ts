@@ -71,6 +71,19 @@ export async function list(body: ListRequest): Promise<ListResponse> {
           new GetObjectCommand({ Bucket: BUCKET, Key: urlKey }),
           { expiresIn: PREVIEW_TTL },
         );
+      } else if (kind === 'video') {
+        // Videos have a thumb sidecar but no useful fallback (the
+        // original is video bytes, not a still). If no thumb exists,
+        // leave previewUrl undefined and let the client render a
+        // placeholder tile.
+        const expectedThumb = thumbKey(f.key);
+        if (thumbKeys.has(expectedThumb)) {
+          previewUrl = await getSignedUrl(
+            s3,
+            new GetObjectCommand({ Bucket: BUCKET, Key: expectedThumb }),
+            { expiresIn: PREVIEW_TTL },
+          );
+        }
       }
       return { ...f, kind, previewUrl };
     }),

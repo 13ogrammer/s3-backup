@@ -20,7 +20,8 @@ export async function del(body: DeleteRequest): Promise<DeleteResponse> {
 
   const allKeys = new Set<string>(keys);
   for (const k of keys) {
-    if (classifyKey(k) === 'image') {
+    const kind = classifyKey(k);
+    if (kind === 'image' || kind === 'video') {
       allKeys.add(thumbKey(k));
     }
   }

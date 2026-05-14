@@ -7,8 +7,11 @@ import {
   readAsStringAsync,
 } from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 
 import { ApiError, api, type CompletedPart } from './api';
+
+export type MediaKind = 'image' | 'video' | 'other';
 
 const THUMB_MAX_WIDTH = 320;
 const THUMB_QUALITY = 0.7;
@@ -162,20 +165,44 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-// Upload an asset to S3, plus a small thumb sidecar for images.
-// The thumb upload is best-effort — if it fails, the original still uploads
-// and the app falls back to using the original for thumbnails.
+// Upload an asset to S3, plus a small thumb sidecar for images and
+// videos. The thumb upload is best-effort — if it fails (e.g. the video
+// codec can't be decoded for a frame grab), the original still uploads
+// and the app falls back to a placeholder tile for that file.
 export async function uploadAsset(
   localUri: string,
   remoteKey: string,
   contentType: string,
-  isImage: boolean,
+  mediaKind: MediaKind,
   onProgress?: (progress: UploadProgress) => void,
 ): Promise<void> {
-  if (isImage) {
+  if (mediaKind === 'image') {
+    await generateAndUploadThumb(localUri, remoteKey, 'image');
+  } else if (mediaKind === 'video') {
+    await generateAndUploadThumb(localUri, remoteKey, 'video');
+  }
+  await withRetry(() => uploadFile(localUri, remoteKey, contentType, onProgress));
+}
+
+async function generateAndUploadThumb(
+  sourceUri: string,
+  remoteKey: string,
+  kind: 'image' | 'video',
+): Promise<void> {
+  try {
+    let frameUri = sourceUri;
+    let cleanupFrame = false;
+    if (kind === 'video') {
+      const frame = await VideoThumbnails.getThumbnailAsync(sourceUri, {
+        time: 1000,
+        quality: 0.7,
+      });
+      frameUri = frame.uri;
+      cleanupFrame = true;
+    }
     try {
       const thumb = await ImageManipulator.manipulateAsync(
-        localUri,
+        frameUri,
         [{ resize: { width: THUMB_MAX_WIDTH } }],
         { compress: THUMB_QUALITY, format: ImageManipulator.SaveFormat.JPEG },
       );
@@ -190,11 +217,12 @@ export async function uploadAsset(
       } finally {
         await deleteAsync(thumb.uri, { idempotent: true });
       }
-    } catch (err) {
-      console.warn('thumb generation failed for', remoteKey, err);
+    } finally {
+      if (cleanupFrame) await deleteAsync(frameUri, { idempotent: true });
     }
+  } catch (err) {
+    console.warn('thumb generation failed for', remoteKey, err);
   }
-  await withRetry(() => uploadFile(localUri, remoteKey, contentType, onProgress));
 }
 
 type RetryOptions = {
