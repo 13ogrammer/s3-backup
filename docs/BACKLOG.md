@@ -71,12 +71,7 @@ backgrounding. Three escalating mitigations:
 
 ## Manage / Auth
 
-- [ ] **Undo for last destructive operation**
-  After a delete or move, show a snackbar / toast with "Undo" for ~5 s.
-  - Move undo: reverse the move call.
-  - Delete undo: rely on S3 object versioning (the SAM stack enables it
-    on created buckets); restore the previous version. For BYO buckets
-    without versioning, the Undo button is disabled.
+- [x] **Undo for last destructive operation** — snackbar appears for ~5 s after delete and move. Move undo runs the inverse `moveFile` / `moveFolder` calls. Delete undo calls a new `POST /restore` backend endpoint that removes the latest delete-marker per key (requires bucket versioning; SAM-managed buckets have it on, BYO buckets that don't are surfaced as a "couldn't be restored — versioning may not be enabled" message).
 
 - [ ] **Rotatable / per-device auth tokens**
   Replace the single bootstrap token with a per-device token model.

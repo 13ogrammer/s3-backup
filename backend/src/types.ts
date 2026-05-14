@@ -47,3 +47,6 @@ export type CompleteMultipartResponse = { ok: true };
 
 export type AbortMultipartRequest = { key: string; uploadId: string };
 export type AbortMultipartResponse = { ok: true };
+
+export type RestoreRequest = { keys: string[] };
+export type RestoreResponse = { restored: string[]; missing: string[] };

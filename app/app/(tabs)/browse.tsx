@@ -93,6 +93,7 @@ export default function BrowseScreen() {
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
   type Filter = 'all' | 'image' | 'video';
   const FILTER_LABELS: Record<Filter, string> = {
     all: 'All',
@@ -248,6 +249,13 @@ export default function BrowseScreen() {
     setSelection(emptySelection());
   }, [path, load]);
 
+  // Auto-dismiss the snackbar after 5s.
+  useEffect(() => {
+    if (!snack) return;
+    const t = setTimeout(() => setSnack(null), 5000);
+    return () => clearTimeout(t);
+  }, [snack]);
+
   const loadMore = useCallback(async () => {
     if (!nextToken || loadingMore) return;
     setLoadingMore(true);
@@ -365,9 +373,37 @@ export default function BrowseScreen() {
       }
       setSelection(emptySelection());
       await load(path, 'refresh');
+      if (res.deleted.length > 0) {
+        const deleted = res.deleted;
+        setSnack({
+          message: `Deleted ${deleted.length} object(s)`,
+          onUndo: () => undoDelete(deleted),
+        });
+      }
     } catch (err) {
       Alert.alert(
         'Delete failed',
+        err instanceof Error ? err.message : 'Unknown error',
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function undoDelete(keys: string[]) {
+    setBusy(`Restoring ${keys.length} object(s)…`);
+    try {
+      const res = await api.restore(keys);
+      if (res.missing.length > 0) {
+        Alert.alert(
+          'Partial restore',
+          `Restored ${res.restored.length}. ${res.missing.length} couldn't be restored — the bucket may not have versioning enabled.`,
+        );
+      }
+      await load(path, 'refresh');
+    } catch (err) {
+      Alert.alert(
+        'Restore failed',
         err instanceof Error ? err.message : 'Unknown error',
       );
     } finally {
@@ -385,11 +421,14 @@ export default function BrowseScreen() {
     setBusy(`Moving 0 of ${total}…`);
     let done = 0;
     let failed: Array<{ src: string; message: string }> = [];
+    const movedFiles: Array<{ from: string; to: string }> = [];
+    const movedFolders: Array<{ from: string; to: string }> = [];
 
     for (const key of files) {
       const dest = destPrefix + basename(key);
       try {
         await api.moveFile(key, dest);
+        movedFiles.push({ from: key, to: dest });
       } catch (err) {
         failed.push({ src: key, message: err instanceof Error ? err.message : 'failed' });
       }
@@ -402,6 +441,7 @@ export default function BrowseScreen() {
       const dest = destPrefix + folderName + '/';
       try {
         await api.moveFolder(prefix, dest);
+        movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
         failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
       }
@@ -422,6 +462,37 @@ export default function BrowseScreen() {
             .map((f) => `• ${f.src}: ${f.message}`)
             .join('\n'),
       );
+    }
+
+    const movedCount = movedFiles.length + movedFolders.length;
+    if (movedCount > 0) {
+      setSnack({
+        message: `Moved ${movedCount} item(s)`,
+        onUndo: () => undoMove(movedFiles, movedFolders),
+      });
+    }
+  }
+
+  async function undoMove(
+    files: Array<{ from: string; to: string }>,
+    folders: Array<{ from: string; to: string }>,
+  ) {
+    setBusy(`Reverting move…`);
+    try {
+      for (const f of files) {
+        await api.moveFile(f.to, f.from);
+      }
+      for (const f of folders) {
+        await api.moveFolder(f.to, f.from);
+      }
+      await load(path, 'refresh');
+    } catch (err) {
+      Alert.alert(
+        'Undo move failed',
+        err instanceof Error ? err.message : 'Unknown error',
+      );
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -682,6 +753,25 @@ export default function BrowseScreen() {
             <ActivityIndicator />
             <ThemedText>{busy}</ThemedText>
           </ThemedView>
+        </View>
+      )}
+
+      {snack && !busy && (
+        <View style={[styles.snackbar, { backgroundColor: colors.surfaceElevated }]}>
+          <ThemedText style={styles.snackbarText} numberOfLines={2}>
+            {snack.message}
+          </ThemedText>
+          <Pressable
+            onPress={() => {
+              const action = snack.onUndo;
+              setSnack(null);
+              action();
+            }}
+            hitSlop={8}>
+            <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
+              Undo
+            </ThemedText>
+          </Pressable>
         </View>
       )}
     </ThemedView>
@@ -1096,4 +1186,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 200,
   },
+  snackbar: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    bottom: Spacing.xl + 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    ...Shadow.cardElevated,
+  },
+  snackbarText: { flex: 1, fontSize: 14 },
 });

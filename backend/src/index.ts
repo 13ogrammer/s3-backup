@@ -15,6 +15,7 @@ import {
   createMultipart,
   signPart,
 } from './handlers/multipart.js';
+import { restore } from './handlers/restore.js';
 
 type Route = (body: any) => Promise<unknown>;
 
@@ -25,6 +26,7 @@ const routes: Record<string, Route> = {
   'POST /delete': del,
   'POST /exists': exists,
   'POST /move': move,
+  'POST /restore': restore,
   'POST /multipart/create': createMultipart,
   'POST /multipart/sign-part': signPart,
   'POST /multipart/complete': completeMultipart,
