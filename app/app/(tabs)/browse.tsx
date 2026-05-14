@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -100,6 +101,7 @@ export default function BrowseScreen() {
   };
 
   const [filter, setFilter] = useState<Filter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -107,11 +109,16 @@ export default function BrowseScreen() {
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
 
+  const trimmedQuery = searchQuery.trim().toLowerCase();
   const sortedRows = [...rows]
     .filter((r) => {
-      if (filter === 'all') return true;
-      if (r.kind === 'folder') return true;
-      return r.mediaKind === filter;
+      if (filter !== 'all' && r.kind !== 'folder' && r.mediaKind !== filter) {
+        return false;
+      }
+      if (trimmedQuery && !r.name.toLowerCase().includes(trimmedQuery)) {
+        return false;
+      }
+      return true;
     })
     .sort((a, b) => compareRows(a, b, sortField, sortDir));
 
@@ -447,6 +454,33 @@ export default function BrowseScreen() {
             background={colors.surface}
           />
           {rows.length > 0 && (
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: colors.surfaceMuted },
+              ]}>
+              <IconSymbol name="magnifyingglass" size={16} color={colors.muted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search in this folder"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                style={[styles.searchInput, { color: colors.text }]}
+              />
+              {searchQuery.length > 0 && (
+                <Pressable
+                  onPress={() => setSearchQuery('')}
+                  hitSlop={8}
+                  accessibilityLabel="Clear search">
+                  <IconSymbol name="xmark.circle.fill" size={18} color={colors.muted} />
+                </Pressable>
+              )}
+            </View>
+          )}
+          {rows.length > 0 && (
             <View style={[styles.toolbar, { backgroundColor: colors.background }]}>
               <Pressable
                 onPress={cycleFilter}
@@ -547,7 +581,11 @@ export default function BrowseScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
-            <ThemedText style={styles.empty}>This folder is empty.</ThemedText>
+            <ThemedText style={styles.empty}>
+              {rows.length > 0
+                ? 'No matches for the current filter / search.'
+                : 'This folder is empty.'}
+            </ThemedText>
           }
           ListFooterComponent={
             loadingMore ? (
@@ -950,6 +988,21 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   sortChipText: { fontSize: 13, fontWeight: '600' },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    borderRadius: Radius.md,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 2,
+  },
   viewToggle: {
     width: 36,
     height: 32,

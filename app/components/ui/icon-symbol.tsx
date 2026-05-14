@@ -27,6 +27,8 @@ const MAPPING = {
   'square.grid.2x2': 'view-module',
   'xmark': 'close',
   'arrow.down.to.line': 'file-download',
+  'magnifyingglass': 'search',
+  'xmark.circle.fill': 'cancel',
 } as IconMapping;
 
 /**
