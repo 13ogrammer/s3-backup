@@ -6,10 +6,14 @@ import {
 import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
+  FlatList,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Modal,
   Pressable,
   StyleSheet,
@@ -44,76 +48,63 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
+  const { width: pageWidth, height: screenHeight } = useMemo(
+    () => Dimensions.get('window'),
+    [],
+  );
+
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
-  const [url, setUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [urls, setUrls] = useState<Map<string, string>>(new Map());
+  const flatListRef = useRef<FlatList<PreviewFile> | null>(null);
 
   const current = visible && index >= 0 && index < files.length ? files[index] : null;
   const filename = current ? basename(current.key) : '';
-
-  const player = useVideoPlayer(current?.kind === 'video' ? url : null, (p) => {
-    p.loop = false;
-  });
+  const currentUrl = current ? urls.get(current.key) : undefined;
 
   useEffect(() => {
-    if (visible && initialIndex != null) setIndex(initialIndex);
+    if (visible && initialIndex != null) {
+      setIndex(initialIndex);
+      // Reset URL cache when reopening for a different list/index.
+      setUrls(new Map());
+    }
   }, [visible, initialIndex]);
 
-  useEffect(() => {
-    if (!visible || !current) {
-      setUrl(null);
-      setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setUrl(null);
-    let cancelled = false;
-    api
-      .signDownload(current.key)
-      .then((res) => {
-        if (!cancelled) setUrl(res.url);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to sign URL');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, current]);
-
-  // Prefetch adjacent image URLs so Prev/Next opens instantly.
+  // Sign URLs for the current page and immediate neighbours; prefetch images.
   useEffect(() => {
     if (!visible) return;
-    const neighbors = [index - 1, index + 1]
+    const wanted = [index - 1, index, index + 1]
       .filter((i) => i >= 0 && i < files.length)
       .map((i) => files[i])
-      .filter((f): f is PreviewFile => !!f && f.kind === 'image');
+      .filter((f): f is PreviewFile => !!f);
     let cancelled = false;
-    for (const f of neighbors) {
+    for (const f of wanted) {
+      if (urls.has(f.key)) continue;
       api
         .signDownload(f.key)
-        .then(({ url: u }) => {
-          if (!cancelled) Image.prefetch(u);
+        .then(({ url }) => {
+          if (cancelled) return;
+          setUrls((prev) => {
+            if (prev.has(f.key)) return prev;
+            const next = new Map(prev);
+            next.set(f.key, url);
+            return next;
+          });
+          if (f.kind === 'image') Image.prefetch(url);
         })
         .catch(() => {});
     }
     return () => {
       cancelled = true;
     };
-  }, [visible, index, files]);
+  }, [visible, index, files, urls]);
 
   async function onDownload() {
-    if (!current || !url) return;
+    if (!current || !currentUrl) return;
     setDownloading(true);
     try {
       const target = `${documentDirectory}${filename}`;
-      const dl = await downloadAsync(url, target);
+      const dl = await downloadAsync(currentUrl, target);
       if (dl.status < 200 || dl.status >= 300) {
         throw new Error(`Download failed: HTTP ${dl.status}`);
       }
@@ -134,16 +125,10 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
     }
   }
 
-  function goPrev() {
-    setIndex((i) => Math.max(0, i - 1));
+  function onMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const newIndex = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+    if (newIndex !== index) setIndex(newIndex);
   }
-
-  function goNext() {
-    setIndex((i) => Math.min(files.length - 1, i + 1));
-  }
-
-  const hasPrev = index > 0;
-  const hasNext = index < files.length - 1;
 
   return (
     <Modal
@@ -177,17 +162,14 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 {filename}
               </ThemedText>
               {files.length > 1 && (
-                <ThemedText
-                  style={styles.counter}
-                  lightColor="#fff"
-                  darkColor="#fff">
+                <ThemedText style={styles.counter} lightColor="#fff" darkColor="#fff">
                   {index + 1} of {files.length}
                 </ThemedText>
               )}
             </View>
             <Pressable
               onPress={onDownload}
-              disabled={!url || downloading}
+              disabled={!currentUrl || downloading}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Download"
@@ -195,7 +177,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 styles.headerIconButton,
                 {
                   backgroundColor: colors.tint,
-                  opacity: !url || downloading ? 0.5 : pressed ? 0.7 : 1,
+                  opacity: !currentUrl || downloading ? 0.5 : pressed ? 0.7 : 1,
                 },
               ]}>
               {downloading ? (
@@ -206,75 +188,81 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             </Pressable>
           </View>
 
-          <View style={styles.body}>
-            {loading && <ActivityIndicator color="#fff" />}
-            {!loading && error && (
-              <ThemedText lightColor="#fff" darkColor="#fff" style={{ textAlign: 'center' }}>
-                {error}
-              </ThemedText>
-            )}
-            {!loading && !error && url && current?.kind === 'image' && (
-              <ZoomableImage uri={url} />
-            )}
-            {!loading && !error && url && current?.kind === 'video' && (
-              <VideoView
-                player={player}
-                style={styles.media}
-                allowsFullscreen
-                allowsPictureInPicture
-                contentFit="contain"
-                nativeControls
+          <FlatList
+            ref={flatListRef}
+            data={files}
+            keyExtractor={(f) => f.key}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={initialIndex ?? 0}
+            getItemLayout={(_, i) => ({
+              length: pageWidth,
+              offset: pageWidth * i,
+              index: i,
+            })}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            renderItem={({ item, index: i }) => (
+              <PreviewSlide
+                file={item}
+                url={urls.get(item.key)}
+                isActive={i === index}
+                width={pageWidth}
+                height={screenHeight}
               />
             )}
-            {!loading && !error && url && current?.kind === 'other' && (
-              <ThemedView style={styles.noPreview}>
-                <ThemedText type="defaultSemiBold">No preview available</ThemedText>
-                <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
-                  {filename} can't be previewed in the app. Use Save to download it.
-                </ThemedText>
-              </ThemedView>
-            )}
-          </View>
-
-          {files.length > 1 && (
-            <View style={[styles.navBar, { paddingBottom: Math.max(insets.bottom, 12) + 12 }]}>
-              <Pressable
-                onPress={goPrev}
-                disabled={!hasPrev}
-                hitSlop={8}
-                style={({ pressed }) => [
-                  styles.navButton,
-                  styles.headerChipMuted,
-                  { opacity: !hasPrev ? 0.35 : pressed ? 0.6 : 1 },
-                ]}>
-                <ThemedText
-                  lightColor="#fff"
-                  darkColor="#fff"
-                  style={styles.navText}>
-                  ← Prev
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={goNext}
-                disabled={!hasNext}
-                hitSlop={8}
-                style={({ pressed }) => [
-                  styles.navButton,
-                  styles.headerChipMuted,
-                  { opacity: !hasNext ? 0.35 : pressed ? 0.6 : 1 },
-                ]}>
-                <ThemedText
-                  lightColor="#fff"
-                  darkColor="#fff"
-                  style={styles.navText}>
-                  Next →
-                </ThemedText>
-              </Pressable>
-            </View>
-          )}
+          />
         </View>
       </GestureHandlerRootView>
     </Modal>
+  );
+}
+
+type SlideProps = {
+  file: PreviewFile;
+  url: string | undefined;
+  isActive: boolean;
+  width: number;
+  height: number;
+};
+
+function PreviewSlide({ file, url, isActive, width, height }: SlideProps) {
+  const filename = basename(file.key);
+  const player = useVideoPlayer(file.kind === 'video' ? url ?? null : null, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    if (file.kind !== 'video' || !player) return;
+    if (isActive) player.play();
+    else player.pause();
+  }, [isActive, player, file.kind]);
+
+  return (
+    <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
+      <View style={styles.slide}>
+        {!url && <ActivityIndicator color="#fff" />}
+        {url && file.kind === 'image' && <ZoomableImage uri={url} />}
+        {url && file.kind === 'video' && (
+          <VideoView
+            player={player}
+            style={styles.media}
+            allowsFullscreen
+            allowsPictureInPicture
+            contentFit="contain"
+            nativeControls
+          />
+        )}
+        {url && file.kind === 'other' && (
+          <ThemedView style={styles.noPreview}>
+            <ThemedText type="defaultSemiBold">No preview available</ThemedText>
+            <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
+              {filename} can't be previewed in the app. Use Download to save it.
+            </ThemedText>
+          </ThemedView>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -290,6 +278,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
     gap: Spacing.md,
+    zIndex: 1,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   filename: { fontWeight: '600', fontSize: 15 },
@@ -304,7 +293,7 @@ const styles = StyleSheet.create({
   headerChipMuted: {
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  body: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  slide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
   noPreview: {
     margin: Spacing.xl,
@@ -313,18 +302,4 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     alignItems: 'center',
   },
-  navBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.md,
-    gap: Spacing.md,
-  },
-  navButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-  },
-  navText: { fontSize: 15, fontWeight: '600' },
 });
