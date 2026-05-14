@@ -13,12 +13,7 @@ Tick items off as they land.
 
 - [x] **Backfill thumbnails for existing bucket content** — `backend/scripts/backfill-thumbnails.ts` walks the bucket, generates missing thumbs at `.thumbnails/<key>.thumb.jpg` using sharp. Idempotent. `npm run backfill:thumbs`.
 
-- [ ] **Pan when zoomed in image preview**
-  `ZoomableImage` currently supports pinch + double-tap-to-reset but no
-  pan (deliberate, to leave room for horizontal swipe). Add pan when
-  `scale > 1`; snap back when zoom resets. Use gesture-handler's
-  `activeOffset` / `failOffset` patterns to avoid clashing with any
-  swipe gesture added later.
+- [x] **Pan when zoomed in image preview** — `ZoomableImage` now has a Pan gesture that's only enabled while `scale > 1.01`. Crossing the threshold fires `onZoomChange` up to `PreviewModal`, which flips the horizontal FlatList's `scrollEnabled` to false so pan inside the image and pager swipe between files don't fight. Double-tap or pinch-out snaps translation back to (0,0).
 
 - [x] **Horizontal swipe between files in preview** — preview is now a paged horizontal FlatList of `PreviewSlide`s, each owning its own video player. URLs hoisted to parent, signs current + neighbours. Known follow-up tracked in "Pan when zoomed": pager still captures pan when an image is pinched.
 

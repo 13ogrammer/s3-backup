@@ -1,6 +1,8 @@
 import { Image } from 'expo-image';
+import { useMemo, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -9,39 +11,110 @@ import Animated, {
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 const DOUBLE_TAP_SCALE = 2.5;
+const ZOOMED_EPSILON = 1.01;
 
 type Props = {
   uri: string;
-  // Notify parent when zoomed in/out so it can suppress horizontal swipe
-  // if it ever wires one up.
+  // Fired when the image crosses the zoomed / not-zoomed threshold so the
+  // parent can disable its horizontal pager (otherwise a pan while zoomed
+  // also flips pages).
   onZoomChange?: (zoomed: boolean) => void;
 };
 
-export function ZoomableImage({ uri }: Props) {
+export function ZoomableImage({ uri, onZoomChange }: Props) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTx = useSharedValue(0);
+  const savedTy = useSharedValue(0);
 
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      const next = savedScale.value * e.scale;
-      scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value;
-    });
+  // Track zoom state on the JS thread so the Pan gesture can be enabled /
+  // disabled — gesture-handler reads `.enabled()` once at construction.
+  const [isZoomed, setIsZoomed] = useState(false);
 
-  const doubleTap = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      const next = scale.value > 1 ? 1 : DOUBLE_TAP_SCALE;
-      scale.value = withTiming(next);
-      savedScale.value = next;
-    });
+  function reportZoom(zoomed: boolean) {
+    setIsZoomed(zoomed);
+    onZoomChange?.(zoomed);
+  }
 
-  const composed = Gesture.Race(doubleTap, pinch);
+  function resetTranslation() {
+    translateX.value = withTiming(0);
+    translateY.value = withTiming(0);
+    savedTx.value = 0;
+    savedTy.value = 0;
+  }
+
+  const pinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onUpdate((e) => {
+          'worklet';
+          const next = savedScale.value * e.scale;
+          scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+        })
+        .onEnd(() => {
+          'worklet';
+          savedScale.value = scale.value;
+          const zoomed = scale.value > ZOOMED_EPSILON;
+          if (!zoomed) {
+            translateX.value = withTiming(0);
+            translateY.value = withTiming(0);
+            savedTx.value = 0;
+            savedTy.value = 0;
+          }
+          runOnJS(reportZoom)(zoomed);
+        }),
+    [],
+  );
+
+  const doubleTap = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .onEnd(() => {
+          'worklet';
+          const next = scale.value > ZOOMED_EPSILON ? 1 : DOUBLE_TAP_SCALE;
+          scale.value = withTiming(next);
+          savedScale.value = next;
+          if (next === 1) {
+            translateX.value = withTiming(0);
+            translateY.value = withTiming(0);
+            savedTx.value = 0;
+            savedTy.value = 0;
+          }
+          runOnJS(reportZoom)(next > ZOOMED_EPSILON);
+        }),
+    [],
+  );
+
+  // Pan is only enabled while zoomed in. While unzoomed it stays disabled
+  // so the parent horizontal pager keeps handling swipes.
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(isZoomed)
+        .onUpdate((e) => {
+          'worklet';
+          translateX.value = savedTx.value + e.translationX;
+          translateY.value = savedTy.value + e.translationY;
+        })
+        .onEnd(() => {
+          'worklet';
+          savedTx.value = translateX.value;
+          savedTy.value = translateY.value;
+        }),
+    [isZoomed],
+  );
+
+  const composed = Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
 
   const style = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
   }));
 
   return (
