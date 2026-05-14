@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -54,6 +55,18 @@ export default function GalleryScreen() {
       if (f != null) setLastFolderState(f);
     });
   }, []);
+
+  // Hold the screen awake while an upload is running. Uploads pause when
+  // the app is backgrounded (RN suspends JS), so the simplest useful
+  // mitigation is to stop the screen from going to sleep at all.
+  const uploading = uploadState !== null;
+  useEffect(() => {
+    if (!uploading) return;
+    activateKeepAwakeAsync('s3backup.upload').catch(() => {});
+    return () => {
+      deactivateKeepAwake('s3backup.upload');
+    };
+  }, [uploading]);
 
   async function onAddPhotos() {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -361,6 +374,10 @@ export default function GalleryScreen() {
                 In flight: {uploadState.inFlight.join(', ')}
               </ThemedText>
             )}
+            <ThemedText
+              style={{ opacity: 0.55, fontSize: 11, textAlign: 'center' }}>
+              Keep the app open — uploads pause if you switch away.
+            </ThemedText>
           </ThemedView>
         </View>
       )}

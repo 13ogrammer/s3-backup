@@ -57,11 +57,7 @@ Currently uploads pause when the app is backgrounded — both upload paths
 run on the JS thread, which iOS / Android suspend within seconds of
 backgrounding. Three escalating mitigations:
 
-- [ ] **Keep-awake + warning** (~10 min)
-  Use `expo-keep-awake` to hold the screen on while an upload is running,
-  plus a one-line hint in the overlay that backgrounding pauses uploads.
-  Doesn't solve real backgrounding; just makes "leave the screen open"
-  reliable.
+- [x] **Keep-awake + warning** — `expo-keep-awake` activates while an upload is in flight (tagged `s3backup.upload`), plus a one-line "Keep the app open — uploads pause if you switch away" note in the overlay. Doesn't solve real backgrounding; just keeps "leave the screen open" working.
 
 - [ ] **Resume after foreground** (~half day)
   Persist in-flight multipart state (`uploadId` + completed parts +
