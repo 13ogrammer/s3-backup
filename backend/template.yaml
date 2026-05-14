@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  s3-backup backend. Provides pre-signed S3 URLs (upload, download, delete,
+  move) and bucket listing to the mobile app. Deploy this to your own AWS
+  account; your photo/video bytes never traverse this backend.
+
+Parameters:
+  BootstrapToken:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: >
+      Shared secret the mobile app uses to authenticate to this API.
+      Use at least 32 random characters (e.g. `openssl rand -hex 32`).
+      Paste the same value into the app's Settings screen.
+  BucketName:
+    Type: String
+    Default: ''
+    Description: >
+      Name of an existing S3 bucket to back up to. Leave blank to have this
+      stack create a new bucket with versioning and public-access-block on.
+
+Conditions:
+  CreateBucket: !Equals [!Ref BucketName, '']
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 15
+    MemorySize: 512
+    Architectures: [arm64]
+    Environment:
+      Variables:
+        BOOTSTRAP_TOKEN: !Ref BootstrapToken
+        BUCKET_NAME: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUpload
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  ApiFn:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - index.ts
+        External:
+          - '@aws-sdk/*'
+    Properties:
+      CodeUri: src/
+      Handler: index.handler
+      Policies:
+        - Statement:
+            - Sid: BucketAccess
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+                - s3:ListBucket
+              Resource:
+                - !Sub
+                  - 'arn:aws:s3:::${B}'
+                  - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+                - !Sub
+                  - 'arn:aws:s3:::${B}/*'
+                  - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+      Events:
+        ApiRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: ANY
+            Path: /{proxy+}
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      FailOnWarnings: true
+
+Outputs:
+  ApiUrl:
+    Description: Base URL to paste into the mobile app's Settings screen
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+  BucketName:
+    Description: Name of the S3 bucket this stack will back up to
+    Value: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
