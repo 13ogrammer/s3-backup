@@ -199,7 +199,6 @@ export default function BrowseScreen() {
     setError(null);
     try {
       const res: ListResponse = await api.list({ prefix });
-      if (prefix !== path) return; // stale response, user moved on
       setRows(rowsFromResponse(res));
       setNextToken(res.nextToken);
     } catch (err) {
