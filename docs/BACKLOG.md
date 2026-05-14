@@ -56,11 +56,7 @@ backgrounding. Three escalating mitigations:
 
 - [x] **Keep-awake + warning** — `expo-keep-awake` activates while an upload is in flight (tagged `s3backup.upload`), plus a one-line "Keep the app open — uploads pause if you switch away" note in the overlay. Doesn't solve real backgrounding; just keeps "leave the screen open" working.
 
-- [ ] **Resume after foreground** (~half day)
-  Persist in-flight multipart state (`uploadId` + completed parts +
-  remote key) to `secure-store`. On next foreground, offer "resume"
-  instead of restart. Single-PUT files just retry the whole. Buys real
-  reliability without a custom dev build.
+- [x] **Resume after foreground** — multipart state (`uploadId`, `completedParts`, `remoteKey`, `localUri`, `partSize`, `totalBytes`) is persisted to a JSON file in `documentDirectory` (not SecureStore — iOS Keychain per-item limits don't fit a 1000+ part ETag list for large videos; tokens still live in SecureStore). After every successful part is uploaded, state is saved under a JS promise mutex so parallel workers don't clobber each other. On Gallery mount, pending entries whose `localUri` is gone are dropped; the rest surface as a "N upload(s) paused — Resume / Discard" banner. Resume runs them through `uploadFileMultipart` with the existing `uploadId`, skipping already-completed part numbers. Discard calls `/multipart/abort` per entry and clears state. Multipart catch logic now distinguishes retryable (keep state for next resume) from non-retryable (abort + clear). The outer `withRetry` around `uploadFile` was removed — it would have created a new `uploadId` on retry and orphaned the persisted state. Single-PUT retries moved inside `uploadFileSimple`.
 
 - [ ] **Real native background uploads** (multi-day)
   Wire iOS `URLSession.background` + Android WorkManager / foreground

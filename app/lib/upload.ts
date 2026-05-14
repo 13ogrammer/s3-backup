@@ -10,8 +10,15 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 import { ApiError, api, type CompletedPart } from './api';
+import {
+  removePendingUpload,
+  savePendingUpload,
+  type PendingMultipartUpload,
+} from './uploadState';
 
 export type MediaKind = 'image' | 'video' | 'other';
+
+export type ResumeState = { uploadId: string; completedParts: CompletedPart[] };
 
 const THUMB_MAX_WIDTH = 320;
 const THUMB_QUALITY = 0.7;
@@ -47,12 +54,19 @@ export async function uploadFile(
   remoteKey: string,
   contentType: string,
   onProgress?: (progress: UploadProgress) => void,
+  resume?: ResumeState,
 ): Promise<void> {
+  if (resume) {
+    // A resume implies the file was previously sized > MULTIPART_THRESHOLD
+    // and an uploadId already exists.
+    const size = await fileSize(localUri);
+    return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress, resume);
+  }
   const size = await fileSize(localUri);
   if (size > MULTIPART_THRESHOLD) {
     return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress);
   }
-  return uploadFileSimple(localUri, remoteKey, contentType, onProgress);
+  return withRetry(() => uploadFileSimple(localUri, remoteKey, contentType, onProgress));
 }
 
 async function uploadFileSimple(
@@ -92,17 +106,43 @@ async function uploadFileMultipart(
   contentType: string,
   totalBytes: number,
   onProgress?: (progress: UploadProgress) => void,
+  resume?: ResumeState,
 ): Promise<void> {
-  const { uploadId } = await withRetry(() => api.createMultipart(remoteKey, contentType));
-  const partCount = Math.ceil(totalBytes / MULTIPART_PART_SIZE);
+  const partSize = MULTIPART_PART_SIZE;
+  const partCount = Math.ceil(totalBytes / partSize);
+  let uploadId: string;
   const parts: CompletedPart[] = [];
   let bytesSent = 0;
+
+  if (resume) {
+    uploadId = resume.uploadId;
+    for (const p of resume.completedParts) parts.push(p);
+    const completedSet = new Set(parts.map((p) => p.partNumber));
+    for (let i = 0; i < partCount; i++) {
+      if (!completedSet.has(i + 1)) continue;
+      const offset = i * partSize;
+      bytesSent += Math.min(partSize, totalBytes - offset);
+    }
+    onProgress?.({ bytesSent, bytesTotal: totalBytes });
+  } else {
+    const created = await withRetry(() => api.createMultipart(remoteKey, contentType));
+    uploadId = created.uploadId;
+    // Persist a baseline entry immediately so a failure before the
+    // first part still leaves something resumable (and tied to this
+    // uploadId, so abort can clean up).
+    await savePendingUpload(
+      makePending(localUri, remoteKey, contentType, uploadId, totalBytes, partSize, []),
+    );
+  }
+
+  const completedSet = new Set(parts.map((p) => p.partNumber));
 
   try {
     for (let i = 0; i < partCount; i++) {
       const partNumber = i + 1;
-      const offset = i * MULTIPART_PART_SIZE;
-      const length = Math.min(MULTIPART_PART_SIZE, totalBytes - offset);
+      if (completedSet.has(partNumber)) continue;
+      const offset = i * partSize;
+      const length = Math.min(partSize, totalBytes - offset);
 
       const b64 = await readAsStringAsync(localUri, {
         encoding: EncodingType.Base64,
@@ -133,20 +173,52 @@ async function uploadFileMultipart(
       parts.push({ partNumber, etag });
       bytesSent += length;
       onProgress?.({ bytesSent, bytesTotal: totalBytes });
+
+      // Persist after each successful part so we can resume exactly
+      // where we left off if the app is suspended next.
+      await savePendingUpload(
+        makePending(localUri, remoteKey, contentType, uploadId, totalBytes, partSize, parts),
+      ).catch((e) => console.warn('persist multipart state failed', e));
     }
 
     await withRetry(() => api.completeMultipart(remoteKey, uploadId, parts));
+    await removePendingUpload(remoteKey).catch(() => undefined);
   } catch (err) {
-    // Best-effort abort so we don't leave dangling multipart uploads
-    // racking up storage charges. Failures here are swallowed because
-    // the user already has the original error.
+    // Retryable failures (network, 5xx, 429) → keep state and the
+    // uploadId so the resume banner can pick up where we left off.
+    // Non-retryable (4xx, malformed, etc.) → abort and clear.
+    if (defaultIsRetryable(err)) {
+      throw err;
+    }
     try {
       await api.abortMultipart(remoteKey, uploadId);
     } catch (abortErr) {
       console.warn('multipart abort failed', abortErr);
     }
+    await removePendingUpload(remoteKey).catch(() => undefined);
     throw err;
   }
+}
+
+function makePending(
+  localUri: string,
+  remoteKey: string,
+  contentType: string,
+  uploadId: string,
+  totalBytes: number,
+  partSize: number,
+  completedParts: CompletedPart[],
+): PendingMultipartUpload {
+  return {
+    localUri,
+    remoteKey,
+    contentType,
+    uploadId,
+    totalBytes,
+    partSize,
+    completedParts: completedParts.slice(),
+    updatedAt: Date.now(),
+  };
 }
 
 async function fileSize(localUri: string): Promise<number> {
@@ -181,7 +253,20 @@ export async function uploadAsset(
   } else if (mediaKind === 'video') {
     await generateAndUploadThumb(localUri, remoteKey, 'video');
   }
-  await withRetry(() => uploadFile(localUri, remoteKey, contentType, onProgress));
+  // Retries live inside uploadFile now (per-part for multipart, whole-PUT
+  // for single). Wrapping again here would mean a multipart retry creates
+  // a fresh uploadId and orphans the persisted resume state.
+  await uploadFile(localUri, remoteKey, contentType, onProgress);
+}
+
+export async function resumeUpload(
+  pending: PendingMultipartUpload,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<void> {
+  await uploadFile(pending.localUri, pending.remoteKey, pending.contentType, onProgress, {
+    uploadId: pending.uploadId,
+    completedParts: pending.completedParts,
+  });
 }
 
 async function generateAndUploadThumb(
