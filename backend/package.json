@@ -1,6 +1,7 @@
 {
   "name": "s3-backup-backend",
   "version": "0.1.0",
+  "author": "Prabhat Shrestha <13ogrammer@gmail.com>",
   "private": true,
   "description": "Serverless backend for the s3-backup app — mints pre-signed S3 URLs and lists bucket contents.",
   "main": "src/index.ts",
