@@ -9,7 +9,15 @@ import { api } from './api';
 
 const THUMB_MAX_WIDTH = 320;
 const THUMB_QUALITY = 0.7;
-const THUMB_SUFFIX = '.thumb.jpg';
+const THUMB_PREFIX = '.thumbnails/';
+const THUMB_EXT = '.thumb.jpg';
+
+function stripExt(key: string): string {
+  const slashIdx = key.lastIndexOf('/');
+  const dotIdx = key.lastIndexOf('.');
+  if (dotIdx <= slashIdx) return key;
+  return key.slice(0, dotIdx);
+}
 
 export type UploadProgress = { bytesSent: number; bytesTotal: number };
 
@@ -62,7 +70,11 @@ export async function uploadAsset(
         { compress: THUMB_QUALITY, format: ImageManipulator.SaveFormat.JPEG },
       );
       try {
-        await uploadFile(thumb.uri, `${remoteKey}${THUMB_SUFFIX}`, 'image/jpeg');
+        await uploadFile(
+          thumb.uri,
+          `${THUMB_PREFIX}${stripExt(remoteKey)}${THUMB_EXT}`,
+          'image/jpeg',
+        );
       } finally {
         await deleteAsync(thumb.uri, { idempotent: true });
       }

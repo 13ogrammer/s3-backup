@@ -111,6 +111,26 @@ curl -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   -d '{"key":"hello.txt","contentType":"text/plain"}' $HOST/sign-upload
 ```
 
+## Backfilling thumbnails for existing buckets
+
+If you connect the app to a bucket that already has photos in it (e.g.
+uploaded outside this app, or via an older version), Browse will still
+work but thumbnails fall back to fetching the original image each time
+— slow. Run the backfill script once to generate `.thumb.jpg` sidecars
+for every image:
+
+```bash
+# Against MinIO local dev
+set -a && source .env && set +a && npm run backfill:thumbs
+
+# Against real AWS (uses your default AWS credential chain)
+BUCKET_NAME=your-bucket npm run backfill:thumbs
+```
+
+The script is idempotent — re-running it skips images that already have
+a sidecar. HEIC images may be skipped if `sharp` can't decode them
+without `libheif`; they'll keep falling back to the original.
+
 ## SAM local (alternative)
 
 If you'd rather run the Lambda exactly as it will run in prod:

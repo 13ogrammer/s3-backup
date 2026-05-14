@@ -1,10 +1,10 @@
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
+import { thumbKey, thumbPrefix } from '../thumbs.js';
 import type { DeleteRequest, DeleteResponse } from '../types.js';
 
 const BATCH_SIZE = 1000;
-const THUMB_SUFFIX = '.thumb.jpg';
 
 export async function del(body: DeleteRequest): Promise<DeleteResponse> {
   const keys = (body.keys ?? []).map(sanitizeKey);
@@ -20,12 +20,15 @@ export async function del(body: DeleteRequest): Promise<DeleteResponse> {
 
   const allKeys = new Set<string>(keys);
   for (const k of keys) {
-    if (classifyKey(k) === 'image' && !k.endsWith(THUMB_SUFFIX)) {
-      allKeys.add(`${k}${THUMB_SUFFIX}`);
+    if (classifyKey(k) === 'image') {
+      allKeys.add(thumbKey(k));
     }
   }
 
-  for (const prefix of prefixes) {
+  // For each prefix, also delete the parallel tree under .thumbnails/.
+  const expandedPrefixes = [...prefixes, ...prefixes.map(thumbPrefix)];
+
+  for (const prefix of expandedPrefixes) {
     let continuationToken: string | undefined;
     do {
       const res = await s3.send(
