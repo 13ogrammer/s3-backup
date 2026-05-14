@@ -52,23 +52,52 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 | POST | `/delete` | Batch delete by keys, prefixes, or both |
 | POST | `/move` | File rename or full-folder move via server-side copy + delete |
 
-## Thumbnail sidecar contract
+## Thumbnail tree
 
-For each image upload, the app also uploads a small JPEG sidecar at
-`<key>.thumb.jpg` (~320 px, q70, 30–50 KB). Backend handlers that touch
-image objects need to be sidecar-aware:
+Thumbnails live in a single top-level folder, `.thumbnails/`, that
+mirrors the bucket's directory structure. Each thumb is a 320 px JPEG
+(~30–50 KB) at:
 
-- `handlers/list.ts` — filters `.thumb.jpg` out of user-facing results,
-  returns the thumb URL as `previewUrl` when it exists.
-- `handlers/del.ts` — schedules `<key>.thumb.jpg` for deletion when the
-  image key is deleted.
-- `handlers/move.ts` — copies + deletes the sidecar alongside single
-  file moves. Folder moves already pick sidecars up since they walk the
-  entire prefix.
+```
+.thumbnails/<original_key>.jpg
+```
+
+So `photos/2025/IMG_001.heic` has its thumb at
+`.thumbnails/photos/2025/IMG_001.thumb.jpg`. The original extension is
+stripped before appending `.thumb.jpg` so the filename reads cleanly.
+Trade-off: if `IMG_001.jpg` and `IMG_001.heic` coexist in the same
+folder, they share one thumb path; the last-written wins. Rare in
+practice.
+
+Why a separate tree instead of `<key>.thumb.jpg` sidecars: blast-radius.
+The whole tree can be nuked with one `aws s3 rm` to drop every thumb,
+and listing real folders doesn't have to filter sidecars out.
+
+Helpers live in `backend/src/thumbs.ts` — `THUMB_PREFIX`, `thumbKey()`,
+`thumbPrefix()`, `originalFromThumbKey()`.
+
+Backend handlers that touch image objects need to be thumb-aware:
+
+- `handlers/list.ts` — in parallel with the regular S3 listing, lists
+  `.thumbnails/<prefix>` and builds a set of original keys that have
+  thumbs. For each image in the user-facing listing, returns the thumb
+  URL as `previewUrl` if found, falls back to the original URL
+  otherwise. Filters `.thumbnails/` out of the root folder listing so
+  the user doesn't see it as a regular folder.
+- `handlers/del.ts` — when deleting an image key, also schedules its
+  thumb for deletion. When deleting a folder prefix, also deletes the
+  parallel `.thumbnails/<prefix>` tree.
+- `handlers/move.ts` — single-file moves move the thumb alongside.
+  Folder moves recursively move the `.thumbnails/<fromPrefix>` tree to
+  `.thumbnails/<toPrefix>`.
 
 When extending the backend, any new operation that creates or moves
-image keys must update its sidecar similarly. The `THUMB_SUFFIX`
-constant lives in each handler that needs it.
+image keys must update the parallel thumb path similarly.
+
+The upload-time thumb generation (`expo-image-manipulator` in
+`app/lib/upload.ts`) and the one-time backfill script
+(`backend/scripts/backfill-thumbnails.ts`) both write to this same
+tree.
 
 ## Distribution model
 

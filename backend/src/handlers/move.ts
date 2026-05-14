@@ -7,9 +7,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
+import { thumbKey, thumbPrefix } from '../thumbs.js';
 import type { MoveRequest, MoveResponse } from '../types.js';
-
-const THUMB_SUFFIX = '.thumb.jpg';
 
 async function copyAndDelete(from: string, to: string): Promise<void> {
   await s3.send(
@@ -31,6 +30,46 @@ async function exists(key: string): Promise<boolean> {
   }
 }
 
+async function moveTree(fromPrefix: string, toPrefix: string): Promise<number> {
+  let moved = 0;
+  let continuationToken: string | undefined;
+  do {
+    const res = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: fromPrefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+    const objects = res.Contents ?? [];
+    for (const obj of objects) {
+      if (!obj.Key) continue;
+      const newKey = toPrefix + obj.Key.slice(fromPrefix.length);
+      await s3.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: newKey,
+          CopySource: `/${BUCKET}/${encodeURIComponent(obj.Key).replace(/%2F/g, '/')}`,
+        }),
+      );
+      moved += 1;
+    }
+    if (objects.length > 0) {
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: BUCKET,
+          Delete: {
+            Objects: objects.filter((o) => !!o.Key).map((o) => ({ Key: o.Key! })),
+            Quiet: true,
+          },
+        }),
+      );
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return moved;
+}
+
 export async function move(body: MoveRequest): Promise<MoveResponse> {
   if (body.kind === 'file') {
     const from = sanitizeKey(body.from);
@@ -39,11 +78,10 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
 
     await copyAndDelete(from, to);
 
-    if (classifyKey(from) === 'image' && !from.endsWith(THUMB_SUFFIX)) {
-      const thumbFrom = `${from}${THUMB_SUFFIX}`;
-      const thumbTo = `${to}${THUMB_SUFFIX}`;
+    if (classifyKey(from) === 'image') {
+      const thumbFrom = thumbKey(from);
       if (await exists(thumbFrom)) {
-        await copyAndDelete(thumbFrom, thumbTo);
+        await copyAndDelete(thumbFrom, thumbKey(to));
       }
     }
 
@@ -60,47 +98,9 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
     throw new Error('cannot move a folder into itself');
   }
 
-  let moved = 0;
-  let continuationToken: string | undefined;
+  // Move the originals tree, then the parallel thumbs tree.
+  const movedOriginals = await moveTree(fromPrefix, toPrefix);
+  await moveTree(thumbPrefix(fromPrefix), thumbPrefix(toPrefix));
 
-  do {
-    const list = await s3.send(
-      new ListObjectsV2Command({
-        Bucket: BUCKET,
-        Prefix: fromPrefix,
-        ContinuationToken: continuationToken,
-      }),
-    );
-
-    const objects = list.Contents ?? [];
-    for (const obj of objects) {
-      if (!obj.Key) continue;
-      const suffix = obj.Key.slice(fromPrefix.length);
-      const newKey = toPrefix + suffix;
-      await s3.send(
-        new CopyObjectCommand({
-          Bucket: BUCKET,
-          Key: newKey,
-          CopySource: `/${BUCKET}/${encodeURIComponent(obj.Key).replace(/%2F/g, '/')}`,
-        }),
-      );
-      moved += 1;
-    }
-
-    if (objects.length > 0) {
-      await s3.send(
-        new DeleteObjectsCommand({
-          Bucket: BUCKET,
-          Delete: {
-            Objects: objects.filter((o) => !!o.Key).map((o) => ({ Key: o.Key! })),
-            Quiet: true,
-          },
-        }),
-      );
-    }
-
-    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
-  } while (continuationToken);
-
-  return { moved };
+  return { moved: movedOriginals };
 }

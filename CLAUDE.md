@@ -86,12 +86,13 @@ with. In local dev, that needs to be the **LAN IP** of your Mac
 (`http://192.168.x.y:9000`), not `localhost`, or the phone gets
 ECONNREFUSED. The `.env.example` flags this.
 
-### Thumbnail `.thumb.jpg` sidecar contract
-For each image upload, the app also uploads `<key>.thumb.jpg`. Any new
-backend handler that creates or moves image objects must update the
-sidecar in the same operation (delete → also delete sidecar, move →
-also move sidecar). See
-[`docs/ARCHITECTURE.md#thumbnail-sidecar-contract`](./docs/ARCHITECTURE.md#thumbnail-sidecar-contract).
+### Thumbnail tree at `.thumbnails/`
+Thumbs live in a parallel tree (`.thumbnails/<original_key>.jpg`) that
+mirrors the bucket's folder structure, not as `<key>.thumb.jpg`
+sidecars next to originals. Any new backend handler that creates,
+moves, or deletes image keys must update the parallel thumb path in
+the same operation. See
+[`docs/ARCHITECTURE.md#thumbnail-tree`](./docs/ARCHITECTURE.md#thumbnail-tree).
 
 ### `expo-file-system` v19 split the API
 Use the legacy import path:
