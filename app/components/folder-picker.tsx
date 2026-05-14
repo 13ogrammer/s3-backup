@@ -21,9 +21,10 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onPick: (prefix: string) => void;
+  initialPath?: string;
 };
 
-export function FolderPicker({ visible, onClose, onPick }: Props) {
+export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -50,11 +51,12 @@ export function FolderPicker({ visible, onClose, onPick }: Props) {
 
   useEffect(() => {
     if (visible) {
-      setPath('');
+      const start = initialPath ?? '';
+      setPath(start);
       setNewName('');
-      load('');
+      load(start);
     }
-  }, [visible, load]);
+  }, [visible, initialPath, load]);
 
   function goInto(folderPrefix: string) {
     setPath(folderPrefix);
