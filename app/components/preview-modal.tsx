@@ -6,17 +6,17 @@ import {
 import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Modal,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -48,10 +48,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
-  const { width: pageWidth, height: screenHeight } = useMemo(
-    () => Dimensions.get('window'),
-    [],
-  );
+  const { width: pageWidth, height: windowHeight } = useWindowDimensions();
 
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
   const [downloading, setDownloading] = useState(false);
@@ -140,6 +137,31 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       navigationBarTranslucent>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.backdrop}>
+          <FlatList
+            ref={flatListRef}
+            style={StyleSheet.absoluteFill}
+            data={files}
+            keyExtractor={(f) => f.key}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={initialIndex ?? 0}
+            getItemLayout={(_, i) => ({
+              length: pageWidth,
+              offset: pageWidth * i,
+              index: i,
+            })}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            renderItem={({ item, index: i }) => (
+              <PreviewSlide
+                file={item}
+                url={urls.get(item.key)}
+                isActive={i === index}
+                width={pageWidth}
+                height={windowHeight}
+              />
+            )}
+          />
           <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <Pressable
               onPress={onClose}
@@ -187,31 +209,6 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
               )}
             </Pressable>
           </View>
-
-          <FlatList
-            ref={flatListRef}
-            data={files}
-            keyExtractor={(f) => f.key}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            initialScrollIndex={initialIndex ?? 0}
-            getItemLayout={(_, i) => ({
-              length: pageWidth,
-              offset: pageWidth * i,
-              index: i,
-            })}
-            onMomentumScrollEnd={onMomentumScrollEnd}
-            renderItem={({ item, index: i }) => (
-              <PreviewSlide
-                file={item}
-                url={urls.get(item.key)}
-                isActive={i === index}
-                width={pageWidth}
-                height={screenHeight}
-              />
-            )}
-          />
         </View>
       </GestureHandlerRootView>
     </Modal>
@@ -272,13 +269,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
     gap: Spacing.md,
-    zIndex: 1,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   filename: { fontWeight: '600', fontSize: 15 },
