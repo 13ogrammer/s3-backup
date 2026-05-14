@@ -15,15 +15,7 @@ Tick items off as they land.
   returns it as `previewUrl` when the sidecar exists (no backend change
   needed). Replace the ▶ tile in Browse with the actual thumb.
 
-- [ ] **Backfill thumbnails for existing bucket content**
-  One-time admin path that walks the bucket, finds images without a
-  `.thumb.jpg` sidecar, generates one, and uploads it. Two ways:
-  - A small Lambda using `sharp` deployed alongside the SAM stack, triggered
-    by an admin endpoint or run manually.
-  - A CLI script in `backend/scripts/` that runs locally against either
-    real S3 or MinIO.
-  Worth doing once you connect to a bucket with thousands of pre-existing
-  photos.
+- [x] **Backfill thumbnails for existing bucket content** — `backend/scripts/backfill-thumbnails.ts` walks the bucket, generates missing thumbs at `.thumbnails/<key>.thumb.jpg` using sharp. Idempotent. `npm run backfill:thumbs`.
 
 - [ ] **Pan when zoomed in image preview**
   `ZoomableImage` currently supports pinch + double-tap-to-reset but no
@@ -32,13 +24,7 @@ Tick items off as they land.
   `activeOffset` / `failOffset` patterns to avoid clashing with any
   swipe gesture added later.
 
-- [ ] **Horizontal swipe between files in preview**
-  Replace (or complement) Prev / Next buttons with a paged horizontal
-  FlatList. Tricky bits:
-  - Gesture conflict with pinch/pan inside `ZoomableImage` — disable
-    horizontal pager pan when image is zoomed > 1×.
-  - Coordinate with the existing prefetch effect that signs N-1/N+1
-    URLs so pages render instantly.
+- [x] **Horizontal swipe between files in preview** — preview is now a paged horizontal FlatList of `PreviewSlide`s, each owning its own video player. URLs hoisted to parent, signs current + neighbours. Known follow-up tracked in "Pan when zoomed": pager still captures pan when an image is pinched.
 
 - [ ] **Video scrubbing reliability on poor networks**
   `expo-video` streams from the signed URL; large videos on flaky
@@ -64,11 +50,7 @@ Tick items off as they land.
   Decide whether search triggers a deeper scan or only filters loaded
   items (depends on whether infinite scroll lands first).
 
-- [ ] **Infinite scroll for large folders**
-  Backend `/list` currently exhausts the S3 `continuationToken` before
-  returning. Switch to paged response (return up to N=200 per call and
-  pass the token back to the client). Browse `FlatList` calls
-  `onEndReached` to fetch the next page.
+- [x] **Infinite scroll for large folders** — `/list` now takes `continuationToken`, returns `nextToken`, page size 500. Browse paginates via `onEndReached`; stale responses are dropped if path changes mid-fetch.
 
 ---
 
@@ -132,15 +114,7 @@ Tick items off as they land.
 
 ---
 
-## Distribution (Phase 6, predates this list)
+## Distribution
 
-- [ ] **Launch Stack button + EAS Build configs + open-source README**
-  Finalise SAM template parameters, publish the template to a public
-  S3 location, add a `[![Launch Stack](...)]` button to the README,
-  set up `eas.json` for iOS + Android Build profiles, write the
-  README that walks a new user through:
-  1. Click Launch Stack to deploy the backend to their AWS account.
-  2. Generate a bootstrap token, paste it in.
-  3. Install the app via TestFlight / Play internal track / sideload.
-  4. Paste API URL + token into Settings.
-  Then make the repo public.
+- [x] **EAS Build configs + open-source README** — `app/eas.json` with development / preview / production profiles. Root README walks through the full install (deploy backend → patch `app.json` IDs → EAS build → paste API URL + token in Settings → optional thumb backfill).
+- [ ] **Launch Stack button** — `backend/README.md` documents the exact `sam package` + `aws s3 cp --acl public-read` recipe to publish the template publicly and the HTML snippet for the button. Pending: actually host the template at a stable public URL once the repo is published, then drop the button into the root README's "Deploy" section.
