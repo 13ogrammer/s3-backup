@@ -1,3 +1,4 @@
+import { getInfoAsync } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -22,9 +23,16 @@ import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import {
   UploadError,
   inferContentType,
+  resumeUpload,
   runWithConcurrency,
   uploadAsset,
 } from '@/lib/upload';
+import {
+  loadPendingUploads,
+  removePendingUpload,
+  type PendingMultipartUpload,
+} from '@/lib/uploadState';
+import { formatBytes } from '@/lib/format';
 
 const UPLOAD_CONCURRENCY = 3;
 
@@ -49,12 +57,32 @@ export default function GalleryScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
+  const [pendingResume, setPendingResume] = useState<PendingMultipartUpload[]>([]);
 
   useEffect(() => {
     getLastFolder().then((f) => {
       if (f != null) setLastFolderState(f);
     });
   }, []);
+
+  useEffect(() => {
+    refreshPendingResume();
+  }, []);
+
+  async function refreshPendingResume() {
+    try {
+      const all = await loadPendingUploads();
+      const alive: PendingMultipartUpload[] = [];
+      for (const entry of all) {
+        const info = await getInfoAsync(entry.localUri);
+        if (info.exists) alive.push(entry);
+        else await removePendingUpload(entry.remoteKey).catch(() => undefined);
+      }
+      setPendingResume(alive);
+    } catch (err) {
+      console.warn('refreshPendingResume failed', err);
+    }
+  }
 
   // Hold the screen awake while an upload is running. Uploads pause when
   // the app is backgrounded (RN suspends JS), so the simplest useful
@@ -114,6 +142,88 @@ export default function GalleryScreen() {
       console.warn('failed to persist last folder', err),
     );
     await uploadAll(prefix);
+  }
+
+  async function onResumePending() {
+    const cfg = await loadConfig();
+    if (!cfg) {
+      Alert.alert('Not configured', 'Open Settings and add your backend URL + token.');
+      return;
+    }
+    const items = pendingResume;
+    if (items.length === 0) return;
+
+    setUploadState({ total: items.length, done: 0, failed: 0, inFlight: [] });
+
+    const failed = await runWithConcurrency(
+      items,
+      async (entry) => {
+        const filename = filenameForKey(entry.remoteKey);
+        setUploadState((s) => (s ? { ...s, inFlight: [...s.inFlight, filename] } : s));
+        try {
+          await resumeUpload(entry);
+          setUploadState((s) =>
+            s
+              ? {
+                  ...s,
+                  done: s.done + 1,
+                  inFlight: s.inFlight.filter((n) => n !== filename),
+                }
+              : s,
+          );
+        } catch (err) {
+          setUploadState((s) =>
+            s
+              ? {
+                  ...s,
+                  failed: s.failed + 1,
+                  inFlight: s.inFlight.filter((n) => n !== filename),
+                }
+              : s,
+          );
+          throw err;
+        }
+      },
+      UPLOAD_CONCURRENCY,
+    );
+
+    setUploadState(null);
+    await refreshPendingResume();
+
+    if (failed.length === 0) {
+      Alert.alert('Resume complete', `${items.length} upload(s) finished.`);
+      return;
+    }
+    Alert.alert(
+      'Some resumes failed',
+      `${items.length - failed.length}/${items.length} finished. The rest stay queued — try again later.`,
+    );
+  }
+
+  async function onDiscardPending() {
+    const items = pendingResume;
+    if (items.length === 0) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        'Discard paused uploads?',
+        `${items.length} in-flight upload(s) will be aborted on the server. The originals stay on your device.`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Discard', style: 'destructive', onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+    if (!confirmed) return;
+    for (const entry of items) {
+      try {
+        await api.abortMultipart(entry.remoteKey, entry.uploadId);
+      } catch (err) {
+        console.warn('discard abort failed', entry.remoteKey, err);
+      }
+      await removePendingUpload(entry.remoteKey).catch(() => undefined);
+    }
+    setPendingResume([]);
   }
 
   async function uploadAll(prefix: string) {
@@ -251,8 +361,50 @@ export default function GalleryScreen() {
     });
   }
 
+  const pendingBytesRemaining = pendingResume.reduce((sum, e) => {
+    const done = e.completedParts.reduce((b, p) => {
+      const offset = (p.partNumber - 1) * e.partSize;
+      return b + Math.min(e.partSize, Math.max(0, e.totalBytes - offset));
+    }, 0);
+    return sum + Math.max(0, e.totalBytes - done);
+  }, 0);
+
   return (
     <ThemedView style={styles.container}>
+      {pendingResume.length > 0 && !uploadState && (
+        <View
+          style={[
+            styles.resumeBanner,
+            { backgroundColor: colors.accentSoft, borderColor: colors.icon },
+          ]}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+              {pendingResume.length} upload{pendingResume.length === 1 ? '' : 's'} paused
+            </ThemedText>
+            <ThemedText style={{ fontSize: 12, opacity: 0.75 }}>
+              {formatBytes(pendingBytesRemaining)} left to send
+            </ThemedText>
+          </View>
+          <Pressable
+            onPress={onDiscardPending}
+            style={({ pressed }) => [
+              styles.chip,
+              { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText>Discard</ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={onResumePending}
+            style={({ pressed }) => [
+              styles.chip,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText style={{ color: colors.onAccent, fontWeight: '600' }}>
+              Resume
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
       {selected.length === 0 ? (
         <View style={styles.emptyState}>
           <ThemedText type="title">No items picked</ThemedText>
@@ -392,6 +544,11 @@ function describeError(err: unknown): string {
   return 'Unknown error';
 }
 
+function filenameForKey(remoteKey: string): string {
+  const idx = remoteKey.lastIndexOf('/');
+  return idx === -1 ? remoteKey : remoteKey.slice(idx + 1);
+}
+
 function filenameFor(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.fileName) return asset.fileName;
   const fromUri = asset.uri.split('/').pop()?.split('?')[0];
@@ -501,4 +658,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressBarFill: { height: '100%' },
+  resumeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });
