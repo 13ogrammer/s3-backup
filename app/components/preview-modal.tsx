@@ -53,6 +53,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
   const [downloading, setDownloading] = useState(false);
   const [urls, setUrls] = useState<Map<string, string>>(new Map());
+  const [isZoomed, setIsZoomed] = useState(false);
   const flatListRef = useRef<FlatList<PreviewFile> | null>(null);
 
   const current = visible && index >= 0 && index < files.length ? files[index] : null;
@@ -64,6 +65,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       setIndex(initialIndex);
       // Reset URL cache when reopening for a different list/index.
       setUrls(new Map());
+      setIsZoomed(false);
     }
   }, [visible, initialIndex]);
 
@@ -144,6 +146,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             keyExtractor={(f) => f.key}
             horizontal
             pagingEnabled
+            scrollEnabled={!isZoomed}
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={initialIndex ?? 0}
             getItemLayout={(_, i) => ({
@@ -159,6 +162,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 isActive={i === index}
                 width={pageWidth}
                 height={windowHeight}
+                onZoomChange={i === index ? setIsZoomed : undefined}
               />
             )}
           />
@@ -221,9 +225,10 @@ type SlideProps = {
   isActive: boolean;
   width: number;
   height: number;
+  onZoomChange?: (zoomed: boolean) => void;
 };
 
-function PreviewSlide({ file, url, isActive, width, height }: SlideProps) {
+function PreviewSlide({ file, url, isActive, width, height, onZoomChange }: SlideProps) {
   const filename = basename(file.key);
   const player = useVideoPlayer(file.kind === 'video' ? url ?? null : null, (p) => {
     p.loop = false;
@@ -239,7 +244,9 @@ function PreviewSlide({ file, url, isActive, width, height }: SlideProps) {
     <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
       <View style={styles.slide}>
         {!url && <ActivityIndicator color="#fff" />}
-        {url && file.kind === 'image' && <ZoomableImage uri={url} />}
+        {url && file.kind === 'image' && (
+          <ZoomableImage uri={url} onZoomChange={onZoomChange} />
+        )}
         {url && file.kind === 'video' && (
           <VideoView
             player={player}
