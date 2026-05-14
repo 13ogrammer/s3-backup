@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -39,6 +40,7 @@ type Props = {
 export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
 
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
   const [url, setUrl] = useState<string | null>(null);
@@ -121,10 +123,16 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const hasNext = index < files.length - 1;
 
   return (
-    <Modal visible={visible} animationType="fade" onRequestClose={onClose} transparent>
+    <Modal
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+      transparent
+      statusBarTranslucent
+      navigationBarTranslucent>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.backdrop}>
-          <View style={styles.header}>
+          <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button">
               <ThemedText style={styles.closeText} lightColor="#fff" darkColor="#fff">
                 Close
@@ -156,7 +164,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 style={[styles.actionText, { opacity: !url || downloading ? 0.5 : 1 }]}
                 lightColor="#fff"
                 darkColor="#fff">
-                {downloading ? 'Saving…' : 'Save'}
+                {downloading ? 'Downloading…' : 'Download'}
               </ThemedText>
             </Pressable>
           </View>
@@ -192,7 +200,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
           </View>
 
           {files.length > 1 && (
-            <View style={styles.navBar}>
+            <View style={[styles.navBar, { paddingBottom: Math.max(insets.bottom, 12) + 12 }]}>
               <Pressable
                 onPress={goPrev}
                 disabled={!hasPrev}
@@ -253,7 +261,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 12,
     gap: 12,
   },
@@ -276,7 +283,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 12,
-    paddingBottom: 32,
     gap: 12,
   },
   navButton: {
