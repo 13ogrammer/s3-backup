@@ -46,11 +46,16 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Liveness check |
-| POST | `/list` | Folders + files at a prefix; returns signed preview URLs for images |
-| POST | `/sign-upload` | Pre-signed PUT for a key + content-type |
+| POST | `/list` | Folders + files at a prefix; paginated via `continuationToken` |
+| POST | `/sign-upload` | Pre-signed PUT for a key + content-type (single-shot upload) |
 | POST | `/sign-download` | Pre-signed GET for a key |
 | POST | `/delete` | Batch delete by keys, prefixes, or both |
+| POST | `/exists` | Returns the subset of supplied keys that exist (HeadObject) |
 | POST | `/move` | File rename or full-folder move via server-side copy + delete |
+| POST | `/multipart/create` | Initiate multipart upload, returns `uploadId` |
+| POST | `/multipart/sign-part` | Pre-signed PUT URL for one part of an in-flight upload |
+| POST | `/multipart/complete` | Finalise the multipart upload with the part list + ETags |
+| POST | `/multipart/abort` | Cancel an in-flight multipart upload |
 
 ## Thumbnail tree
 

@@ -56,24 +56,9 @@ Tick items off as they land.
 
 ## Upload reliability
 
-- [ ] **Parallelism + retries with backoff**
-  Uploads currently run strictly sequentially. Run N (e.g. 3) in
-  parallel via a semaphore, and wrap each upload in
-  retry-with-exponential-backoff (max 3 attempts) for transient HTTP
-  5xx / network errors. Report aggregate progress instead of one file
-  at a time.
-
-- [ ] **Resumable uploads for large videos (S3 multipart)**
-  Files above a threshold (e.g. 50 MB) should use S3 multipart upload
-  so a flaky cellular drop doesn't restart from zero. Needs backend
-  endpoints to create/complete/abort multipart, and client logic to
-  split the file into parts and PUT each to its own signed URL.
-
-- [ ] **Skip-if-exists upload dedup**
-  Before uploading, HEAD the destination key (or include the check in
-  a `/preflight` endpoint). If the object exists, prompt the user:
-  skip / rename with suffix / overwrite. Default to skip. Saves
-  bandwidth on accidental re-uploads.
+- [x] **Parallelism + retries with backoff** — uploads run 3 in parallel via a small worker pool (`runWithConcurrency`); each upload is wrapped in `withRetry` (max 3 attempts, exp backoff + jitter, retries 408/429/5xx/network). Failed items stay selected for one-tap retry.
+- [x] **Resumable uploads for large videos (S3 multipart)** — files > 50 MB go through 8 MB-part multipart upload via new `/multipart/create|sign-part|complete|abort` endpoints. Each part is retried independently, abort fires on permanent failure so we don't leak in-flight uploads.
+- [x] **Skip-if-exists upload dedup** — before upload, `/exists` returns the subset of destination keys already present; user is prompted to skip / overwrite / cancel.
 
 ---
 

@@ -29,3 +29,21 @@ export type MoveResponse = { moved: number };
 
 export type ExistsRequest = { keys: string[] };
 export type ExistsResponse = { existing: string[] };
+
+export type CreateMultipartRequest = { key: string; contentType: string };
+export type CreateMultipartResponse = { uploadId: string };
+
+export type SignPartRequest = { key: string; uploadId: string; partNumber: number };
+export type SignPartResponse = { url: string };
+
+export type CompletedPart = { partNumber: number; etag: string };
+
+export type CompleteMultipartRequest = {
+  key: string;
+  uploadId: string;
+  parts: CompletedPart[];
+};
+export type CompleteMultipartResponse = { ok: true };
+
+export type AbortMultipartRequest = { key: string; uploadId: string };
+export type AbortMultipartResponse = { ok: true };
