@@ -82,13 +82,7 @@ Tick items off as they land.
 
 ## Gallery polish
 
-- [ ] **Remember last-picked folder + retain selection**
-  Two small wins:
-  - Persist the most recently picked destination folder (secure-store
-    or `AsyncStorage`) and pre-fill it next time the FolderPicker opens.
-  - Tapping "Add more" currently appends but doesn't dedupe by URI
-    explicitly; verify selection state stays clean across multiple
-    picker invocations.
+- [x] **Remember last-picked folder + retain selection** — `lib/config.ts` adds `getLastFolder` / `setLastFolder` backed by secure-store; FolderPicker takes an `initialPath` prop and starts there. Selection retention was already correct (Add-more dedupes by URI when merging picks).
 
 - [ ] **Switch Gallery back to the inline grid (post dev-build)**
   Once a custom Android dev build is set up (via EAS Build or

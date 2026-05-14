@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const BACKEND_URL_KEY = 's3backup.backendUrl';
 const TOKEN_KEY = 's3backup.bootstrapToken';
+const LAST_FOLDER_KEY = 's3backup.lastFolder';
 
 export type AppConfig = {
   backendUrl: string;
@@ -29,5 +30,17 @@ export async function clearConfig(): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(BACKEND_URL_KEY),
     SecureStore.deleteItemAsync(TOKEN_KEY),
+    SecureStore.deleteItemAsync(LAST_FOLDER_KEY),
   ]);
+}
+
+// Last destination folder the user picked for an upload. Used to
+// pre-fill the FolderPicker on the next upload so a daily-use flow
+// doesn't make you re-navigate the same path every time.
+export async function getLastFolder(): Promise<string | null> {
+  return SecureStore.getItemAsync(LAST_FOLDER_KEY);
+}
+
+export async function setLastFolder(prefix: string): Promise<void> {
+  await SecureStore.setItemAsync(LAST_FOLDER_KEY, prefix);
 }

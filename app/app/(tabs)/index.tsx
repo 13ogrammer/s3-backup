@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
-import { loadConfig } from '@/lib/config';
+import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import {
   UploadError,
   inferContentType,
@@ -47,6 +47,13 @@ export default function GalleryScreen() {
   const [selected, setSelected] = useState<PickedAsset[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
+  const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    getLastFolder().then((f) => {
+      if (f != null) setLastFolderState(f);
+    });
+  }, []);
 
   async function onAddPhotos() {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -89,6 +96,10 @@ export default function GalleryScreen() {
 
   async function onPickFolder(prefix: string) {
     setPickerVisible(false);
+    setLastFolderState(prefix);
+    setLastFolder(prefix).catch((err) =>
+      console.warn('failed to persist last folder', err),
+    );
     await uploadAll(prefix);
   }
 
@@ -316,6 +327,7 @@ export default function GalleryScreen() {
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
         onPick={onPickFolder}
+        initialPath={lastFolder}
       />
 
       {uploadState && (
