@@ -30,6 +30,8 @@ export type CreateMultipartResponse = { uploadId: string };
 export type SignPartResponse = { url: string };
 export type CompletedPart = { partNumber: number; etag: string };
 
+export type RestoreResponse = { restored: string[]; missing: string[] };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -84,6 +86,7 @@ export const api = {
     call<{ ok: true }>('/multipart/complete', { key, uploadId, parts }),
   abortMultipart: (key: string, uploadId: string) =>
     call<{ ok: true }>('/multipart/abort', { key, uploadId }),
+  restore: (keys: string[]) => call<RestoreResponse>('/restore', { keys }),
   moveFile: (from: string, to: string) =>
     call<MoveResponse>('/move', { kind: 'file', from, to }),
   moveFolder: (fromPrefix: string, toPrefix: string) =>
