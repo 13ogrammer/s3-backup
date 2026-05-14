@@ -85,6 +85,9 @@ export default function BrowseScreen() {
   const [error, setError] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
+  const [nextToken, setNextToken] = useState<string | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
@@ -166,32 +169,39 @@ export default function BrowseScreen() {
     }
   }
 
+  const rowsFromResponse = useCallback((res: ListResponse): Row[] => {
+    const folderRows: Row[] = res.folders.map((p) => ({
+      kind: 'folder',
+      prefix: p,
+      name: basename(p),
+    }));
+    const fileRows: Row[] = res.files.map((f) => ({
+      kind: 'file',
+      key: f.key,
+      name: basename(f.key),
+      size: f.size,
+      lastModified: f.lastModified,
+      mediaKind: f.kind,
+      previewUrl: f.previewUrl,
+    }));
+    return [...folderRows, ...fileRows];
+  }, []);
+
   const load = useCallback(async (prefix: string, mode: 'fresh' | 'refresh' = 'fresh') => {
     const cfg = await loadConfig();
     if (!cfg) {
       setError('Not configured. Open the Settings tab and add your backend URL + token.');
       setRows([]);
+      setNextToken(undefined);
       return;
     }
     if (mode === 'fresh') setLoading(true);
     setError(null);
     try {
-      const res: ListResponse = await api.list(prefix);
-      const folderRows: Row[] = res.folders.map((p) => ({
-        kind: 'folder',
-        prefix: p,
-        name: basename(p),
-      }));
-      const fileRows: Row[] = res.files.map((f) => ({
-        kind: 'file',
-        key: f.key,
-        name: basename(f.key),
-        size: f.size,
-        lastModified: f.lastModified,
-        mediaKind: f.kind,
-        previewUrl: f.previewUrl,
-      }));
-      setRows([...folderRows, ...fileRows]);
+      const res: ListResponse = await api.list({ prefix });
+      if (prefix !== path) return; // stale response, user moved on
+      setRows(rowsFromResponse(res));
+      setNextToken(res.nextToken);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -201,6 +211,7 @@ export default function BrowseScreen() {
             : 'Unknown error';
       setError(message);
       setRows([]);
+      setNextToken(undefined);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -208,9 +219,26 @@ export default function BrowseScreen() {
   }, []);
 
   useEffect(() => {
+    setNextToken(undefined);
     load(path);
     setSelection(emptySelection());
   }, [path, load]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextToken || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.list({ prefix: path, continuationToken: nextToken });
+      if (res.prefix !== path) return;
+      setRows((prev) => [...prev, ...rowsFromResponse(res)]);
+      setNextToken(res.nextToken);
+    } catch (err) {
+      // Don't disrupt the list on a paging error — let user pull-to-refresh.
+      console.warn('loadMore failed', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextToken, loadingMore, path, rowsFromResponse]);
 
   function goUp() {
     if (path === '') return;
@@ -483,8 +511,17 @@ export default function BrowseScreen() {
                 ItemSeparatorComponent: () => <View style={{ height: Spacing.sm }} />,
               })}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <ThemedText style={styles.empty}>This folder is empty.</ThemedText>
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: Spacing.lg }}>
+                <ActivityIndicator />
+              </View>
+            ) : null
           }
           renderItem={({ item }) => {
             const selected = isSelected(item);

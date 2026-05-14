@@ -1,4 +1,4 @@
-export type ListRequest = { prefix?: string };
+export type ListRequest = { prefix?: string; continuationToken?: string };
 export type ListedFile = {
   key: string;
   size: number;
@@ -10,6 +10,7 @@ export type ListResponse = {
   prefix: string;
   folders: string[];
   files: ListedFile[];
+  nextToken?: string;
 };
 
 export type SignUploadRequest = { key: string; contentType: string };
