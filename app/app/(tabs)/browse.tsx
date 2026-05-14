@@ -92,6 +92,14 @@ export default function BrowseScreen() {
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  type Filter = 'all' | 'image' | 'video';
+  const FILTER_LABELS: Record<Filter, string> = {
+    all: 'All',
+    image: 'Images',
+    video: 'Videos',
+  };
+
+  const [filter, setFilter] = useState<Filter>('all');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -99,7 +107,17 @@ export default function BrowseScreen() {
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
 
-  const sortedRows = [...rows].sort((a, b) => compareRows(a, b, sortField, sortDir));
+  const sortedRows = [...rows]
+    .filter((r) => {
+      if (filter === 'all') return true;
+      if (r.kind === 'folder') return true;
+      return r.mediaKind === filter;
+    })
+    .sort((a, b) => compareRows(a, b, sortField, sortDir));
+
+  function cycleFilter() {
+    setFilter((f) => (f === 'all' ? 'image' : f === 'image' ? 'video' : 'all'));
+  }
 
   function cycleSortField() {
     setSortField((f) => (f === 'name' ? 'date' : f === 'date' ? 'size' : 'name'));
@@ -430,6 +448,22 @@ export default function BrowseScreen() {
           />
           {rows.length > 0 && (
             <View style={[styles.toolbar, { backgroundColor: colors.background }]}>
+              <Pressable
+                onPress={cycleFilter}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.sortChip,
+                  {
+                    backgroundColor:
+                      filter === 'all' ? colors.surfaceMuted : colors.accentSoft,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                ]}
+                accessibilityLabel={`Filter: ${FILTER_LABELS[filter]} (tap to cycle)`}>
+                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
+                  {FILTER_LABELS[filter]}
+                </ThemedText>
+              </Pressable>
               <Pressable
                 onPress={cycleSortField}
                 hitSlop={6}

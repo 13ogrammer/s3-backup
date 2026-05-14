@@ -31,10 +31,7 @@ Tick items off as they land.
 
 ## Browse
 
-- [ ] **Filter by media type**
-  Toolbar chip(s) to filter the current folder to images only / videos
-  only / all. Client-side filter over the loaded rows; folders always
-  remain visible.
+- [x] **Filter by media type** — toolbar gains a third chip that cycles All → Images → Videos. Client-side filter over loaded rows; folders always remain visible regardless. Active filter (not "All") is tinted with `accentSoft` so it stands out.
 
 - [ ] **Search by name**
   Collapsible search input above the list. Substring match on basename.
