@@ -117,4 +117,4 @@ Tick items off as they land.
 ## Distribution
 
 - [x] **EAS Build configs + open-source README** — `app/eas.json` with development / preview / production profiles. Root README walks through the full install (deploy backend → patch `app.json` IDs → EAS build → paste API URL + token in Settings → optional thumb backfill).
-- [ ] **Launch Stack button** — `backend/README.md` documents the exact `sam package` + `aws s3 cp --acl public-read` recipe to publish the template publicly and the HTML snippet for the button. Pending: actually host the template at a stable public URL once the repo is published, then drop the button into the root README's "Deploy" section.
+- [x] **Launch Stack button + publish pipeline** — `backend/scripts/bootstrap-dist-bucket.sh` + `publish-template.sh` (exposed as `npm run bootstrap:dist-bucket` and `npm run publish:template`) handle the one-time public-read S3 bucket setup and the per-release `sam build && sam package && aws s3 cp` chain. Root README has the Launch Stack button with a `REPLACE-WITH-YOUR-DIST-BUCKET` placeholder for maintainers to fill in after the first publish.

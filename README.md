@@ -30,8 +30,15 @@ design.
 The backend is a single AWS Lambda + API Gateway behind a SAM
 CloudFormation stack. Two paths:
 
-**One-click (Launch Stack):** *(coming once a public template URL is
-published — see [`backend/README.md`](./backend/README.md#deploy-launch-stack--no-cli))*
+**One-click (Launch Stack):**
+
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?templateURL=https://REPLACE-WITH-YOUR-DIST-BUCKET.s3.amazonaws.com/s3-backup-template.yaml)
+
+> Maintainers: replace the `REPLACE-WITH-YOUR-DIST-BUCKET` placeholder
+> with your published template URL. See
+> [`backend/README.md`](./backend/README.md#publishing-the-launch-stack-template)
+> for the `npm run bootstrap:dist-bucket` + `npm run publish:template`
+> flow.
 
 **CLI:**
 
