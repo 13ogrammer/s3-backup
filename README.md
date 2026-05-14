@@ -10,13 +10,16 @@ your photo/video bytes never traverse the backend.
 ```
 s3-backup/
 ├── app/       Expo (React Native) mobile app — iOS + Android
-└── backend/   AWS Lambda + API Gateway (SAM) — deploys to your AWS account
+├── backend/   AWS Lambda + API Gateway (SAM) — deploys to your AWS account
+└── docs/      Architecture, monetisation, backlog
 ```
 
-## Status
+## Documentation
 
-V1 in progress. See `/Users/prabs/.claude/plans/i-want-to-create-crystalline-papert.md`
-for the high-level plan.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design, tech stack, endpoint reference.
+- [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) — cost model and the open-source / hosted-tier plan.
+- [`docs/BACKLOG.md`](./docs/BACKLOG.md) — deferred improvements; pick the next thing to build here.
+- [`CLAUDE.md`](./CLAUDE.md) — conventions and gotchas when continuing development.
 
 ## How it works
 
