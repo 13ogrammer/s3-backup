@@ -33,10 +33,7 @@ Tick items off as they land.
 
 - [x] **Filter by media type** — toolbar gains a third chip that cycles All → Images → Videos. Client-side filter over loaded rows; folders always remain visible regardless. Active filter (not "All") is tinted with `accentSoft` so it stands out.
 
-- [ ] **Search by name**
-  Collapsible search input above the list. Substring match on basename.
-  Decide whether search triggers a deeper scan or only filters loaded
-  items (depends on whether infinite scroll lands first).
+- [x] **Search by name** — always-visible search bar above the sort toolbar (only when there's content). Client-side case-insensitive substring match on file/folder basename. Composes with the media-type filter. Empty-list state copy distinguishes "no matches" from "folder is empty".
 
 - [x] **Infinite scroll for large folders** — `/list` now takes `continuationToken`, returns `nextToken`, page size 500. Browse paginates via `onEndReached`; stale responses are dropped if path changes mid-fetch.
 
