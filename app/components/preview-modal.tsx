@@ -3,6 +3,7 @@ import {
   downloadAsync,
   deleteAsync,
 } from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useState } from 'react';
@@ -85,6 +86,27 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       cancelled = true;
     };
   }, [visible, current]);
+
+  // Prefetch adjacent image URLs so Prev/Next opens instantly.
+  useEffect(() => {
+    if (!visible) return;
+    const neighbors = [index - 1, index + 1]
+      .filter((i) => i >= 0 && i < files.length)
+      .map((i) => files[i])
+      .filter((f): f is PreviewFile => !!f && f.kind === 'image');
+    let cancelled = false;
+    for (const f of neighbors) {
+      api
+        .signDownload(f.key)
+        .then(({ url: u }) => {
+          if (!cancelled) Image.prefetch(u);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, index, files]);
 
   async function onDownload() {
     if (!current || !url) return;

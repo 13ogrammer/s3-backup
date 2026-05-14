@@ -18,7 +18,7 @@ import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiError } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
-import { inferContentType, uploadFile } from '@/lib/upload';
+import { inferContentType, uploadAsset } from '@/lib/upload';
 
 const COLUMNS = 3;
 const SPACING = 4;
@@ -106,7 +106,8 @@ export default function GalleryScreen() {
       );
 
       try {
-        await uploadFile(asset.uri, key, contentType, (p) => {
+        const isImage = asset.type === 'image' || contentType.startsWith('image/');
+        await uploadAsset(asset.uri, key, contentType, isImage, (p) => {
           setUploadState((s) =>
             s
               ? { ...s, currentBytesSent: p.bytesSent, currentBytesTotal: p.bytesTotal }
