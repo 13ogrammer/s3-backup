@@ -39,8 +39,37 @@ Settings screen along with your bootstrap token.
 
 ## Deploy (Launch Stack — no CLI)
 
-Coming in Phase 6. Will add a `[![Launch Stack](...)](...)` button here that
-opens the AWS Console with the template pre-filled.
+The CloudFormation template `template.yaml` can be deployed via a
+"Launch Stack" button in the AWS Console, no CLI needed. To make the
+button work in this repo:
+
+1. Build and package the template, uploading assets to a public S3
+   bucket you control:
+
+   ```bash
+   sam build
+   sam package \
+     --s3-bucket your-public-template-bucket \
+     --output-template-file packaged.yaml
+   aws s3 cp packaged.yaml \
+     s3://your-public-template-bucket/s3-backup-template.yaml \
+     --acl public-read
+   ```
+
+2. The resulting public template URL is what the Launch Stack button
+   points at. The button HTML is:
+
+   ```html
+   <a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new?templateURL=https://your-public-template-bucket.s3.amazonaws.com/s3-backup-template.yaml">
+     <img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" alt="Launch Stack">
+   </a>
+   ```
+
+   Put it in the root README under "Deploy". One-click install: the
+   user picks region, fills in `BootstrapToken` (and optionally
+   `BucketName`), and clicks Create.
+
+Until a public template URL exists, fall back to `sam deploy --guided`.
 
 ## Local dev (MinIO + Node, no SAM/Docker for the backend itself)
 
