@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.aws-sam/
+.expo/
+.env
+.env.local
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build output
+*.tsbuildinfo
