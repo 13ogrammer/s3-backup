@@ -14,7 +14,7 @@ import {
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiError } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
@@ -149,7 +149,7 @@ export default function GalleryScreen() {
               styles.primaryButton,
               { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
             ]}>
-            <ThemedText lightColor="#fff" darkColor="#000" style={styles.primaryButtonText}>
+            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
               Add photos / videos
             </ThemedText>
           </Pressable>
@@ -166,8 +166,8 @@ export default function GalleryScreen() {
               <Pressable
                 onPress={onAddPhotos}
                 style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+                  styles.chip,
+                  { backgroundColor: colors.accentSoft, opacity: pressed ? 0.7 : 1 },
                 ]}>
                 <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>
                   + Add more
@@ -176,8 +176,8 @@ export default function GalleryScreen() {
               <Pressable
                 onPress={clearAll}
                 style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: colors.icon, opacity: pressed ? 0.7 : 1 },
+                  styles.chip,
+                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
                 ]}>
                 <ThemedText>Clear</ThemedText>
               </Pressable>
@@ -218,7 +218,7 @@ export default function GalleryScreen() {
               styles.primaryButton,
               { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
             ]}>
-            <ThemedText lightColor="#fff" darkColor="#000" style={styles.primaryButtonText}>
+            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
               Upload…
             </ThemedText>
           </Pressable>
@@ -296,22 +296,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
-    padding: 24,
+    gap: Spacing.lg,
+    padding: Spacing.xl,
   },
   hint: { textAlign: 'center', opacity: 0.7 },
   headerRow: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: SPACING,
+    gap: Spacing.sm,
+    paddingHorizontal: SPACING * 2,
     paddingBottom: SPACING * 2,
-    paddingTop: SPACING,
+    paddingTop: Spacing.md,
   },
-  smallButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
   },
   videoBadge: {
     position: 'absolute',
@@ -338,18 +337,18 @@ const styles = StyleSheet.create({
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 28,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl + 8,
+    ...Shadow.cardElevated,
   },
   primaryButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: 14,
+    borderRadius: Radius.md,
   },
-  primaryButtonText: { fontWeight: '600' },
+  primaryButtonText: { fontWeight: '600', fontSize: 15 },
   uploadOverlay: {
     position: 'absolute',
     top: 0,
@@ -362,10 +361,11 @@ const styles = StyleSheet.create({
   },
   uploadCard: {
     width: '80%',
-    padding: 20,
-    borderRadius: 12,
-    gap: 8,
+    padding: Spacing.xl,
+    borderRadius: Radius.lg,
+    gap: Spacing.sm,
     alignItems: 'center',
+    ...Shadow.cardElevated,
   },
   progressBarBg: {
     width: '100%',
