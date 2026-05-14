@@ -12,6 +12,7 @@ export type ListResponse = {
   prefix: string;
   folders: string[];
   files: ListedFile[];
+  nextToken?: string;
 };
 
 export type SignedUrlResponse = { url: string; expiresIn: number };
@@ -61,7 +62,8 @@ export async function healthCheck(config: AppConfig): Promise<boolean> {
 }
 
 export const api = {
-  list: (prefix?: string) => call<ListResponse>('/list', { prefix }),
+  list: (params: { prefix?: string; continuationToken?: string } = {}) =>
+    call<ListResponse>('/list', params),
   signUpload: (key: string, contentType: string) =>
     call<SignedUrlResponse>('/sign-upload', { key, contentType }),
   signDownload: (key: string) => call<SignedUrlResponse>('/sign-download', { key }),

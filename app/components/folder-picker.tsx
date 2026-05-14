@@ -35,7 +35,7 @@ export function FolderPicker({ visible, onClose, onPick }: Props) {
   const load = useCallback(async (prefix: string) => {
     setLoading(true);
     try {
-      const res = await api.list(prefix);
+      const res = await api.list({ prefix });
       setFolders(res.folders);
     } catch (err) {
       Alert.alert(

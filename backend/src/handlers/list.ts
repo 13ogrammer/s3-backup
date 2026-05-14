@@ -3,9 +3,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizePrefix } from '../s3.js';
 import { THUMB_PREFIX, thumbKey, thumbPrefix } from '../thumbs.js';
-import type { ListResponse, ListedFile } from '../types.js';
+import type { ListRequest, ListResponse, ListedFile } from '../types.js';
 
 const PREVIEW_TTL = 60 * 10;
+const PAGE_SIZE = 500;
 
 async function listThumbKeys(prefix: string): Promise<Set<string>> {
   const found = new Set<string>();
@@ -27,43 +28,39 @@ async function listThumbKeys(prefix: string): Promise<Set<string>> {
   return found;
 }
 
-export async function list(body: { prefix?: string }): Promise<ListResponse> {
+export async function list(body: ListRequest): Promise<ListResponse> {
   const prefix = sanitizePrefix(body.prefix);
 
-  const [regular, thumbKeys] = await Promise.all([
-    (async () => {
-      const folders: string[] = [];
-      const files: Array<{ key: string; size: number; lastModified: string }> = [];
-      let continuationToken: string | undefined;
-      do {
-        const res = await s3.send(
-          new ListObjectsV2Command({
-            Bucket: BUCKET,
-            Prefix: prefix,
-            Delimiter: '/',
-            ContinuationToken: continuationToken,
-          }),
-        );
-        for (const cp of res.CommonPrefixes ?? []) {
-          if (cp.Prefix && cp.Prefix !== THUMB_PREFIX) folders.push(cp.Prefix);
-        }
-        for (const obj of res.Contents ?? []) {
-          if (!obj.Key || obj.Key === prefix) continue;
-          files.push({
-            key: obj.Key,
-            size: obj.Size ?? 0,
-            lastModified: obj.LastModified?.toISOString() ?? '',
-          });
-        }
-        continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
-      } while (continuationToken);
-      return { folders, files };
-    })(),
+  const [pageRes, thumbKeys] = await Promise.all([
+    s3.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+        Delimiter: '/',
+        ContinuationToken: body.continuationToken,
+        MaxKeys: PAGE_SIZE,
+      }),
+    ),
     listThumbKeys(prefix),
   ]);
 
+  const folders: string[] = [];
+  for (const cp of pageRes.CommonPrefixes ?? []) {
+    if (cp.Prefix && cp.Prefix !== THUMB_PREFIX) folders.push(cp.Prefix);
+  }
+
+  const rawFiles: Array<{ key: string; size: number; lastModified: string }> = [];
+  for (const obj of pageRes.Contents ?? []) {
+    if (!obj.Key || obj.Key === prefix) continue;
+    rawFiles.push({
+      key: obj.Key,
+      size: obj.Size ?? 0,
+      lastModified: obj.LastModified?.toISOString() ?? '',
+    });
+  }
+
   const files: ListedFile[] = await Promise.all(
-    regular.files.map(async (f) => {
+    rawFiles.map(async (f) => {
       const kind = classifyKey(f.key);
       let previewUrl: string | undefined;
       if (kind === 'image') {
@@ -79,5 +76,10 @@ export async function list(body: { prefix?: string }): Promise<ListResponse> {
     }),
   );
 
-  return { prefix, folders: regular.folders, files };
+  return {
+    prefix,
+    folders,
+    files,
+    nextToken: pageRes.IsTruncated ? pageRes.NextContinuationToken : undefined,
+  };
 }
