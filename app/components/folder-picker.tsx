@@ -13,7 +13,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
 
@@ -107,14 +107,14 @@ export function FolderPicker({ visible, onClose, onPick }: Props) {
           </Pressable>
         </View>
 
-        <View style={[styles.breadcrumb, { borderColor: colors.icon }]}>
+        <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
           {path !== '' && (
-            <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button">
-              <IconSymbol name="chevron.right" size={20} color={colors.tint} />
-              <ThemedText style={{ color: colors.tint }}>Up</ThemedText>
+            <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
+              <IconSymbol name="chevron.left" size={20} color={colors.tint} />
+              <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
             </Pressable>
           )}
-          <ThemedText style={styles.pathText} numberOfLines={1}>
+          <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
             /{path || '(root)'}
           </ThemedText>
         </View>
@@ -127,32 +127,40 @@ export function FolderPicker({ visible, onClose, onPick }: Props) {
           <FlatList
             data={folders}
             keyExtractor={(item) => item}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
             ListEmptyComponent={
-              <ThemedText style={styles.empty}>No subfolders. Use "New folder" or pick here.</ThemedText>
+              <ThemedText style={[styles.empty, { color: colors.muted }]}>
+                No subfolders. Use "New folder" below or tap Pick to use this folder.
+              </ThemedText>
             }
             renderItem={({ item }) => (
               <Pressable
                 onPress={() => goInto(item)}
                 style={({ pressed }) => [
                   styles.row,
-                  { borderColor: colors.icon, opacity: pressed ? 0.6 : 1 },
+                  { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
                 ]}>
                 <IconSymbol name="folder" size={22} color={colors.icon} />
                 <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
+                <IconSymbol name="chevron.right" size={18} color={colors.icon} />
               </Pressable>
             )}
           />
         )}
 
-        <View style={[styles.newFolderRow, { borderColor: colors.icon }]}>
+        <View style={[styles.newFolderRow, { backgroundColor: colors.surface }]}>
           <TextInput
             value={newName}
             onChangeText={setNewName}
             placeholder="New folder name"
-            placeholderTextColor={colors.icon}
+            placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+            style={[
+              styles.input,
+              { color: colors.text, backgroundColor: colors.surfaceMuted },
+            ]}
             onSubmitEditing={createSubfolder}
             returnKeyType="done"
           />
@@ -166,7 +174,7 @@ export function FolderPicker({ visible, onClose, onPick }: Props) {
                 opacity: pressed || !newName.trim() ? 0.5 : 1,
               },
             ]}>
-            <ThemedText lightColor="#fff" darkColor="#000" style={styles.createButtonText}>
+            <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
               Add
             </ThemedText>
           </Pressable>
@@ -182,49 +190,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
   breadcrumb: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   upButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  pathText: { flex: 1, opacity: 0.75 },
+  pathText: { flex: 1, fontSize: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
+  empty: { textAlign: 'center', padding: Spacing.xl },
+  list: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.xl },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+    ...Shadow.card,
   },
-  rowLabel: { flex: 1, fontSize: 16 },
+  rowLabel: { flex: 1, fontSize: 16, fontWeight: '500' },
   newFolderRow: {
     flexDirection: 'row',
-    gap: 8,
-    padding: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    ...Shadow.cardElevated,
   },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
     fontSize: 16,
   },
   createButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
     justifyContent: 'center',
   },
   createButtonText: { fontWeight: '600' },

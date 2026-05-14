@@ -11,7 +11,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type Props = {
@@ -56,8 +56,11 @@ export function RenameModal({ visible, title, initialValue, onCancel, onSubmit }
             autoFocus
             onSubmitEditing={submit}
             returnKeyType="done"
-            placeholderTextColor={colors.icon}
-            style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+            placeholderTextColor={colors.muted}
+            style={[
+              styles.input,
+              { color: colors.text, backgroundColor: colors.surfaceMuted },
+            ]}
           />
           <View style={styles.actions}>
             <Pressable
@@ -90,27 +93,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: Spacing.xl,
   },
   card: {
     width: '100%',
     maxWidth: 420,
-    padding: 20,
-    borderRadius: 12,
-    gap: 12,
+    padding: Spacing.xl,
+    borderRadius: Radius.lg,
+    gap: Spacing.md,
+    ...Shadow.cardElevated,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
     fontSize: 16,
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 16,
-    marginTop: 4,
+    gap: Spacing.lg,
+    marginTop: Spacing.xs,
   },
-  button: { paddingVertical: 8, paddingHorizontal: 12 },
+  button: { paddingVertical: 8, paddingHorizontal: Spacing.md },
 });

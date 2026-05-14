@@ -20,7 +20,7 @@ import { RenameModal } from '@/components/rename-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError, type ListResponse } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
@@ -378,7 +378,7 @@ export default function BrowseScreen() {
   return (
     <ThemedView style={styles.container}>
       {selectionActive ? (
-        <View style={[styles.selectionHeader, { borderColor: colors.icon }]}>
+        <View style={[styles.selectionHeader, { backgroundColor: colors.surface }]}>
           <Pressable onPress={() => setSelection(emptySelection())} hitSlop={8}>
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
           </Pressable>
@@ -398,16 +398,17 @@ export default function BrowseScreen() {
             onTap={(segs) => setPath(segs.length === 0 ? '' : segs.join('/') + '/')}
             onUp={goUp}
             accent={colors.tint}
-            muted={colors.icon}
+            muted={colors.muted}
+            background={colors.surface}
           />
           {rows.length > 0 && (
-            <View style={[styles.toolbar, { borderColor: colors.icon }]}>
+            <View style={[styles.toolbar, { backgroundColor: colors.background }]}>
               <Pressable
                 onPress={cycleSortField}
                 hitSlop={6}
                 style={({ pressed }) => [
                   styles.sortChip,
-                  { borderColor: colors.tint, opacity: pressed ? 0.6 : 1 },
+                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
                 ]}
                 accessibilityLabel={`Sort by ${SORT_LABELS[sortField]} (tap to cycle)`}>
                 <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
@@ -419,7 +420,7 @@ export default function BrowseScreen() {
                 hitSlop={6}
                 style={({ pressed }) => [
                   styles.sortChip,
-                  { borderColor: colors.tint, opacity: pressed ? 0.6 : 1 },
+                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
                 ]}
                 accessibilityLabel={`Sort direction: ${sortDir === 'asc' ? 'ascending' : 'descending'}`}>
                 <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
@@ -433,7 +434,7 @@ export default function BrowseScreen() {
                 accessibilityLabel={`Switch to ${viewMode === 'list' ? 'grid' : 'list'} view`}
                 style={({ pressed }) => [
                   styles.viewToggle,
-                  { opacity: pressed ? 0.6 : 1 },
+                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
                 ]}>
                 <IconSymbol
                   name={viewMode === 'list' ? 'square.grid.2x2' : 'list.bullet'}
@@ -473,7 +474,14 @@ export default function BrowseScreen() {
                 contentContainerStyle: { padding: GRID_SPACING },
                 columnWrapperStyle: { gap: GRID_SPACING, marginBottom: GRID_SPACING },
               }
-            : {})}
+            : {
+                contentContainerStyle: {
+                  paddingHorizontal: Spacing.lg,
+                  paddingTop: Spacing.md,
+                  paddingBottom: Spacing.xl,
+                },
+                ItemSeparatorComponent: () => <View style={{ height: Spacing.sm }} />,
+              })}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <ThemedText style={styles.empty}>This folder is empty.</ThemedText>
@@ -506,14 +514,14 @@ export default function BrowseScreen() {
         <View
           style={[
             styles.actionBar,
-            { backgroundColor: colors.background, borderColor: colors.icon },
+            { backgroundColor: colors.surface, ...Shadow.cardElevated },
           ]}>
           {singleSelected && (
             <Pressable
               onPress={() => setRenameVisible(true)}
               style={({ pressed }) => [
                 styles.actionButton,
-                { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
               ]}>
               <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
             </Pressable>
@@ -522,7 +530,7 @@ export default function BrowseScreen() {
             onPress={() => setMoveDestVisible(true)}
             style={({ pressed }) => [
               styles.actionButton,
-              { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+              { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
             ]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Move…</ThemedText>
           </Pressable>
@@ -530,9 +538,9 @@ export default function BrowseScreen() {
             onPress={confirmDelete}
             style={({ pressed }) => [
               styles.actionButton,
-              { borderColor: '#c0392b', opacity: pressed ? 0.7 : 1 },
+              { backgroundColor: colors.danger, opacity: pressed ? 0.7 : 1 },
             ]}>
-            <ThemedText style={{ color: '#c0392b', fontWeight: '600' }}>Delete</ThemedText>
+            <ThemedText style={{ color: '#fff', fontWeight: '600' }}>Delete</ThemedText>
           </Pressable>
         </View>
       )}
@@ -578,16 +586,18 @@ function Breadcrumb({
   onUp,
   accent,
   muted,
+  background,
 }: {
   segments: string[];
   onTap: (segments: string[]) => void;
   onUp: () => void;
   accent: string;
   muted: string;
+  background: string;
 }) {
   const atRoot = segments.length === 0;
   return (
-    <View style={[styles.breadcrumb, { borderColor: muted }]}>
+    <View style={[styles.breadcrumb, { backgroundColor: background }]}>
       <Pressable
         onPress={onUp}
         disabled={atRoot}
@@ -639,7 +649,7 @@ type RowRenderProps = {
   item: Row;
   selected: boolean;
   selectionActive: boolean;
-  colors: { tint: string; icon: string; text: string; background: string };
+  colors: (typeof Colors)['light'];
   onTap: () => void;
   onLongPress: () => void;
 };
@@ -660,9 +670,8 @@ function renderListRow({
       style={({ pressed }) => [
         styles.row,
         {
-          borderColor: colors.icon,
-          backgroundColor: selected ? colors.tint + '22' : undefined,
-          opacity: pressed ? 0.6 : 1,
+          backgroundColor: selected ? colors.accentSoft : colors.surface,
+          opacity: pressed ? 0.7 : 1,
         },
       ]}>
       {selectionActive && (
@@ -800,12 +809,11 @@ const styles = StyleSheet.create({
   breadcrumb: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   breadcrumbInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: 16,
+    paddingRight: Spacing.lg,
     paddingVertical: 10,
   },
   upButton: {
@@ -816,17 +824,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    ...Shadow.card,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+    ...Shadow.card,
   },
   checkbox: {
     width: 22,
@@ -837,12 +846,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxMark: { fontWeight: '700', fontSize: 13 },
-  rowLabel: { fontSize: 16 },
-  rowMeta: { fontSize: 12, opacity: 0.6, marginTop: 2 },
+  rowLabel: { fontSize: 16, fontWeight: '500' },
+  rowMeta: { fontSize: 12, opacity: 0.7, marginTop: 2 },
   thumb: {
     width: THUMB_SIZE,
     height: THUMB_SIZE,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     backgroundColor: 'rgba(0,0,0,0.05)',
   },
   thumbSlot: {
@@ -860,26 +869,28 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
   },
   sortChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
   },
-  sortChipText: { fontSize: 12, fontWeight: '600' },
+  sortChipText: { fontSize: 13, fontWeight: '600' },
   viewToggle: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    width: 36,
+    height: 32,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridTile: {
     width: GRID_TILE,
     height: GRID_TILE,
-    borderRadius: 6,
+    borderRadius: Radius.lg,
     overflow: 'hidden',
     backgroundColor: 'rgba(0,0,0,0.05)',
   },
@@ -902,7 +913,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderWidth: 3,
-    borderRadius: 6,
+    borderRadius: Radius.lg,
   },
   gridCheck: {
     position: 'absolute',
@@ -934,17 +945,15 @@ const styles = StyleSheet.create({
   },
   actionBar: {
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 28,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl + 8,
   },
   actionButton: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: Radius.md,
     alignItems: 'center',
   },
   busyOverlay: {

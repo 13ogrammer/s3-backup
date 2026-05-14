@@ -13,7 +13,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
@@ -107,37 +107,44 @@ export default function SettingsScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <ThemedView style={styles.container}>
-          <ThemedText type="subtitle">Backend</ThemedText>
-          <ThemedText style={styles.hint}>
+          <ThemedText style={[styles.hint, { color: colors.muted }]}>
             Paste the API URL and bootstrap token from your backend deploy.
           </ThemedText>
 
-          <View style={styles.field}>
-            <ThemedText type="defaultSemiBold">API URL</ThemedText>
-            <TextInput
-              value={backendUrl}
-              onChangeText={setBackendUrl}
-              placeholder="https://xxxxx.execute-api.region.amazonaws.com"
-              placeholderTextColor={colors.icon}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-            />
-          </View>
+          <View style={[styles.card, { backgroundColor: colors.surface }]}>
+            <View style={styles.field}>
+              <ThemedText style={styles.fieldLabel}>API URL</ThemedText>
+              <TextInput
+                value={backendUrl}
+                onChangeText={setBackendUrl}
+                placeholder="https://xxxxx.execute-api.region.amazonaws.com"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                style={[
+                  styles.input,
+                  { color: colors.text, backgroundColor: colors.surfaceMuted },
+                ]}
+              />
+            </View>
 
-          <View style={styles.field}>
-            <ThemedText type="defaultSemiBold">Bootstrap token</ThemedText>
-            <TextInput
-              value={bootstrapToken}
-              onChangeText={setBootstrapToken}
-              placeholder="64-character hex string"
-              placeholderTextColor={colors.icon}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-            />
+            <View style={styles.field}>
+              <ThemedText style={styles.fieldLabel}>Bootstrap token</ThemedText>
+              <TextInput
+                value={bootstrapToken}
+                onChangeText={setBootstrapToken}
+                placeholder="64-character hex string"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                style={[
+                  styles.input,
+                  { color: colors.text, backgroundColor: colors.surfaceMuted },
+                ]}
+              />
+            </View>
           </View>
 
           <View style={styles.buttonRow}>
@@ -149,7 +156,7 @@ export default function SettingsScreen() {
                 styles.button,
                 { backgroundColor: colors.tint, opacity: pressed || busy ? 0.7 : 1 },
               ]}>
-              <ThemedText style={styles.buttonText} lightColor="#fff" darkColor="#000">
+              <ThemedText style={[styles.buttonText, { color: colors.onAccent }]}>
                 Save
               </ThemedText>
             </Pressable>
@@ -159,8 +166,7 @@ export default function SettingsScreen() {
               onPress={onTest}
               style={({ pressed }) => [
                 styles.button,
-                styles.buttonSecondary,
-                { borderColor: colors.tint, opacity: pressed || busy ? 0.7 : 1 },
+                { backgroundColor: colors.surfaceMuted, opacity: pressed || busy ? 0.7 : 1 },
               ]}>
               <ThemedText style={[styles.buttonText, { color: colors.tint }]}>Test</ThemedText>
             </Pressable>
@@ -170,7 +176,9 @@ export default function SettingsScreen() {
             accessibilityRole="button"
             onPress={onClear}
             style={styles.clearButton}>
-            <ThemedText style={{ color: '#c0392b' }}>Clear stored settings</ThemedText>
+            <ThemedText style={{ color: colors.danger, fontWeight: '500' }}>
+              Clear stored settings
+            </ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -179,26 +187,30 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
+  container: { flex: 1, padding: Spacing.lg, gap: Spacing.md },
   center: { alignItems: 'center', justifyContent: 'center' },
   scroll: { flexGrow: 1 },
-  hint: { opacity: 0.7 },
-  field: { gap: 6 },
+  hint: { fontSize: 14, marginBottom: Spacing.xs, marginTop: Spacing.xs },
+  card: {
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
+    gap: Spacing.lg,
+  },
+  field: { gap: Spacing.xs },
+  fieldLabel: { fontSize: 13, fontWeight: '600' },
   input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
     fontSize: 16,
   },
-  buttonRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  buttonRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xs },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: Radius.md,
     alignItems: 'center',
   },
-  buttonSecondary: { backgroundColor: 'transparent', borderWidth: 1 },
-  buttonText: { fontWeight: '600' },
-  clearButton: { marginTop: 24, alignItems: 'center', paddingVertical: 8 },
+  buttonText: { fontWeight: '600', fontSize: 15 },
+  clearButton: { marginTop: Spacing.xl, alignItems: 'center', paddingVertical: 8 },
 });

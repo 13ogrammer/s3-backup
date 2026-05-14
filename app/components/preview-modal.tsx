@@ -19,8 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ZoomableImage } from '@/components/zoomable-image';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
 import { basename } from '@/lib/format';
@@ -133,10 +134,17 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.backdrop}>
           <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button">
-              <ThemedText style={styles.closeText} lightColor="#fff" darkColor="#fff">
-                Close
-              </ThemedText>
+            <Pressable
+              onPress={onClose}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Close preview"
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                styles.headerChipMuted,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}>
+              <IconSymbol name="xmark" size={20} color="#fff" />
             </Pressable>
             <View style={styles.headerCenter}>
               <ThemedText
@@ -158,14 +166,21 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             <Pressable
               onPress={onDownload}
               disabled={!url || downloading}
-              hitSlop={12}
-              accessibilityRole="button">
-              <ThemedText
-                style={[styles.actionText, { opacity: !url || downloading ? 0.5 : 1 }]}
-                lightColor="#fff"
-                darkColor="#fff">
-                {downloading ? 'Downloading…' : 'Download'}
-              </ThemedText>
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Download"
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                {
+                  backgroundColor: colors.tint,
+                  opacity: !url || downloading ? 0.5 : pressed ? 0.7 : 1,
+                },
+              ]}>
+              {downloading ? (
+                <ActivityIndicator size="small" color={colors.onAccent} />
+              ) : (
+                <IconSymbol name="arrow.down.to.line" size={20} color={colors.onAccent} />
+              )}
             </Pressable>
           </View>
 
@@ -204,42 +219,32 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
               <Pressable
                 onPress={goPrev}
                 disabled={!hasPrev}
-                hitSlop={12}
+                hitSlop={8}
                 style={({ pressed }) => [
                   styles.navButton,
-                  {
-                    borderColor: hasPrev ? '#fff' : 'rgba(255,255,255,0.3)',
-                    opacity: pressed || !hasPrev ? 0.5 : 1,
-                  },
+                  styles.headerChipMuted,
+                  { opacity: !hasPrev ? 0.35 : pressed ? 0.6 : 1 },
                 ]}>
                 <ThemedText
                   lightColor="#fff"
                   darkColor="#fff"
-                  style={[
-                    styles.navText,
-                    { opacity: hasPrev ? 1 : 0.4 },
-                  ]}>
+                  style={styles.navText}>
                   ← Prev
                 </ThemedText>
               </Pressable>
               <Pressable
                 onPress={goNext}
                 disabled={!hasNext}
-                hitSlop={12}
+                hitSlop={8}
                 style={({ pressed }) => [
                   styles.navButton,
-                  {
-                    borderColor: hasNext ? '#fff' : 'rgba(255,255,255,0.3)',
-                    opacity: pressed || !hasNext ? 0.5 : 1,
-                  },
+                  styles.headerChipMuted,
+                  { opacity: !hasNext ? 0.35 : pressed ? 0.6 : 1 },
                 ]}>
                 <ThemedText
                   lightColor="#fff"
                   darkColor="#fff"
-                  style={[
-                    styles.navText,
-                    { opacity: hasNext ? 1 : 0.4 },
-                  ]}>
+                  style={styles.navText}>
                   Next →
                 </ThemedText>
               </Pressable>
@@ -260,36 +265,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 12,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
-  filename: { fontWeight: '600' },
+  filename: { fontWeight: '600', fontSize: 15 },
   counter: { fontSize: 12, opacity: 0.7, marginTop: 2 },
-  closeText: { fontSize: 16 },
-  actionText: { fontSize: 16, fontWeight: '600' },
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerChipMuted: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
   body: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
   noPreview: {
-    margin: 24,
-    padding: 24,
-    borderRadius: 12,
-    gap: 8,
+    margin: Spacing.xl,
+    padding: Spacing.xl,
+    borderRadius: Radius.lg,
+    gap: Spacing.sm,
     alignItems: 'center',
   },
   navBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    gap: 12,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    gap: Spacing.md,
   },
   navButton: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: Radius.md,
     alignItems: 'center',
   },
   navText: { fontSize: 15, fontWeight: '600' },

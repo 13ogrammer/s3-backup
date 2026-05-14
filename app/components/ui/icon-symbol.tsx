@@ -25,6 +25,8 @@ const MAPPING = {
   'gearshape': 'settings',
   'list.bullet': 'view-list',
   'square.grid.2x2': 'view-module',
+  'xmark': 'close',
+  'arrow.down.to.line': 'file-download',
 } as IconMapping;
 
 /**

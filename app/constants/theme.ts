@@ -1,41 +1,94 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+const tintLight = '#6366f1';
+const tintDark = '#818cf8';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: '#0f172a',
+    muted: '#64748b',
+    background: '#f8fafc',
+    surface: '#ffffff',
+    surfaceMuted: '#f1f5f9',
+    surfaceElevated: '#ffffff',
+    tint: tintLight,
+    accentSoft: '#eef2ff',
+    icon: '#94a3b8',
+    tabIconDefault: '#94a3b8',
+    tabIconSelected: tintLight,
+    border: '#e2e8f0',
+    divider: '#e2e8f0',
+    danger: '#dc2626',
+    onAccent: '#ffffff',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: '#e2e8f0',
+    muted: '#94a3b8',
+    background: '#0b0f17',
+    surface: '#1a2030',
+    surfaceMuted: '#141a26',
+    surfaceElevated: '#212a3d',
+    tint: tintDark,
+    accentSoft: '#1e1b4b',
+    icon: '#64748b',
+    tabIconDefault: '#64748b',
+    tabIconSelected: tintDark,
+    border: '#1e293b',
+    divider: '#1e293b',
+    danger: '#f87171',
+    onAccent: '#0b0f17',
   },
+};
+
+export const Radius = {
+  sm: 8,
+  md: 10,
+  lg: 14,
+  xl: 20,
+  pill: 999,
+};
+
+export const Spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+};
+
+export const Shadow = {
+  card: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cardElevated: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+};
+
+export const Type = {
+  largeTitle: { fontSize: 32, fontWeight: '700' as const, lineHeight: 38 },
+  title: { fontSize: 24, fontWeight: '700' as const, lineHeight: 30 },
+  section: { fontSize: 20, fontWeight: '600' as const, lineHeight: 26 },
+  body: { fontSize: 16, fontWeight: '400' as const, lineHeight: 22 },
+  bodyStrong: { fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
+  label: { fontSize: 14, fontWeight: '500' as const, lineHeight: 20 },
+  meta: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
 };
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
