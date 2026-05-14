@@ -26,6 +26,10 @@ export type MoveResponse = { moved: number };
 
 export type ExistsResponse = { existing: string[] };
 
+export type CreateMultipartResponse = { uploadId: string };
+export type SignPartResponse = { url: string };
+export type CompletedPart = { partNumber: number; etag: string };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -72,6 +76,14 @@ export const api = {
   delete: (params: { keys?: string[]; prefixes?: string[] }) =>
     call<DeleteResponse>('/delete', params),
   exists: (keys: string[]) => call<ExistsResponse>('/exists', { keys }),
+  createMultipart: (key: string, contentType: string) =>
+    call<CreateMultipartResponse>('/multipart/create', { key, contentType }),
+  signPart: (key: string, uploadId: string, partNumber: number) =>
+    call<SignPartResponse>('/multipart/sign-part', { key, uploadId, partNumber }),
+  completeMultipart: (key: string, uploadId: string, parts: CompletedPart[]) =>
+    call<{ ok: true }>('/multipart/complete', { key, uploadId, parts }),
+  abortMultipart: (key: string, uploadId: string) =>
+    call<{ ok: true }>('/multipart/abort', { key, uploadId }),
   moveFile: (from: string, to: string) =>
     call<MoveResponse>('/move', { kind: 'file', from, to }),
   moveFolder: (fromPrefix: string, toPrefix: string) =>

@@ -9,6 +9,12 @@ import { signDownload } from './handlers/signDownload.js';
 import { del } from './handlers/del.js';
 import { exists } from './handlers/exists.js';
 import { move } from './handlers/move.js';
+import {
+  abortMultipart,
+  completeMultipart,
+  createMultipart,
+  signPart,
+} from './handlers/multipart.js';
 
 type Route = (body: any) => Promise<unknown>;
 
@@ -19,6 +25,10 @@ const routes: Record<string, Route> = {
   'POST /delete': del,
   'POST /exists': exists,
   'POST /move': move,
+  'POST /multipart/create': createMultipart,
+  'POST /multipart/sign-part': signPart,
+  'POST /multipart/complete': completeMultipart,
+  'POST /multipart/abort': abortMultipart,
 };
 
 export const handler = async (
