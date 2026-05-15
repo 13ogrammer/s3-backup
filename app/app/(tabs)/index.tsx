@@ -9,7 +9,6 @@ import {
   Dimensions,
   FlatList,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -295,14 +294,13 @@ export default function GalleryScreen() {
       toUpload,
       async (entry) => {
         const { asset, filename } = entry;
-        // iOS gives a ph:// URI in the asset list — getAssetInfoAsync returns
-        // a file:// localUri the upload pipeline can read. Android already
-        // returns a usable URI here and getAssetInfoAsync would trigger
-        // ACCESS_MEDIA_LOCATION (not declared, not needed for upload).
-        const localUri =
-          Platform.OS === 'ios'
-            ? (await MediaLibrary.getAssetInfoAsync(asset.id)).localUri || asset.uri
-            : asset.uri;
+        // iOS gives a ph:// URI in the asset list — getAssetInfoAsync resolves
+        // to a readable file://. On Android the call is also needed to get
+        // the un-redacted localUri that preserves EXIF GPS (the plain
+        // asset.uri is stripped unless ACCESS_MEDIA_LOCATION is granted, which
+        // the expo-media-library plugin does via isAccessMediaLocationEnabled).
+        const info = await MediaLibrary.getAssetInfoAsync(asset.id);
+        const localUri = info.localUri || asset.uri;
         const contentType = inferContentType(filename, asset.mediaType);
         const key = prefix + filename;
         const mediaKind: 'image' | 'video' | 'other' =
