@@ -16,7 +16,7 @@ for the user-facing pitch.
 |---|---|
 | System design, tech stack, sidecar contract | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
 | Cost model, business decisions, hosted-tier plan | [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) |
-| Deferred improvements (pick the next task here) | [`docs/BACKLOG.md`](./docs/BACKLOG.md) |
+| Deferred improvements (pick the next task here) | Linear team `S3Backup` ([open issues](https://linear.app/s3backup/team/S3B/active)) |
 | Local dev runbook (MinIO + dev server) | [`backend/README.md`](./backend/README.md) |
 | App dev / build instructions | [`app/README.md`](./app/README.md) |
 
@@ -113,14 +113,17 @@ A global gitignore is in play. If you want workspace settings tracked,
 
 ## Working on a new task
 
-1. Pick an item from [`docs/BACKLOG.md`](./docs/BACKLOG.md). Read its
-   bullet for the implementation note.
+1. Pick an issue from the Linear `S3Backup` team (Todo column). The
+   description carries the implementation note migrated from the old
+   `docs/BACKLOG.md`. Historical completed items live in S3B-14
+   ("Backlog history (completed pre-Linear)") for reference.
 2. If it spans both packages, plan the contract first — types live in
    `backend/src/types.ts` and are mirrored in `app/lib/api.ts`.
 3. Implement, typecheck both packages, manually verify on device.
 4. Commit with a Conventional Commits subject and a body that
-   explains *why* (the *what* is in the diff).
-5. Strike the item off `docs/BACKLOG.md`.
+   explains *why* (the *what* is in the diff). Reference the Linear
+   ID (e.g. `S3B-9`) in the commit body so Linear auto-links it.
+5. Move the Linear issue to Done.
 
 For new work that isn't pre-planned, do a small design pass first —
 architecture-level, not file-by-file. Read the relevant existing code,

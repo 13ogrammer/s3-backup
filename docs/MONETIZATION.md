@@ -28,17 +28,15 @@ and compute stay near zero per active user. See
 
 1. **Now (v1)** — ship as open-source. Users deploy their own backend
    stack via SAM into their own AWS account. Zero hosting cost to the
-   project. The "Launch Stack" CloudFormation button in
-   [BACKLOG](./BACKLOG.md) → Distribution is the one-click install
-   path for non-technical users.
+   project. The "Launch Stack" CloudFormation button (shipped) is the
+   one-click install path for non-technical users.
 
 2. **Later (if demand justifies)** — stand up a single hosted instance
    of the same backend code, charge roughly $2–3 / month or $20 / year
    for users who don't want to touch AWS. The hosted tier connects to
    the user's own S3 bucket via a cross-account IAM role so data
    continues to live in their AWS account, not ours. Per-device auth
-   tokens ([BACKLOG](./BACKLOG.md) → "Rotatable / per-device auth
-   tokens") are prep work for this.
+   tokens (Linear S3B-8) are prep work for this.
 
 ## Other paths considered, deprioritised
 
