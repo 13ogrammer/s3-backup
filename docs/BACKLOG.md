@@ -65,6 +65,18 @@ backgrounding. Three escalating mitigations:
   Options: `react-native-background-upload` or a small expo native
   module. End-state.
 
+- [ ] **Scheduled auto-backup with pause / resume**
+  Hands-off mode that scans for new media since the last successful
+  backup and uploads them into a date-bucketed folder convention
+  (e.g. `auto/2026-05-16/`). State persisted: enabled / paused flag,
+  last-synced asset cursor, folder template. UI: a Settings toggle
+  and a Gallery status chip showing "Auto on — last ran X". Practical
+  use case: travelling, want a daily safety-net upload; flick pause
+  when home so routine photos don't auto-upload. Genuinely useful
+  only on top of **Real native background uploads** above —
+  foreground-only auto-backup is just "open the app once a day,"
+  which defeats the safety-net premise.
+
 ## Manage / Auth
 
 - [x] **Undo for last destructive operation** — snackbar appears for ~5 s after delete and move. Move undo runs the inverse `moveFile` / `moveFolder` calls. Delete undo calls a new `POST /restore` backend endpoint that removes the latest delete-marker per key (requires bucket versioning; SAM-managed buckets have it on, BYO buckets that don't are surfaced as a "couldn't be restored — versioning may not be enabled" message).
@@ -76,6 +88,37 @@ backgrounding. Three escalating mitigations:
   bootstrap-token mode as a fallback for the simplest single-user
   install. Prep work for any multi-tenant / shared-bucket future.
 
+- [ ] **Re-auth gate before destructive ops**
+  Delete and move are currently one tap away from a catastrophic
+  mistake (the snackbar undo helps but the user has 5 s to notice).
+  Add an `expo-local-authentication` step (biometric or device PIN)
+  before bulk `/delete` and large `/move`. Configurable in Settings:
+  off / biometric-on-delete / always. Layers with the existing undo,
+  doesn't replace it. Later, can compose with per-device tokens
+  above by sending a re-auth signal to the backend so the server
+  refuses the call without it.
+
+---
+
+## AI / search
+
+- [ ] **AI tagging on upload + manual overrides + tag search**
+  Auto-label uploaded images (and video keyframes) with content
+  tags, stored as a JSON sidecar at `.tags/<key>.tags.json` —
+  parallel-tree convention matching `.thumbnails/`. Two backend
+  trigger options: extend the upload-complete path, or an S3
+  ObjectCreated → Lambda hook. Browse gains a tag filter chip and a
+  tag-substring search composed with the existing media-type filter.
+  Per-file manual override modal writes back the same sidecar with a
+  `manual: true` flag so future re-tag jobs skip it. Main
+  consideration is inference cost — per-photo runs are the spend
+  driver and `docs/MONETIZATION.md` flags routing user bytes through
+  Lambda as a no-go for scale, so the cheaper architecture is
+  on-device CoreML / TFLite with the backend only persisting
+  results. The EXIF-location work (now landed) augments tag signals
+  significantly — reverse-geocoded place names compose with content
+  tags ("Tokyo + beach + sunset").
+
 ---
 
 ## Gallery polish
@@ -85,6 +128,36 @@ backgrounding. Three escalating mitigations:
 - [x] **Switch Gallery back to the inline grid (post dev-build)** — Gallery now renders `MediaLibrary.getAssetsAsync` directly with paginated load-more, permission flow, and tap-to-toggle selection. The legacy file was removed; the upload pipeline (multipart resume banner, concurrency, `/exists` collision check, keep-awake, last-folder memory) was kept intact via merge rather than a raw copy.
 
 - [x] **Preserve EXIF location on Android uploads** — `app.json` flips `expo-media-library`'s `isAccessMediaLocationEnabled` to `true` (the plugin adds `ACCESS_MEDIA_LOCATION` to the manifest and prompts at runtime). `getAssetInfoAsync` is now called on both platforms so the un-redacted localUri is used. Requires a fresh dev-client build (`npm run android` / `ios`); the first run will surface a new permission prompt.
+
+- [ ] **Group gallery by creation date + select-all per group**
+  Switch the flat `FlatList` in `app/app/(tabs)/index.tsx` to a
+  `SectionList` bucketed by `MediaLibrary.Asset.creationTime` per
+  day, with friendly headers (Today / Yesterday / weekday for the
+  last week / full date older). Tap the header to toggle-select
+  every asset in that day's group — natural for "back up everything
+  from yesterday's hike." Tile sizing unchanged; the section header
+  doubles as the select-all surface.
+
+- [ ] **Show already-backed-up state in the gallery grid**
+  `/exists` runs today only after the user picks a folder. Surface
+  it earlier so backed-up assets are visibly differentiated in the
+  grid before selection (dim tile + small cloud-checkmark badge).
+  Implementation: persist a local `assetId → remoteKey` map after
+  every successful upload (alongside the existing pending-uploads
+  state in `app/lib/uploadState.ts`); look up per visible tile.
+  Optional refinement: periodic reconcile against `/exists` for the
+  visible window so the marker survives a reinstall (no local state
+  yet) and reflects manual bucket changes from Browse.
+
+- [ ] **Free up local storage after successful backup**
+  Gallery-side affordance to delete the on-device originals once an
+  asset is confirmed in the bucket — the natural complement to
+  Browse's existing bucket-side delete. Depends on the
+  backed-up-state tracker above so we know what's safe to remove.
+  UI: a selection-bar "Delete from device" action that's enabled
+  only for tracker-confirmed-backed-up assets, with an Are-you-sure
+  prompt. (Bucket-side delete already shipped in Browse with
+  multi-select + undo via `/restore`.)
 
 ---
 
