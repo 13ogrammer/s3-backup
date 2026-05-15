@@ -111,7 +111,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
           <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
           <Pressable onPress={pickHere} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontWeight: '600', fontSize: 16 }}>
-              Pick
+              Select
             </ThemedText>
           </Pressable>
         </View>
@@ -140,7 +140,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
             ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
             ListEmptyComponent={
               <ThemedText style={[styles.empty, { color: colors.muted }]}>
-                No subfolders. Use "New folder" below or tap Pick to use this folder.
+                No subfolders. Use "New folder" below or tap Select to use this folder.
               </ThemedText>
             }
             renderItem={({ item }) => (
