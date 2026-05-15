@@ -102,20 +102,20 @@ ipconfig getifaddr en0   # en0 = WiFi on most Macs; try en1 if blank
 
 ```bash
 # 1. Start MinIO (S3 API on :9000, web console on :9001)
-npm run dev:localstack    # script name kept for muscle memory; runs `docker compose up -d`
+npm run dev:minio    # runs `docker compose up -d`
 
 # 2. Create the dev bucket inside MinIO (once per fresh volume)
 AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin AWS_DEFAULT_REGION=us-east-1 \
   aws --endpoint-url=http://localhost:9000 s3 mb s3://dev-bucket
 
-# 3. Run the dev server (loads env + watches src for changes)
-set -a && source .env && set +a && npm run dev
+# 3. Run the dev server (loads .env automatically, watches src for changes)
+npm run dev
 ```
 
 The dev server prints the URL + token to paste into the app's Settings tab.
 
 MinIO web console: <http://localhost:9001> (user `minioadmin` / pass `minioadmin`)
-Stop the container with `npm run dev:localstack:stop`.
+Stop the container with `npm run dev:minio:stop`.
 
 ### Why the LAN IP matters
 
@@ -147,8 +147,8 @@ work but thumbnails fall back to fetching the original image each time
 for every image:
 
 ```bash
-# Against MinIO local dev
-set -a && source .env && set +a && npm run backfill:thumbs
+# Against MinIO local dev (loads .env automatically)
+npm run backfill:thumbs
 
 # Against real AWS (uses your default AWS credential chain)
 BUCKET_NAME=your-bucket npm run backfill:thumbs
