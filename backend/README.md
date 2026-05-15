@@ -138,6 +138,30 @@ curl -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   -d '{"key":"hello.txt","contentType":"text/plain"}' $HOST/sign-upload
 ```
 
+## Preflight: check an existing bucket
+
+If you plan to point the stack at a pre-existing bucket (rather than
+letting it create a fresh one), run the bucket check first to verify
+the recommended settings are in place:
+
+```bash
+npm run check:bucket -- <bucket-name> [--region us-east-1]
+```
+
+Read-only — uses your default AWS credential chain (`aws configure`,
+env vars, or an SSO profile). Three tiers of findings:
+
+- **Blocker** — bucket doesn't exist or your creds can't see it. Exits 1.
+- **Strongly recommended** — versioning, public-access-block, ownership
+  controls, default encryption. Exits 1 by default. Pass
+  `--allow-warnings` to proceed anyway.
+- **Nice-to-have** — abort-incomplete-multipart lifecycle, region match.
+  Informational, never fails the script.
+
+Each failed check prints a one-line `→` hint for where to fix it in
+the S3 console. Skip this step if you're letting the SAM stack create
+a new bucket — the template ships with all recommended settings on.
+
 ## Backfilling thumbnails for existing buckets
 
 If you connect the app to a bucket that already has photos in it (e.g.
