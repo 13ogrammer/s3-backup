@@ -32,7 +32,7 @@ from this.
 | Mobile language | TypeScript | strict, `noUncheckedIndexedAccess`. |
 | Backend runtime | Node.js 20, ARM64 Lambda | Bundled with esbuild via SAM `BuildMethod: esbuild`. |
 | API surface | HTTP API Gateway, single Lambda router | All routes go through `backend/src/index.ts`. |
-| Auth (v1) | Single bootstrap token, `timingSafeEqual` compare | See [BACKLOG](./BACKLOG.md) → "Rotatable / per-device auth tokens" for the replacement plan. |
+| Auth (v1) | Single bootstrap token, `timingSafeEqual` compare | Linear S3B-8 ("Rotatable / per-device auth tokens") tracks the replacement plan. |
 | Local S3 emulator | **MinIO** via docker-compose | LocalStack went paid in v2026.03 — don't reach for it. |
 | Local backend dev | Node `http` wrapper around the Lambda handler, `tsx watch` | `backend/src/dev-server.ts`. |
 | Upload UX | `expo-image-picker` (system picker) | Inline gallery grid is blocked in Expo Go on Android — see [`CLAUDE.md`](../CLAUDE.md#gotchas). |

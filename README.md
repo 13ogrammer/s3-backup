@@ -101,14 +101,14 @@ for details.
 s3-backup/
 ├── app/       Expo (React Native) mobile app — iOS + Android
 ├── backend/   AWS Lambda + API Gateway (SAM) — deploys to your AWS account
-└── docs/      Architecture, monetisation, backlog
+└── docs/      Architecture and monetisation notes
 ```
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design, tech stack, endpoint reference, thumbnail tree contract.
 - [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) — cost model, the open-source + optional hosted tier plan.
-- [`docs/BACKLOG.md`](./docs/BACKLOG.md) — deferred improvements; pick the next thing to build here.
+- Deferred improvements live as issues in the Linear `S3Backup` team — pick the next thing to build there.
 - [`CLAUDE.md`](./CLAUDE.md) — conventions and gotchas when continuing development.
 
 ## Status
@@ -116,5 +116,5 @@ s3-backup/
 V1 features (gallery → pick → upload to a folder, browse with
 thumbnails / sort / list-or-grid, preview with pinch-zoom and swipe,
 move / rename / delete, MinIO-based local dev loop, thumbnail backfill
-script) all in `main`. See [`docs/BACKLOG.md`](./docs/BACKLOG.md) for
-what's next.
+script) all in `main`. What's next lives in the Linear `S3Backup`
+team.
