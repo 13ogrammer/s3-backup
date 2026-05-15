@@ -243,11 +243,16 @@ export default function BrowseScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    setNextToken(undefined);
-    load(path);
-    setSelection(emptySelection());
-  }, [path, load]);
+  // Refetch whenever Browse comes into focus or the path changes. The focus
+  // hook means coming back from the Gallery tab after an upload picks up the
+  // newly-uploaded files without a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      setNextToken(undefined);
+      load(path);
+      setSelection(emptySelection());
+    }, [path, load]),
+  );
 
   // Auto-dismiss the snackbar after 5s.
   useEffect(() => {
