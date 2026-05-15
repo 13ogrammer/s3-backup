@@ -17,9 +17,11 @@ import {
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
+import { loadBackedUpMap, recordBackedUp, type BackedUpMap } from '@/lib/backedUpState';
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import { formatBytes } from '@/lib/format';
 import { buildGallerySections, type GalleryRow, type GallerySection } from '@/lib/gallerySections';
@@ -67,6 +69,7 @@ export default function GalleryScreen() {
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
   const [pendingResume, setPendingResume] = useState<PendingMultipartUpload[]>([]);
+  const [backedUpMap, setBackedUpMap] = useState<BackedUpMap>({});
 
   useEffect(() => {
     if (permission?.granted) {
@@ -82,6 +85,12 @@ export default function GalleryScreen() {
 
   useEffect(() => {
     refreshPendingResume();
+  }, []);
+
+  useEffect(() => {
+    loadBackedUpMap()
+      .then(setBackedUpMap)
+      .catch((err) => console.warn('loadBackedUpMap failed', err));
   }, []);
 
   const uploading = uploadState !== null;
@@ -338,6 +347,12 @@ export default function GalleryScreen() {
         );
         try {
           await uploadAsset(localUri, key, contentType, mediaKind);
+          try {
+            await recordBackedUp(asset.id, key);
+          } catch (err) {
+            console.warn('recordBackedUp failed', asset.id, err);
+          }
+          setBackedUpMap((prev) => ({ ...prev, [asset.id]: key }));
           setUploadState((s) =>
             s
               ? {
@@ -556,13 +571,29 @@ export default function GalleryScreen() {
                   style={{ width: TILE, height: TILE }}>
                   <Image
                     source={{ uri: cell.uri }}
-                    style={{ width: TILE, height: TILE, borderRadius: 4 }}
+                    style={[
+                      { width: TILE, height: TILE, borderRadius: 4 },
+                      backedUpMap[cell.id] != null && styles.backedUpImage,
+                    ]}
                     contentFit="cover"
                     recyclingKey={cell.id}
                   />
                   {cell.mediaType === 'video' && (
                     <View style={styles.videoBadge}>
                       <ThemedText style={styles.videoBadgeText}>VIDEO</ThemedText>
+                    </View>
+                  )}
+                  {backedUpMap[cell.id] != null && (
+                    <View
+                      style={[
+                        styles.backedUpBadge,
+                        { backgroundColor: colors.surfaceElevated },
+                      ]}>
+                      <IconSymbol
+                        name="checkmark.icloud.fill"
+                        size={14}
+                        color={colors.tint}
+                      />
                     </View>
                   )}
                   {selectedIds.has(cell.id) && (
@@ -698,6 +729,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  backedUpImage: {
+    opacity: 0.45,
+  },
+  backedUpBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    padding: 2,
+    borderRadius: Radius.sm,
   },
   videoBadge: {
     position: 'absolute',
