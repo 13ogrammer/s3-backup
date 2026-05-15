@@ -29,6 +29,7 @@ const MAPPING = {
   'arrow.down.to.line': 'file-download',
   'magnifyingglass': 'search',
   'xmark.circle.fill': 'cancel',
+  'checkmark.icloud.fill': 'cloud-done',
 } as IconMapping;
 
 /**
