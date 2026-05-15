@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -27,6 +28,7 @@ type Props = {
 export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
 
   const [path, setPath] = useState('');
   const [folders, setFolders] = useState<string[]>([]);
@@ -95,9 +97,14 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent>
       <ThemedView style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
           <Pressable onPress={onClose} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
           </Pressable>
@@ -151,7 +158,14 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
           />
         )}
 
-        <View style={[styles.newFolderRow, { backgroundColor: colors.surface }]}>
+        <View
+          style={[
+            styles.newFolderRow,
+            {
+              backgroundColor: colors.surface,
+              paddingBottom: Spacing.md + insets.bottom,
+            },
+          ]}>
           <TextInput
             value={newName}
             onChangeText={setNewName}
@@ -187,7 +201,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
