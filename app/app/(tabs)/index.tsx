@@ -2,14 +2,14 @@ import { getInfoAsync } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  FlatList,
   Linking,
   Pressable,
+  SectionList,
   StyleSheet,
   View,
 } from 'react-native';
@@ -17,11 +17,12 @@ import {
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import { formatBytes } from '@/lib/format';
+import { buildGallerySections, type GalleryRow, type GallerySection } from '@/lib/gallerySections';
 import {
   UploadError,
   inferContentType,
@@ -152,6 +153,28 @@ export default function GalleryScreen() {
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+
+  const sections = useMemo(() => buildGallerySections(assets, new Date()), [assets]);
+
+  function isSectionFullySelected(section: GallerySection): boolean {
+    return section.assetIds.length > 0 && section.assetIds.every((id) => selectedIds.has(id));
+  }
+
+  function toggleSection(section: GallerySection): void {
+    if (isSectionFullySelected(section)) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        section.assetIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        section.assetIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
   }
 
   async function onTapUpload() {
@@ -479,12 +502,11 @@ export default function GalleryScreen() {
         </View>
       )}
 
-      <FlatList
-        data={assets}
-        keyExtractor={(item) => item.id}
-        numColumns={COLUMNS}
+      <SectionList<GalleryRow, GallerySection>
+        sections={sections}
+        stickySectionHeadersEnabled={false}
+        keyExtractor={(row, index) => row.find(Boolean)?.id ?? String(index)}
         contentContainerStyle={{ padding: SPACING }}
-        columnWrapperStyle={{ gap: SPACING, marginBottom: SPACING }}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
@@ -499,38 +521,69 @@ export default function GalleryScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          const selected = selectedIds.has(item.id);
+        renderSectionHeader={({ section }) => {
+          const allSelected = isSectionFullySelected(section);
           return (
             <Pressable
-              onPress={() => toggle(item.id)}
-              style={{ width: TILE, height: TILE }}>
-              <Image
-                source={{ uri: item.uri }}
-                style={{ width: TILE, height: TILE, borderRadius: 4 }}
-                contentFit="cover"
-                recyclingKey={item.id}
-              />
-              {item.mediaType === 'video' && (
-                <View style={styles.videoBadge}>
-                  <ThemedText style={styles.videoBadgeText}>VIDEO</ThemedText>
-                </View>
-              )}
-              {selected && (
-                <View style={[styles.selectedOverlay, { borderColor: colors.tint }]}>
-                  <View style={[styles.checkmark, { backgroundColor: colors.tint }]}>
-                    <ThemedText
-                      lightColor="#fff"
-                      darkColor="#000"
-                      style={styles.checkmarkText}>
-                      ✓
-                    </ThemedText>
-                  </View>
-                </View>
-              )}
+              onPress={() => toggleSection(section)}
+              style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
+              <ThemedText style={[styles.sectionHeaderLabel, { color: colors.text }]}>
+                {section.title}
+              </ThemedText>
+              <View
+                style={[
+                  styles.sectionSelectIndicator,
+                  allSelected
+                    ? { backgroundColor: colors.tint, borderColor: colors.tint }
+                    : { borderColor: colors.icon },
+                ]}>
+                {allSelected && (
+                  <ThemedText lightColor="#fff" darkColor="#000" style={styles.checkmarkText}>
+                    ✓
+                  </ThemedText>
+                )}
+              </View>
             </Pressable>
           );
         }}
+        renderItem={({ item: row }) => (
+          <View style={styles.row}>
+            {row.map((cell, cellIndex) =>
+              cell !== null ? (
+                <Pressable
+                  key={cell.id}
+                  onPress={() => toggle(cell.id)}
+                  style={{ width: TILE, height: TILE }}>
+                  <Image
+                    source={{ uri: cell.uri }}
+                    style={{ width: TILE, height: TILE, borderRadius: 4 }}
+                    contentFit="cover"
+                    recyclingKey={cell.id}
+                  />
+                  {cell.mediaType === 'video' && (
+                    <View style={styles.videoBadge}>
+                      <ThemedText style={styles.videoBadgeText}>VIDEO</ThemedText>
+                    </View>
+                  )}
+                  {selectedIds.has(cell.id) && (
+                    <View style={[styles.selectedOverlay, { borderColor: colors.tint }]}>
+                      <View style={[styles.checkmark, { backgroundColor: colors.tint }]}>
+                        <ThemedText
+                          lightColor="#fff"
+                          darkColor="#000"
+                          style={styles.checkmarkText}>
+                          ✓
+                        </ThemedText>
+                      </View>
+                    </View>
+                  )}
+                </Pressable>
+              ) : (
+                <View key={`placeholder-${cellIndex}`} style={{ width: TILE, height: TILE }} />
+              ),
+            )}
+          </View>
+        )}
       />
 
       {selectedCount > 0 && (
@@ -622,6 +675,30 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
+  row: {
+    flexDirection: 'row',
+    gap: SPACING,
+    marginBottom: SPACING,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginBottom: SPACING,
+  },
+  sectionHeaderLabel: {
+    ...Type.label,
+  },
+  sectionSelectIndicator: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   videoBadge: {
     position: 'absolute',
     bottom: 4,
