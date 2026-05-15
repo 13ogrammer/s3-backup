@@ -9,6 +9,7 @@ import {
   Dimensions,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -294,10 +295,14 @@ export default function GalleryScreen() {
       toUpload,
       async (entry) => {
         const { asset, filename } = entry;
-        // iOS gives a ph:// URI from the gallery list — only getAssetInfoAsync
-        // returns a localUri that the upload pipeline can read.
-        const info = await MediaLibrary.getAssetInfoAsync(asset.id);
-        const localUri = info.localUri || asset.uri;
+        // iOS gives a ph:// URI in the asset list — getAssetInfoAsync returns
+        // a file:// localUri the upload pipeline can read. Android already
+        // returns a usable URI here and getAssetInfoAsync would trigger
+        // ACCESS_MEDIA_LOCATION (not declared, not needed for upload).
+        const localUri =
+          Platform.OS === 'ios'
+            ? (await MediaLibrary.getAssetInfoAsync(asset.id)).localUri || asset.uri
+            : asset.uri;
         const contentType = inferContentType(filename, asset.mediaType);
         const key = prefix + filename;
         const mediaKind: 'image' | 'video' | 'other' =
