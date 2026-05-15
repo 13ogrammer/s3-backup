@@ -1,13 +1,14 @@
 import { getInfoAsync } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import * as MediaLibrary from 'expo-media-library';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
+  Linking,
   Pressable,
   StyleSheet,
   View,
@@ -20,6 +21,7 @@ import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
+import { formatBytes } from '@/lib/format';
 import {
   UploadError,
   inferContentType,
@@ -32,15 +34,13 @@ import {
   removePendingUpload,
   type PendingMultipartUpload,
 } from '@/lib/uploadState';
-import { formatBytes } from '@/lib/format';
 
 const UPLOAD_CONCURRENCY = 3;
+const PAGE_SIZE = 60;
 
 const COLUMNS = 3;
-const SPACING = 4;
+const SPACING = 2;
 const TILE = (Dimensions.get('window').width - SPACING * (COLUMNS + 1)) / COLUMNS;
-
-type PickedAsset = ImagePicker.ImagePickerAsset & { id: string };
 
 type UploadState = {
   total: number;
@@ -53,11 +53,25 @@ export default function GalleryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
-  const [selected, setSelected] = useState<PickedAsset[]>([]);
+  const [permission, requestPermission] = MediaLibrary.usePermissions({
+    granularPermissions: ['photo', 'video'],
+  });
+  const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
+  const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pickerVisible, setPickerVisible] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
   const [pendingResume, setPendingResume] = useState<PendingMultipartUpload[]>([]);
+
+  useEffect(() => {
+    if (permission?.granted) {
+      loadInitial();
+    }
+  }, [permission?.granted]);
 
   useEffect(() => {
     getLastFolder().then((f) => {
@@ -68,6 +82,15 @@ export default function GalleryScreen() {
   useEffect(() => {
     refreshPendingResume();
   }, []);
+
+  const uploading = uploadState !== null;
+  useEffect(() => {
+    if (!uploading) return;
+    activateKeepAwakeAsync('s3backup.upload').catch(() => {});
+    return () => {
+      deactivateKeepAwake('s3backup.upload');
+    };
+  }, [uploading]);
 
   async function refreshPendingResume() {
     try {
@@ -84,49 +107,55 @@ export default function GalleryScreen() {
     }
   }
 
-  // Hold the screen awake while an upload is running. Uploads pause when
-  // the app is backgrounded (RN suspends JS), so the simplest useful
-  // mitigation is to stop the screen from going to sleep at all.
-  const uploading = uploadState !== null;
-  useEffect(() => {
-    if (!uploading) return;
-    activateKeepAwakeAsync('s3backup.upload').catch(() => {});
-    return () => {
-      deactivateKeepAwake('s3backup.upload');
-    };
-  }, [uploading]);
+  async function loadInitial() {
+    setLoadingAssets(true);
+    try {
+      const page = await MediaLibrary.getAssetsAsync({
+        mediaType: ['photo', 'video'],
+        first: PAGE_SIZE,
+        sortBy: [MediaLibrary.SortBy.creationTime],
+      });
+      setAssets(page.assets);
+      setEndCursor(page.endCursor);
+      setHasMore(page.hasNextPage);
+    } finally {
+      setLoadingAssets(false);
+    }
+  }
 
-  async function onAddPhotos() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      allowsMultipleSelection: true,
-      quality: 1,
-      exif: false,
-    });
-    if (result.canceled) return;
+  async function loadMore() {
+    if (loadingAssets || !hasMore) return;
+    setLoadingAssets(true);
+    try {
+      const page = await MediaLibrary.getAssetsAsync({
+        mediaType: ['photo', 'video'],
+        first: PAGE_SIZE,
+        after: endCursor,
+        sortBy: [MediaLibrary.SortBy.creationTime],
+      });
+      setAssets((prev) => [...prev, ...page.assets]);
+      setEndCursor(page.endCursor);
+      setHasMore(page.hasNextPage);
+    } finally {
+      setLoadingAssets(false);
+    }
+  }
 
-    const stamped: PickedAsset[] = result.assets.map((a, i) => ({
-      ...a,
-      id: a.assetId ?? `${a.uri}-${Date.now()}-${i}`,
-    }));
-
-    setSelected((prev) => {
-      const seen = new Set(prev.map((p) => p.uri));
-      const additions = stamped.filter((s) => !seen.has(s.uri));
-      return [...prev, ...additions];
+  function toggle(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   }
 
-  function removeAsset(id: string) {
-    setSelected((prev) => prev.filter((p) => p.id !== id));
-  }
-
-  function clearAll() {
-    setSelected([]);
+  function clearSelection() {
+    setSelectedIds(new Set());
   }
 
   async function onTapUpload() {
-    if (selected.length === 0) return;
+    if (selectedIds.size === 0) return;
     const cfg = await loadConfig();
     if (!cfg) {
       Alert.alert('Not configured', 'Open Settings and add your backend URL + token.');
@@ -141,7 +170,7 @@ export default function GalleryScreen() {
     setLastFolder(prefix).catch((err) =>
       console.warn('failed to persist last folder', err),
     );
-    await uploadAll(prefix);
+    await uploadSelected(prefix);
   }
 
   async function onResumePending() {
@@ -226,9 +255,11 @@ export default function GalleryScreen() {
     setPendingResume([]);
   }
 
-  async function uploadAll(prefix: string) {
-    // Pre-flight: ask the backend which destination keys already exist.
-    const plan = selected.map((asset) => ({
+  async function uploadSelected(prefix: string) {
+    const chosen = assets.filter((a) => selectedIds.has(a.id));
+    if (chosen.length === 0) return;
+
+    const plan = chosen.map((asset) => ({
       asset,
       filename: filenameFor(asset),
     }));
@@ -247,11 +278,8 @@ export default function GalleryScreen() {
             return;
           }
         }
-        // 'overwrite' falls through with toUpload unchanged.
       }
     } catch (err) {
-      // Pre-flight failure is non-fatal — proceed with the upload, which
-      // will either succeed (overwrite) or surface its own error.
       console.warn('pre-flight /exists failed', err);
     }
 
@@ -263,16 +291,19 @@ export default function GalleryScreen() {
     });
 
     const failed = await runWithConcurrency(
-      toUpload.map((p) => p.asset),
-      async (asset) => {
-        const filename = filenameFor(asset);
-        const contentType =
-          asset.mimeType ?? inferContentType(filename, asset.type ?? 'unknown');
+      toUpload,
+      async (entry) => {
+        const { asset, filename } = entry;
+        // iOS gives a ph:// URI from the gallery list — only getAssetInfoAsync
+        // returns a localUri that the upload pipeline can read.
+        const info = await MediaLibrary.getAssetInfoAsync(asset.id);
+        const localUri = info.localUri || asset.uri;
+        const contentType = inferContentType(filename, asset.mediaType);
         const key = prefix + filename;
         const mediaKind: 'image' | 'video' | 'other' =
-          asset.type === 'image' || contentType.startsWith('image/')
+          asset.mediaType === 'photo'
             ? 'image'
-            : asset.type === 'video' || contentType.startsWith('video/')
+            : asset.mediaType === 'video'
               ? 'video'
               : 'other';
 
@@ -280,7 +311,7 @@ export default function GalleryScreen() {
           s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
         );
         try {
-          await uploadAsset(asset.uri, key, contentType, mediaKind);
+          await uploadAsset(localUri, key, contentType, mediaKind);
           setUploadState((s) =>
             s
               ? {
@@ -306,26 +337,21 @@ export default function GalleryScreen() {
       UPLOAD_CONCURRENCY,
     );
 
-    // Aggregate counts after the run completes.
     setUploadState(null);
 
     if (failed.length === 0) {
-      setSelected([]);
+      clearSelection();
       Alert.alert('Upload complete', `${toUpload.length} item(s) uploaded to /${prefix}.`);
       return;
     }
 
-    // Surface failures and leave the failed items selected so the user
-    // can retry.
-    const failedFilenames = new Set(failed.map(({ item }) => filenameFor(item)));
+    // Keep just the failed ones selected for retry.
+    const failedIds = new Set(failed.map(({ item }) => item.asset.id));
+    setSelectedIds(failedIds);
     const succeeded = toUpload.length - failed.length;
-    setSelected((prev) => prev.filter((a) => failedFilenames.has(filenameFor(a))));
     const sample = failed
       .slice(0, 3)
-      .map(({ item, error }) => {
-        const msg = describeError(error);
-        return `• ${filenameFor(item)}: ${msg}`;
-      })
+      .map(({ item, error }) => `• ${item.filename}: ${describeError(error)}`)
       .join('\n');
     const more = failed.length > 3 ? `\n…and ${failed.length - 3} more.` : '';
     Alert.alert(
@@ -361,6 +387,8 @@ export default function GalleryScreen() {
     });
   }
 
+  const selectedCount = selectedIds.size;
+
   const pendingBytesRemaining = pendingResume.reduce((sum, e) => {
     const done = e.completedParts.reduce((b, p) => {
       const offset = (p.partNumber - 1) * e.partSize;
@@ -368,6 +396,48 @@ export default function GalleryScreen() {
     }, 0);
     return sum + Math.max(0, e.totalBytes - done);
   }, 0);
+
+  if (!permission) {
+    return (
+      <ThemedView style={[styles.container, styles.center]}>
+        <ActivityIndicator />
+      </ThemedView>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <ThemedView style={[styles.container, styles.center, { padding: 24, gap: 12 }]}>
+        <ThemedText type="subtitle">Photo access needed</ThemedText>
+        <ThemedText style={{ textAlign: 'center', opacity: 0.7 }}>
+          We need permission to read your photos and videos so you can choose what to back up.
+        </ThemedText>
+        {permission.canAskAgain ? (
+          <Pressable
+            onPress={() => requestPermission()}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
+              Grant access
+            </ThemedText>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => Linking.openSettings()}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
+              Open system Settings
+            </ThemedText>
+          </Pressable>
+        )}
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -405,81 +475,71 @@ export default function GalleryScreen() {
           </Pressable>
         </View>
       )}
-      {selected.length === 0 ? (
-        <View style={styles.emptyState}>
-          <ThemedText type="title">No items picked</ThemedText>
-          <ThemedText style={styles.hint}>
-            Tap below to choose photos and videos to back up.
-          </ThemedText>
-          <Pressable
-            onPress={onAddPhotos}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
-              Add photos / videos
-            </ThemedText>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList
-          data={selected}
-          keyExtractor={(item) => item.id}
-          numColumns={COLUMNS}
-          contentContainerStyle={{ padding: SPACING }}
-          columnWrapperStyle={{ gap: SPACING, marginBottom: SPACING }}
-          ListHeaderComponent={
-            <View style={styles.headerRow}>
-              <Pressable
-                onPress={onAddPhotos}
-                style={({ pressed }) => [
-                  styles.chip,
-                  { backgroundColor: colors.accentSoft, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>
-                  + Add more
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={clearAll}
-                style={({ pressed }) => [
-                  styles.chip,
-                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <ThemedText>Clear</ThemedText>
-              </Pressable>
+
+      <FlatList
+        data={assets}
+        keyExtractor={(item) => item.id}
+        numColumns={COLUMNS}
+        contentContainerStyle={{ padding: SPACING }}
+        columnWrapperStyle={{ gap: SPACING, marginBottom: SPACING }}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          loadingAssets ? null : (
+            <ThemedText style={styles.empty}>No photos or videos on this device.</ThemedText>
+          )
+        }
+        ListFooterComponent={
+          loadingAssets && hasMore ? (
+            <View style={{ padding: 16 }}>
+              <ActivityIndicator />
             </View>
-          }
-          renderItem={({ item }) => (
-            <View style={{ width: TILE, height: TILE }}>
+          ) : null
+        }
+        renderItem={({ item }) => {
+          const selected = selectedIds.has(item.id);
+          return (
+            <Pressable
+              onPress={() => toggle(item.id)}
+              style={{ width: TILE, height: TILE }}>
               <Image
                 source={{ uri: item.uri }}
                 style={{ width: TILE, height: TILE, borderRadius: 4 }}
                 contentFit="cover"
                 recyclingKey={item.id}
               />
-              {item.type === 'video' && (
+              {item.mediaType === 'video' && (
                 <View style={styles.videoBadge}>
                   <ThemedText style={styles.videoBadgeText}>VIDEO</ThemedText>
                 </View>
               )}
-              <Pressable
-                onPress={() => removeAsset(item.id)}
-                hitSlop={8}
-                style={styles.removeButton}>
-                <ThemedText style={styles.removeButtonText}>✕</ThemedText>
-              </Pressable>
-            </View>
-          )}
-        />
-      )}
+              {selected && (
+                <View style={[styles.selectedOverlay, { borderColor: colors.tint }]}>
+                  <View style={[styles.checkmark, { backgroundColor: colors.tint }]}>
+                    <ThemedText
+                      lightColor="#fff"
+                      darkColor="#000"
+                      style={styles.checkmarkText}>
+                      ✓
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
+            </Pressable>
+          );
+        }}
+      />
 
-      {selected.length > 0 && (
+      {selectedCount > 0 && (
         <View style={[styles.bottomBar, { backgroundColor: colors.background, borderColor: colors.icon }]}>
-          <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
-            {selected.length} ready to upload
-          </ThemedText>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="defaultSemiBold">
+              {selectedCount} selected
+            </ThemedText>
+            <Pressable onPress={clearSelection}>
+              <ThemedText style={{ color: colors.tint, fontSize: 13 }}>Clear</ThemedText>
+            </Pressable>
+          </View>
           <Pressable
             onPress={onTapUpload}
             style={({ pressed }) => [
@@ -549,52 +609,16 @@ function filenameForKey(remoteKey: string): string {
   return idx === -1 ? remoteKey : remoteKey.slice(idx + 1);
 }
 
-function filenameFor(asset: ImagePicker.ImagePickerAsset): string {
-  if (asset.fileName) return asset.fileName;
-  const fromUri = asset.uri.split('/').pop()?.split('?')[0];
-  if (fromUri && fromUri.includes('.')) return fromUri;
-  const ext = extFromMime(asset.mimeType) ?? (asset.type === 'video' ? 'mp4' : 'jpg');
-  return `media_${Date.now()}.${ext}`;
-}
-
-function extFromMime(mime: string | undefined): string | undefined {
-  if (!mime) return undefined;
-  const map: Record<string, string> = {
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/heic': 'heic',
-    'image/heif': 'heif',
-    'image/webp': 'webp',
-    'image/gif': 'gif',
-    'video/mp4': 'mp4',
-    'video/quicktime': 'mov',
-    'video/x-matroska': 'mkv',
-  };
-  return map[mime];
+function filenameFor(asset: MediaLibrary.Asset): string {
+  if (asset.filename) return asset.filename;
+  const ext = asset.mediaType === 'video' ? 'mp4' : 'jpg';
+  return `media_${asset.id}.${ext}`;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.lg,
-    padding: Spacing.xl,
-  },
-  hint: { textAlign: 'center', opacity: 0.7 },
-  headerRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    paddingHorizontal: SPACING * 2,
-    paddingBottom: SPACING * 2,
-    paddingTop: Spacing.md,
-  },
-  chip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.md,
-  },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
   videoBadge: {
     position: 'absolute',
     bottom: 4,
@@ -605,18 +629,31 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   videoBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  removeButton: {
+  selectedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 3,
+    borderRadius: 4,
+  },
+  checkmark: {
     position: 'absolute',
     top: 4,
     right: 4,
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  removeButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  checkmarkText: { fontWeight: '700', fontSize: 14 },
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+  },
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -624,6 +661,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.xl + 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
     ...Shadow.cardElevated,
   },
   primaryButton: {
