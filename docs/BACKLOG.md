@@ -82,12 +82,18 @@ backgrounding. Three escalating mitigations:
 
 - [x] **Remember last-picked folder + retain selection** — `lib/config.ts` adds `getLastFolder` / `setLastFolder` backed by secure-store; FolderPicker takes an `initialPath` prop and starts there. Selection retention was already correct (Add-more dedupes by URI when merging picks).
 
-- [ ] **Switch Gallery back to the inline grid (post dev-build)**
-  Once a custom Android dev build is set up (via EAS Build or
-  `expo run:android`), the `expo-media-library` permission issue stops
-  blocking and the scrollable in-app gallery grid can be restored.
-  The source is preserved in `app/legacy/gallery-media-library.tsx` —
-  copy its contents over `app/app/(tabs)/index.tsx`.
+- [x] **Switch Gallery back to the inline grid (post dev-build)** — Gallery now renders `MediaLibrary.getAssetsAsync` directly with paginated load-more, permission flow, and tap-to-toggle selection. The legacy file was removed; the upload pipeline (multipart resume banner, concurrency, `/exists` collision check, keep-awake, last-folder memory) was kept intact via merge rather than a raw copy.
+
+- [ ] **Preserve EXIF location on Android uploads**
+  We currently skip `MediaLibrary.getAssetInfoAsync` on Android because
+  it requires `ACCESS_MEDIA_LOCATION` we never declared — so Android
+  hands us the location-redacted file at `asset.uri`. For a photo
+  backup the original metadata is worth preserving. Three-part fix:
+  (1) `app/app.json` → add `isAccessMediaLocationEnabled: true` to the
+  `expo-media-library` plugin config; (2) re-enable the
+  `getAssetInfoAsync` call on Android in `app/app/(tabs)/index.tsx` so
+  the unredacted localUri is used; (3) rebuild the dev client
+  (`npm run android`). iOS is unaffected (no equivalent permission).
 
 ---
 
