@@ -18,6 +18,7 @@ for the user-facing pitch.
 | Cost model, business decisions, hosted-tier plan | [`docs/MONETIZATION.md`](./docs/MONETIZATION.md) |
 | Deferred improvements (pick the next task here) | Linear team `S3Backup` ([open issues](https://linear.app/s3backup/team/S3B/active)) |
 | Local dev runbook (MinIO + dev server) | [`backend/README.md`](./backend/README.md) |
+| Production deployment runbook | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) |
 | App dev / build instructions | [`app/README.md`](./app/README.md) |
 
 ## Repo layout

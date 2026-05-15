@@ -15,6 +15,7 @@
     "dev:minio:stop": "docker compose down",
     "minio:ui": "open http://localhost:9001",
     "backfill:thumbs": "tsx --env-file-if-exists=.env scripts/backfill-thumbnails.ts",
+    "check:bucket": "tsx scripts/check-bucket.ts",
     "bootstrap:dist-bucket": "./scripts/bootstrap-dist-bucket.sh",
     "publish:template": "./scripts/publish-template.sh"
   },
