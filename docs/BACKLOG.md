@@ -84,16 +84,7 @@ backgrounding. Three escalating mitigations:
 
 - [x] **Switch Gallery back to the inline grid (post dev-build)** — Gallery now renders `MediaLibrary.getAssetsAsync` directly with paginated load-more, permission flow, and tap-to-toggle selection. The legacy file was removed; the upload pipeline (multipart resume banner, concurrency, `/exists` collision check, keep-awake, last-folder memory) was kept intact via merge rather than a raw copy.
 
-- [ ] **Preserve EXIF location on Android uploads**
-  We currently skip `MediaLibrary.getAssetInfoAsync` on Android because
-  it requires `ACCESS_MEDIA_LOCATION` we never declared — so Android
-  hands us the location-redacted file at `asset.uri`. For a photo
-  backup the original metadata is worth preserving. Three-part fix:
-  (1) `app/app.json` → add `isAccessMediaLocationEnabled: true` to the
-  `expo-media-library` plugin config; (2) re-enable the
-  `getAssetInfoAsync` call on Android in `app/app/(tabs)/index.tsx` so
-  the unredacted localUri is used; (3) rebuild the dev client
-  (`npm run android`). iOS is unaffected (no equivalent permission).
+- [x] **Preserve EXIF location on Android uploads** — `app.json` flips `expo-media-library`'s `isAccessMediaLocationEnabled` to `true` (the plugin adds `ACCESS_MEDIA_LOCATION` to the manifest and prompts at runtime). `getAssetInfoAsync` is now called on both platforms so the un-redacted localUri is used. Requires a fresh dev-client build (`npm run android` / `ios`); the first run will surface a new permission prompt.
 
 ---
 

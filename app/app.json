@@ -55,7 +55,7 @@
         {
           "photosPermission": "Allow $(PRODUCT_NAME) to access your photos so you can back them up to your S3 bucket.",
           "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos downloaded from S3.",
-          "isAccessMediaLocationEnabled": false
+          "isAccessMediaLocationEnabled": true
         }
       ],
       "expo-video"
