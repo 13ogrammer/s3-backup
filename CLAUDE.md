@@ -35,7 +35,6 @@ App-side highlights:
 - `app/components/` — themed primitives, modals (preview, folder picker, rename), `ZoomableImage`.
 - `app/lib/` — `api.ts`, `config.ts`, `upload.ts`, `format.ts`.
 - `app/constants/theme.ts` — `Colors` / `Radius` / `Spacing` / `Shadow` / `Type`. Use these, not raw hex.
-- `app/legacy/gallery-media-library.tsx` — preserved inline-grid Gallery for the eventual dev build.
 
 Backend-side highlights:
 - `backend/src/index.ts` — single Lambda router for all routes.
@@ -70,10 +69,10 @@ Backend-side highlights:
 
 ### Expo Go on Android can't run `expo-media-library`
 Google's granular media permissions need declarations Expo Go doesn't
-ship. Gallery uses `expo-image-picker`'s system picker as the
-workaround. The inline-grid version is preserved at
-`app/legacy/gallery-media-library.tsx` — copy back over the Gallery
-route once a custom dev build is set up.
+ship. The Gallery tab uses `expo-media-library` to render an inline
+grid of phone media, so a **custom dev build** is required on Android
+(`npm run android` in `app/`). Expo Go will fail at the permission
+prompt.
 
 ### LocalStack is paid as of v2026.03
 Both `localstack/localstack:latest` and `:s3-latest` exit with code 55

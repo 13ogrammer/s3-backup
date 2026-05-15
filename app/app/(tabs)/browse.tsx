@@ -105,7 +105,7 @@ export default function BrowseScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
