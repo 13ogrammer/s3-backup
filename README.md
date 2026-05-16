@@ -48,7 +48,7 @@ openssl rand -hex 32
 
 cd backend
 npm install
-sam build && sam deploy --guided
+npm run build && sam deploy --guided
 ```
 
 Leave `BucketName` blank to have the stack create a new bucket with
