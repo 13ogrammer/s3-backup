@@ -20,6 +20,8 @@ export const Colors = {
     divider: '#e2e8f0',
     danger: '#dc2626',
     onAccent: '#ffffff',
+    skeletonBase: '#E5E7EB',
+    skeletonHighlight: '#F3F4F6',
   },
   dark: {
     text: '#e2e8f0',
@@ -37,6 +39,8 @@ export const Colors = {
     divider: '#1e293b',
     danger: '#f87171',
     onAccent: '#0b0f17',
+    skeletonBase: '#1F2937',
+    skeletonHighlight: '#374151',
   },
 };
 
