@@ -262,6 +262,54 @@ Download the new `.apk`, install over the existing app — your
 Settings (API URL, token) persist across upgrades because they're
 stored in `expo-secure-store`.
 
+### Release workflow
+
+The app supports three release paths. Pick based on what changed:
+
+| Change type | Release path | How users get it |
+|---|---|---|
+| JS-only fix / feature (no native rebuild needed) | `eas update --branch preview --message "..."` | OTA — downloaded and applied on next launch |
+| New JS feature with native dependency | `eas build --profile preview --platform android` | User downloads + sideloads new APK |
+| Breaking change / new native module | Bump `version` in `app/app.json` to a new major, then build | In-app blocking modal prompts user to install |
+
+Before any release, bump `version` in `app/app.json` to the appropriate
+semver level (see `app/README.md#releasing` for guidance).
+
+#### Updating the version manifest (for the update banner and blocking modal)
+
+The in-app update banner reads a JSON manifest from `VERSION_MANIFEST_URL`
+in `app/lib/version.ts`. The URL is left empty by default (the feature is
+disabled). To enable it:
+
+1. Deploy the backend with `CreateReleaseBucket=true` — this creates the
+   public release bucket and outputs `ReleaseManifestUrl`.
+2. Set `VERSION_MANIFEST_URL` in `app/lib/version.ts` to:
+   `<ReleaseManifestUrl>/manifest.json`
+3. After each release, upload the manifest:
+
+```bash
+aws s3 cp manifest.json s3://<ReleaseBucketName>/manifest.json --acl bucket-owner-full-control
+```
+
+Manifest format (`manifest.json`):
+
+```json
+{
+  "latestNativeVersion": "1.2.0",
+  "minSupportedVersion": "1.1.0",
+  "apkUrl": "<EAS build artifact URL from expo.dev>",
+  "releaseNotes": "What's new in this version."
+}
+```
+
+- `apkUrl`: the direct `.apk` download link from
+  **expo.dev → your project → Builds → (select the build) → Download**.
+- `minSupportedVersion`: versions below this see a blocking modal with no
+  dismiss — they must install before they can use the app. Only advance
+  this for truly incompatible native changes.
+- `latestNativeVersion`: versions below this see a dismissible banner.
+  Advance this on every native rebuild.
+
 ### Watching logs / errors
 
 CloudWatch Logs → `/aws/lambda/s3-backup-ApiFn-<id>`. Filter by
