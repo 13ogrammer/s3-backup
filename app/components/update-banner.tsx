@@ -1,7 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
@@ -13,30 +12,21 @@ import {
   type VersionManifest,
 } from '@/lib/version';
 
-function useVersionCheck() {
+export function UpdateBanner() {
   const [manifest, setManifest] = useState<VersionManifest | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
 
   useEffect(() => {
     fetchVersionManifest().then(setManifest);
   }, []);
 
-  return manifest;
-}
-
-export function UpdateBanner() {
-  const manifest = useVersionCheck();
-  const [dismissed, setDismissed] = useState(false);
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-
   if (!manifest) return null;
 
   const appVersion = getAppVersion();
-  const isBlocking = semverLt(appVersion, manifest.minSupportedVersion);
   const isOutdated = semverLt(appVersion, manifest.latestNativeVersion);
 
-  // Blocking modal handles the UX when below minSupportedVersion.
-  if (isBlocking) return null;
   if (!isOutdated) return null;
   if (dismissed) return null;
 
@@ -80,71 +70,6 @@ export function UpdateBanner() {
   );
 }
 
-export function BlockingUpdateModal() {
-  const manifest = useVersionCheck();
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const insets = useSafeAreaInsets();
-
-  if (!manifest) return null;
-
-  const appVersion = getAppVersion();
-  const isBlocking = semverLt(appVersion, manifest.minSupportedVersion);
-
-  if (!isBlocking) return null;
-
-  return (
-    <Modal
-      visible
-      transparent={false}
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={() => {}}
-    >
-      <View
-        style={[
-          styles.modalContainer,
-          {
-            backgroundColor: colors.background,
-            paddingTop: insets.top + Spacing.xl,
-            paddingBottom: insets.bottom + Spacing.xl,
-          },
-        ]}>
-        <ThemedText style={[styles.modalTitle, { color: colors.text }]}>
-          Update required
-        </ThemedText>
-        <ThemedText style={[styles.modalBody, { color: colors.text }]}>
-          This version of s3-backup is no longer supported. Please download
-          the latest version to continue.
-        </ThemedText>
-        {manifest.releaseNotes ? (
-          <View
-            style={[styles.releaseNotesBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ThemedText style={[styles.releaseNotesLabel, { color: colors.text }]}>
-              What's new
-            </ThemedText>
-            <ThemedText style={[styles.releaseNotesText, { color: colors.text }]}>
-              {manifest.releaseNotes}
-            </ThemedText>
-          </View>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Download update"
-          onPress={() => WebBrowser.openBrowserAsync(manifest.apkUrl)}
-          style={({ pressed }) => [
-            styles.modalButton,
-            { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
-          ]}>
-          <ThemedText style={[styles.modalButtonText, { color: colors.onAccent }]}>
-            Download update
-          </ThemedText>
-        </Pressable>
-      </View>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
@@ -174,39 +99,5 @@ const styles = StyleSheet.create({
   },
   dismissText: {
     ...Type.label,
-  },
-  modalContainer: {
-    flex: 1,
-    paddingHorizontal: Spacing.xl,
-    justifyContent: 'center',
-    gap: Spacing.lg,
-  },
-  modalTitle: {
-    ...Type.title,
-  },
-  modalBody: {
-    ...Type.body,
-  },
-  releaseNotesBox: {
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    gap: Spacing.xs,
-  },
-  releaseNotesLabel: {
-    ...Type.bodyStrong,
-  },
-  releaseNotesText: {
-    ...Type.body,
-  },
-  modalButton: {
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  modalButtonText: {
-    ...Type.bodyStrong,
   },
 });

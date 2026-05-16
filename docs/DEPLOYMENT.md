@@ -264,18 +264,21 @@ stored in `expo-secure-store`.
 
 ### Release workflow
 
-The app supports three release paths. Pick based on what changed:
+The app has two release paths. Pick based on whether the change touches
+native code:
 
-| Change type | Release path | How users get it |
-|---|---|---|
-| JS-only fix / feature (no native rebuild needed) | `eas update --branch preview --message "..."` | OTA — downloaded and applied on next launch |
-| New JS feature with native dependency | `eas build --profile preview --platform android` | User downloads + sideloads new APK |
-| Breaking change / new native module | Bump `version` in `app/app.json` to a new major, then build | In-app blocking modal prompts user to install |
+| Change type | Release path | `version` bump? | How users get it |
+|---|---|---|---|
+| JS-only fix / feature | `eas update --branch preview --message "..."` | No | OTA — downloaded and applied on next launch |
+| Native change (new dep, SDK bump, native fix) | `eas build --profile preview --platform android` | Yes | In-app update banner → user taps Download → sideloads new APK |
 
-Before any release, bump `version` in `app/app.json` to the appropriate
-semver level (see `app/README.md#releasing` for guidance).
+`runtimeVersion` is set to `{ policy: "appVersion" }`. That means bumping
+`version` in `app/app.json` produces a new runtime, and OTA bundles
+published against it cannot reach existing installs. **Don't bump
+`version` for a JS-only change** — it strands existing users. See
+`app/README.md#releasing` for the semver rules.
 
-#### Updating the version manifest (for the update banner and blocking modal)
+#### Updating the version manifest (for the update banner)
 
 The in-app update banner reads a JSON manifest from `VERSION_MANIFEST_URL`
 in `app/lib/version.ts`. The URL is left empty by default (the feature is
@@ -285,7 +288,7 @@ disabled). To enable it:
    public release bucket and outputs `ReleaseManifestUrl`.
 2. Set `VERSION_MANIFEST_URL` in `app/lib/version.ts` to:
    `<ReleaseManifestUrl>/manifest.json`
-3. After each release, upload the manifest:
+3. After each native release, upload an updated manifest:
 
 ```bash
 aws s3 cp manifest.json s3://<ReleaseBucketName>/manifest.json --acl bucket-owner-full-control
@@ -296,7 +299,6 @@ Manifest format (`manifest.json`):
 ```json
 {
   "latestNativeVersion": "1.2.0",
-  "minSupportedVersion": "1.1.0",
   "apkUrl": "<EAS build artifact URL from expo.dev>",
   "releaseNotes": "What's new in this version."
 }
@@ -304,9 +306,6 @@ Manifest format (`manifest.json`):
 
 - `apkUrl`: the direct `.apk` download link from
   **expo.dev → your project → Builds → (select the build) → Download**.
-- `minSupportedVersion`: versions below this see a blocking modal with no
-  dismiss — they must install before they can use the app. Only advance
-  this for truly incompatible native changes.
 - `latestNativeVersion`: versions below this see a dismissible banner.
   Advance this on every native rebuild.
 
