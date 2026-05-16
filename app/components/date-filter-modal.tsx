@@ -127,7 +127,7 @@ export function DateFilterModal({
             onPress={() => setDraft((prev) => ({ ...prev, [field]: null }))}
             style={styles.clearFieldBtn}
             hitSlop={8}>
-            <ThemedText style={{ color: colors.muted, fontSize: 12 }}>Clear</ThemedText>
+            <ThemedText style={{ color: colors.muted, ...Type.meta }}>Clear</ThemedText>
           </Pressable>
         )}
       </View>
@@ -184,7 +184,7 @@ export function DateFilterModal({
                   { backgroundColor: colors.tint },
                   startInvalid && styles.disabledBtn,
                 ]}>
-                <ThemedText style={{ color: colors.onAccent, fontWeight: '600' }}>
+                <ThemedText style={{ color: colors.onAccent, ...Type.bodyStrong }}>
                   Apply
                 </ThemedText>
               </Pressable>
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xs,
   },
   errorText: {
-    fontSize: 12,
+    ...Type.meta,
   },
   actions: {
     flexDirection: 'row',
