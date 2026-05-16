@@ -177,19 +177,50 @@ async function main() {
     }),
   );
 
+  // Fetch versioning status once; the versioning check and the
+  // noncurrent-cleanup check both derive their result from it.
+  const versioning = await (async (): Promise<
+    | { kind: 'ok'; status: string | undefined }
+    | { kind: 'access-denied' }
+    | { kind: 'error'; message: string }
+  > => {
+    try {
+      const r = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }));
+      return { kind: 'ok', status: r.Status };
+    } catch (err) {
+      if (isAccessDenied(err)) return { kind: 'access-denied' };
+      return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
+  })();
+
   // ---- Strongly recommended: versioning ----
   results.push(
-    await check('Versioning enabled', 'recommended', async () => {
-      const r = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }));
-      if (r.Status === 'Enabled') {
-        return { pass: true, detail: 'Versioning is Enabled' };
+    ((): CheckResult => {
+      const name = 'Versioning enabled';
+      const severity: Severity = 'recommended';
+      if (versioning.kind === 'access-denied') {
+        return {
+          name,
+          severity,
+          outcome: 'skip',
+          detail: 'Access denied — your IAM principal cannot read versioning state',
+          fix: 'Grant s3:GetBucketVersioning to your IAM user',
+        };
+      }
+      if (versioning.kind === 'error') {
+        return { name, severity, outcome: 'fail', detail: `Error: ${versioning.message}` };
+      }
+      if (versioning.status === 'Enabled') {
+        return { name, severity, outcome: 'pass', detail: 'Versioning is Enabled' };
       }
       return {
-        pass: false,
-        detail: `Versioning status: ${r.Status ?? 'Not configured'}`,
+        name,
+        severity,
+        outcome: 'fail',
+        detail: `Versioning status: ${versioning.status ?? 'Not configured'}`,
         fix: 'Enable in S3 console → Bucket → Properties → Bucket Versioning',
       };
-    }),
+    })(),
   );
 
   // ---- Strongly recommended: public access block ----
@@ -342,6 +373,33 @@ async function main() {
       };
     }),
   );
+
+  // ---- Strongly recommended (only if versioning enabled): noncurrent version cleanup ----
+  // Without this, deleted/overwritten objects accumulate as hidden
+  // noncurrent versions forever and quietly grow the bill.
+  if (versioning.kind === 'ok' && versioning.status === 'Enabled') {
+    results.push(
+      lifecycleCheck('Noncurrent version cleanup', 'recommended', (rules) => {
+        const hasNoncurrentExpiry = rules.some(
+          (rule) =>
+            rule.Status === 'Enabled' &&
+            rule.NoncurrentVersionExpiration?.NoncurrentDays,
+        );
+        if (hasNoncurrentExpiry) {
+          const days = rules
+            .filter((r) => r.Status === 'Enabled')
+            .map((r) => r.NoncurrentVersionExpiration?.NoncurrentDays)
+            .find((d) => d !== undefined);
+          return { pass: true, detail: `Noncurrent versions expire after ${days} day(s)` };
+        }
+        return {
+          pass: false,
+          detail: 'Versioning is on but no rule expires old versions — hidden cost will grow over time',
+          fix: 'S3 console → Bucket → Management → Lifecycle → add rule to permanently delete noncurrent versions after 30 days',
+        };
+      }),
+    );
+  }
 
   // ---- Nice-to-have: cost-saving storage class transitions ----
   // Matches the optional lifecycle rule recommended in docs/DEPLOYMENT.md
