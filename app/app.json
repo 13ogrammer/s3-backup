@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "s3-backup",
+    "name": "S3 Backup",
     "slug": "s3-backup",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -40,11 +40,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/android-icon-monochrome.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
+            "image": "./assets/images/android-icon-foreground.png",
             "backgroundColor": "#000000"
           }
         }
