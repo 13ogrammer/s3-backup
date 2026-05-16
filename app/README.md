@@ -88,6 +88,15 @@ Release flows:
 | JS-only fix / feature | `eas update --branch preview --message "..."` | No | OTA — auto-applied on next app launch |
 | Native change (new dep, SDK bump, native fix) | `eas build --profile preview --platform android` | Yes | In-app update banner → user taps Download → sideload new APK |
 
+### Update banner
+
+The "Download" banner is opt-in. Set `EXPO_PUBLIC_VERSION_MANIFEST_URL`
+to point at a JSON manifest hosted in the public release bucket (see
+`docs/DEPLOYMENT.md` for the bucket + manifest setup). Local dev reads
+it from `app/.env` (copy `.env.example`). EAS builds read it from the
+build profile's environment variables in the EAS dashboard. Leave it
+unset and the banner is inert — no banner, no network call.
+
 ## Structure
 
 ```

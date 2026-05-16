@@ -17,5 +17,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ? `${config.android?.package}.dev`
         : config.android?.package,
     },
+    extra: {
+      ...config.extra,
+      versionManifestUrl: process.env.EXPO_PUBLIC_VERSION_MANIFEST_URL ?? '',
+    },
   } as ExpoConfig;
 };
