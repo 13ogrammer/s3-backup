@@ -65,26 +65,28 @@ your file manager / browser.
 
 ## Releasing
 
-Before each meaningful release, bump `version` in `app/app.json` manually
-(EAS autoIncrement only handles the native versionCode/build-number counter,
-not the human-readable semver string).
+> **Rule:** `version` in `app/app.json` tracks the **native binary**, not the
+> JS bundle. Never bump it for a JS-only change. The `runtimeVersion` policy
+> is `appVersion`, so bumping `version` produces a new runtime version and
+> OTA bundles published against it cannot reach existing installs.
 
-Semver guidance:
+Bump `version` (manually — EAS autoIncrement only handles the native
+versionCode/build-number counter) when the **native** side changes:
 
-- **Patch** (`1.0.x`): JS-only changes that can ship as an OTA update — no
-  native rebuild needed.
-- **Minor** (`1.x.0`): new JS features or dependency changes that require a
-  native rebuild (new EAS preview build).
-- **Major** (`x.0.0`): breaking changes (new native module, removed
-  permission, change in minimum OS target) that users must manually install.
+- **Patch** (`1.0.x`): native bug fix or small native dep bump.
+- **Minor** (`1.x.0`): new native dependency or notable native behaviour change.
+- **Major** (`x.0.0`): breaking native change (new permission, removed
+  permission, change in minimum OS target).
+
+For JS-only changes (UI tweaks, bug fixes, new screens, new JS-only
+components), leave `version` alone and ship via OTA.
 
 Release flows:
 
-| Change type | Command | How users get it |
-|---|---|---|
-| JS-only fix / feature | `eas update --branch preview --message "..."` | OTA — auto-applied on next app launch |
-| New JS feature (native rebuild) | `eas build --profile preview --platform android` | Download + sideload new APK |
-| Breaking / new native dep | Bump major version in `app.json`, then build | In-app blocking modal + sideload |
+| Change type | Command | `version` bump? | How users get it |
+|---|---|---|---|
+| JS-only fix / feature | `eas update --branch preview --message "..."` | No | OTA — auto-applied on next app launch |
+| Native change (new dep, SDK bump, native fix) | `eas build --profile preview --platform android` | Yes | In-app update banner → user taps Download → sideload new APK |
 
 ## Structure
 
