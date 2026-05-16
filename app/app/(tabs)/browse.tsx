@@ -254,6 +254,8 @@ export default function BrowseScreen() {
     }, [path, load]),
   );
 
+  useEffect(() => { setSearchQuery(''); }, [path]);
+
   // Auto-dismiss the snackbar after 5s.
   useEffect(() => {
     if (!snack) return;
