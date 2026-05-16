@@ -280,14 +280,21 @@ published against it cannot reach existing installs. **Don't bump
 
 #### Updating the version manifest (for the update banner)
 
-The in-app update banner reads a JSON manifest from `VERSION_MANIFEST_URL`
-in `app/lib/version.ts`. The URL is left empty by default (the feature is
-disabled). To enable it:
+The in-app update banner reads a JSON manifest from the URL set in
+`EXPO_PUBLIC_VERSION_MANIFEST_URL`. Unset → empty string → feature
+disabled (no banner, no network call). To enable it:
 
 1. Deploy the backend with `CreateReleaseBucket=true` — this creates the
    public release bucket and outputs `ReleaseManifestUrl`.
-2. Set `VERSION_MANIFEST_URL` in `app/lib/version.ts` to:
-   `<ReleaseManifestUrl>/manifest.json`
+2. Set the env var so it reaches both your local dev builds and your EAS
+   builds:
+   - **Locally**: copy `app/.env.example` to `app/.env` and set
+     `EXPO_PUBLIC_VERSION_MANIFEST_URL=<ReleaseManifestUrl>/manifest.json`.
+     Expo auto-loads `.env` on `npm start`.
+   - **EAS builds**: set `EXPO_PUBLIC_VERSION_MANIFEST_URL` under the
+     `preview` (and/or `production`) profile's environment variables
+     in the EAS dashboard. The value is read by `app/app.config.ts` at
+     build time and baked into `Constants.expoConfig.extra` in the APK.
 3. After each native release, upload an updated manifest:
 
 ```bash

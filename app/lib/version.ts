@@ -1,6 +1,9 @@
 import Constants from 'expo-constants';
 
-export const VERSION_MANIFEST_URL = '';
+export function getVersionManifestUrl(): string {
+  const url = Constants.expoConfig?.extra?.versionManifestUrl;
+  return typeof url === 'string' ? url : '';
+}
 
 export type VersionManifest = {
   latestNativeVersion: string;
@@ -9,9 +12,10 @@ export type VersionManifest = {
 };
 
 export async function fetchVersionManifest(): Promise<VersionManifest | null> {
-  if (!VERSION_MANIFEST_URL) return null;
+  const url = getVersionManifestUrl();
+  if (!url) return null;
   try {
-    const res = await fetch(VERSION_MANIFEST_URL, { cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = await res.json();
     if (
