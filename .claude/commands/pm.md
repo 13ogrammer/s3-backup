@@ -23,13 +23,14 @@ Call signature:
   - The Linear issue ID and full description (verbatim from `mcp__linear__get_issue`)
   - The branch you're working on
   - Output from every prior stage of this card (BA notes for the Architect; BA + Architect for the Engineer; BA + Architect + Engineer summary + commit SHAs for QA)
+  - **Current Linear comments on the card.** Immediately before every Agent spawn, call `mcp__linear__list_comments` for this card and embed the full thread (most recent first) under a `## Linear comments` heading in the prompt. Comments may arrive between stages (the user can drop hints, corrections, or option-picks on the card mid-run), and each stage must see them — subagents can't fetch them on their own. Forward everything; the receiving agent decides what's relevant.
 
 ## Hard rules
 
 1. **Pull only from Todo.** Never from Backlog.
 2. **Top-first ordering.** Use `mcp__linear__list_issues` with team `S3Backup` and state `Todo`. Sort the result by Linear's `sortOrder` ascending (lower sortOrder = higher in the user's manual list). Process serially in that order; never reorder.
 3. **One card at a time.** Finish (or park) the current card before starting the next.
-4. **Card lifecycle:** Todo → In Progress (when you start) → leave at In Progress with a comment `"QA passed — awaiting manual review. Branch: <branch>. Commit(s): <sha list>"`. **Do not move to Done.**
+4. **Card lifecycle:** Todo → In Progress (when you start) → **Review** (on QA pass + ff-merge) with a comment `"QA passed — awaiting manual review. Branch: <branch>. Commit(s): <sha list>"`. **Do not move to Done.** The user moves Review → Done manually after eyeballing the diff on device.
 5. **Branch per card.** See "Branching workflow" below.
 6. **No `git push`. No PR creation. No `--no-verify`.** Manual review by the user is the gate before anything leaves the machine.
 7. **Clean working tree before you start each card.** If `git status` shows uncommitted changes, abort that card and surface it — do not stash, discard, or commit unrelated work.
@@ -75,7 +76,7 @@ For each card:
 5. **Architect:** spawn `architect` with the BA output appended to the issue context.
 6. **Engineer:** spawn `engineer` with the Architect's plan and BA's acceptance criteria. Engineer commits on the feature branch.
 7. **QA:** spawn `qa` with BA criteria, Architect test plan, Engineer's commit SHAs.
-   - PASS / PASS_WITH_NOTES → ff-merge to main, delete branch, comment on Linear `"QA passed — awaiting manual review. Branch: <branch>. Commit(s): <sha>"`. Leave state In Progress.
+   - PASS / PASS_WITH_NOTES → ff-merge to main, delete branch, comment on Linear `"QA passed — awaiting manual review. Branch: <branch>. Commit(s): <sha>"`, then `mcp__linear__save_issue` with `state: "Review"`.
    - FAIL → spawn `engineer` once more with QA notes. Re-run `qa`. Still FAIL → comment `"Blocked: <qa summary>"`, leave branch unmerged, leave state In Progress, next card.
 8. **Next card.**
 
@@ -86,7 +87,7 @@ For each card:
 
 Processed **N** cards.
 
-### Completed (merged to main, awaiting manual review)
+### In Review (merged to main, moved to Review column, awaiting your sign-off)
 - **S3B-X**: [title] — branch `s3b-X-…` merged ff-only — commit(s) `<sha>` — [one-line description]
 ...
 
@@ -100,10 +101,10 @@ Processed **N** cards.
 
 ### Manual review checklist
 1. `git log --oneline origin/main..main` to see the merged commit set.
-2. For each commit/card: read the diff, run the app on a real device, verify the acceptance criteria.
+2. For each card sitting in the **Review** column: read the diff, run the app on a real device, verify the acceptance criteria.
 3. For blocked cards: `git checkout s3b-Z-…` to inspect the failed branch.
-4. If happy: move the Linear card to Done, then `git push origin main`.
-5. If not: comment on the Linear card, set it back to Todo, and I'll pick it up next run.
+4. If happy: move the Linear card from Review → Done, then `git push origin main`.
+5. If not: comment on the Linear card, set it back to Todo (revert the merge first if needed), and I'll pick it up next run.
 
 **I have NOT pushed any commits and NOT marked any cards Done.** Both are deliberate gates for you.
 ```
