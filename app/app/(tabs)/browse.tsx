@@ -1,5 +1,4 @@
 import { useFocusEffect } from 'expo-router';
-import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,6 +18,7 @@ import { FolderPicker } from '@/components/folder-picker';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { RenameModal } from '@/components/rename-modal';
 import { ThemedText } from '@/components/themed-text';
+import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
@@ -898,14 +898,19 @@ function renderListRow({
           <IconSymbol name="folder" size={28} color={colors.icon} />
         </View>
       ) : item.previewUrl ? (
-        <Image
-          source={{ uri: item.previewUrl }}
-          style={styles.thumb}
-          contentFit="cover"
-          transition={120}
-          recyclingKey={item.key}
-          cachePolicy="memory-disk"
-        />
+        <View style={styles.thumb}>
+          <Thumb
+            uri={item.previewUrl}
+            width={THUMB_SIZE}
+            height={THUMB_SIZE}
+            recyclingKey={item.key}
+            fallback={
+              <View style={[{ position: 'absolute', top: 0, left: 0, width: THUMB_SIZE, height: THUMB_SIZE }, styles.thumbSlot]}>
+                <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
+              </View>
+            }
+          />
+        </View>
       ) : item.mediaKind === 'video' ? (
         <View style={[styles.thumb, styles.videoThumb]}>
           <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoThumbText}>
@@ -956,13 +961,17 @@ function renderGridTile({
           </ThemedText>
         </View>
       ) : item.previewUrl ? (
-        <Image
-          source={{ uri: item.previewUrl }}
-          style={styles.gridImage}
-          contentFit="cover"
-          transition={120}
+        <Thumb
+          uri={item.previewUrl}
+          width={GRID_TILE}
+          height={GRID_TILE}
+          borderRadius={Radius.lg}
           recyclingKey={item.key}
-          cachePolicy="memory-disk"
+          fallback={
+            <View style={[{ position: 'absolute', top: 0, left: 0, width: GRID_TILE, height: GRID_TILE }, styles.gridFolderTile]}>
+              <IconSymbol name="photo.on.rectangle" size={40} color={colors.icon} />
+            </View>
+          }
         />
       ) : item.mediaKind === 'video' ? (
         <View style={[styles.gridTile, styles.videoThumb]}>
@@ -1055,7 +1064,6 @@ const styles = StyleSheet.create({
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   thumbSlot: {
     width: THUMB_SIZE,

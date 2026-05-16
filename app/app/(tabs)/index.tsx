@@ -1,5 +1,4 @@
 import { getInfoAsync } from 'expo-file-system/legacy';
-import { Image } from 'expo-image';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import { useNavigation } from 'expo-router';
@@ -18,6 +17,7 @@ import {
 import { DateFilterModal, type DateFilter } from '@/components/date-filter-modal';
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
+import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
@@ -647,14 +647,13 @@ export default function GalleryScreen() {
                   key={cell.id}
                   onPress={() => toggle(cell.id)}
                   style={{ width: TILE, height: TILE }}>
-                  <Image
-                    source={{ uri: cell.uri }}
-                    style={[
-                      { width: TILE, height: TILE, borderRadius: 4 },
-                      backedUpMap[cell.id] != null && styles.backedUpImage,
-                    ]}
-                    contentFit="cover"
+                  <Thumb
+                    uri={cell.uri}
+                    width={TILE}
+                    height={TILE}
+                    borderRadius={4}
                     recyclingKey={cell.id}
+                    style={backedUpMap[cell.id] != null ? styles.backedUpImage : undefined}
                   />
                   {cell.mediaType === 'video' && (
                     <View style={styles.videoBadge}>
