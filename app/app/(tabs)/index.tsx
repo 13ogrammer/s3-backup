@@ -2,7 +2,8 @@ import { getInfoAsync } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
-import { useEffect, useMemo, useState } from 'react';
+import { useNavigation } from 'expo-router';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +15,7 @@ import {
   View,
 } from 'react-native';
 
+import { DateFilterModal, type DateFilter } from '@/components/date-filter-modal';
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -55,6 +57,7 @@ type UploadState = {
 export default function GalleryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const navigation = useNavigation();
 
   const [permission, requestPermission] = MediaLibrary.usePermissions({
     granularPermissions: ['photo', 'video'],
@@ -70,6 +73,10 @@ export default function GalleryScreen() {
   const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
   const [pendingResume, setPendingResume] = useState<PendingMultipartUpload[]>([]);
   const [backedUpMap, setBackedUpMap] = useState<BackedUpMap>({});
+  const [dateFilter, setDateFilter] = useState<DateFilter>({ start: null, end: null });
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const filterActive = dateFilter.start !== null || dateFilter.end !== null;
+  const mountedRef = useRef(false);
 
   useEffect(() => {
     if (permission?.granted) {
@@ -92,6 +99,41 @@ export default function GalleryScreen() {
       .then(setBackedUpMap)
       .catch((err) => console.warn('loadBackedUpMap failed', err));
   }, []);
+
+  // Reset and reload when the date filter changes, but not on the initial render.
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    setSelectedIds(new Set());
+    setAssets([]);
+    setEndCursor(undefined);
+    setHasMore(true);
+    loadInitial(dateFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter.start?.getTime(), dateFilter.end?.getTime()]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => setFilterModalVisible(true)}
+          style={{ paddingRight: Spacing.md }}
+          hitSlop={8}>
+          <IconSymbol
+            name={
+              filterActive
+                ? 'line.3.horizontal.decrease.circle.fill'
+                : 'line.3.horizontal.decrease.circle'
+            }
+            size={22}
+            color={filterActive ? colors.tint : colors.icon}
+          />
+        </Pressable>
+      ),
+    });
+  }, [filterActive, dateFilter, navigation, colors.tint, colors.icon]);
 
   const uploading = uploadState !== null;
   useEffect(() => {
@@ -117,13 +159,16 @@ export default function GalleryScreen() {
     }
   }
 
-  async function loadInitial() {
+  async function loadInitial(filter?: DateFilter) {
+    const activeFilter = filter ?? dateFilter;
     setLoadingAssets(true);
     try {
       const page = await MediaLibrary.getAssetsAsync({
         mediaType: ['photo', 'video'],
         first: PAGE_SIZE,
         sortBy: [MediaLibrary.SortBy.creationTime],
+        ...(activeFilter.start != null ? { createdAfter: activeFilter.start } : {}),
+        ...(activeFilter.end != null ? { createdBefore: activeFilter.end } : {}),
       });
       setAssets(page.assets);
       setEndCursor(page.endCursor);
@@ -142,6 +187,8 @@ export default function GalleryScreen() {
         first: PAGE_SIZE,
         after: endCursor,
         sortBy: [MediaLibrary.SortBy.creationTime],
+        ...(dateFilter.start != null ? { createdAfter: dateFilter.start } : {}),
+        ...(dateFilter.end != null ? { createdBefore: dateFilter.end } : {}),
       });
       setAssets((prev) => [...prev, ...page.assets]);
       setEndCursor(page.endCursor);
@@ -164,7 +211,10 @@ export default function GalleryScreen() {
     setSelectedIds(new Set());
   }
 
-  const sections = useMemo(() => buildGallerySections(assets, new Date()), [assets]);
+  const sections = useMemo(
+    () => buildGallerySections(assets, new Date(), { excludeUnknown: filterActive }),
+    [assets, filterActive],
+  );
 
   function isSectionFullySelected(section: GallerySection): boolean {
     return section.assetIds.length > 0 && section.assetIds.every((id) => selectedIds.has(id));
@@ -517,6 +567,26 @@ export default function GalleryScreen() {
         </View>
       )}
 
+      {filterActive && (
+        <View
+          style={[
+            styles.filterBadgeRow,
+            { backgroundColor: colors.accentSoft, borderColor: colors.border },
+          ]}>
+          <Pressable onPress={() => setFilterModalVisible(true)} style={{ flex: 1 }}>
+            <ThemedText style={[styles.filterBadgeText, { color: colors.tint }]}>
+              {formatFilterLabel(dateFilter)}
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => setDateFilter({ start: null, end: null })}
+            hitSlop={8}
+            style={{ paddingLeft: Spacing.sm }}>
+            <ThemedText style={{ color: colors.tint, fontSize: 16, lineHeight: 20 }}>×</ThemedText>
+          </Pressable>
+        </View>
+      )}
+
       <SectionList<GalleryRow, GallerySection>
         sections={sections}
         stickySectionHeadersEnabled={false}
@@ -526,7 +596,11 @@ export default function GalleryScreen() {
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
           loadingAssets ? null : (
-            <ThemedText style={styles.empty}>No photos or videos on this device.</ThemedText>
+            <ThemedText style={styles.empty}>
+              {filterActive
+                ? 'No photos or videos in this date range.'
+                : 'No photos or videos on this device.'}
+            </ThemedText>
           )
         }
         ListFooterComponent={
@@ -640,6 +714,20 @@ export default function GalleryScreen() {
         </View>
       )}
 
+      <DateFilterModal
+        visible={filterModalVisible}
+        value={dateFilter}
+        onApply={(next) => {
+          setFilterModalVisible(false);
+          setDateFilter(next);
+        }}
+        onClear={() => {
+          setFilterModalVisible(false);
+          setDateFilter({ start: null, end: null });
+        }}
+        onClose={() => setFilterModalVisible(false)}
+      />
+
       <FolderPicker
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
@@ -682,6 +770,22 @@ export default function GalleryScreen() {
       )}
     </ThemedView>
   );
+}
+
+function formatFilterLabel(filter: DateFilter): string {
+  const fmt = (d: Date) =>
+    d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const fmtYear = (d: Date) =>
+    d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const { start, end } = filter;
+  if (start && end) {
+    if (start.toDateString() === end.toDateString()) return fmtYear(start);
+    return `${fmt(start)} – ${fmt(end)}`;
+  }
+  if (start) return `From ${fmt(start)}`;
+  if (end) return `Until ${fmt(end)}`;
+  return '';
 }
 
 function describeError(err: unknown): string {
@@ -822,5 +926,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  filterBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.pill,
+    marginHorizontal: Spacing.md,
+    marginVertical: Spacing.xs,
+  },
+  filterBadgeText: {
+    ...Type.label,
   },
 });

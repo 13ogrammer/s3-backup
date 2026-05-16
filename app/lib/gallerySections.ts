@@ -50,6 +50,7 @@ function chunkIntoRows(assets: MediaLibrary.Asset[]): GalleryRow[] {
 export function buildGallerySections(
   assets: readonly MediaLibrary.Asset[],
   now: Date,
+  opts?: { excludeUnknown?: boolean },
 ): GallerySection[] {
   const buckets = new Map<string, MediaLibrary.Asset[]>();
 
@@ -75,15 +76,17 @@ export function buildGallerySections(
     });
   }
 
-  // "Unknown date" always goes last.
-  const unknownAssets = buckets.get('unknown');
-  if (unknownAssets && unknownAssets.length > 0) {
-    sections.push({
-      bucketKey: 'unknown',
-      title: 'Unknown date',
-      assetIds: unknownAssets.map((a) => a.id),
-      data: chunkIntoRows(unknownAssets),
-    });
+  // "Unknown date" always goes last, but excluded when a date filter is active.
+  if (!opts?.excludeUnknown) {
+    const unknownAssets = buckets.get('unknown');
+    if (unknownAssets && unknownAssets.length > 0) {
+      sections.push({
+        bucketKey: 'unknown',
+        title: 'Unknown date',
+        assetIds: unknownAssets.map((a) => a.id),
+        data: chunkIntoRows(unknownAssets),
+      });
+    }
   }
 
   return sections;
