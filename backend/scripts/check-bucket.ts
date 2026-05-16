@@ -413,6 +413,12 @@ async function main() {
     'GLACIER_IR',
     'DEEP_ARCHIVE',
   ]);
+  const ruleHasColdTransition = (rule: LifecycleRule): boolean =>
+    rule.Status === 'Enabled' &&
+    (rule.Transitions ?? []).some(
+      (t) => t.StorageClass && COLD_TIERS.has(t.StorageClass),
+    );
+
   results.push(
     lifecycleCheck('Cost-saving storage tiering', 'nice-to-have', (rules) => {
       const transitions = rules.flatMap((rule) =>
@@ -434,6 +440,47 @@ async function main() {
       };
     }),
   );
+
+  // ---- Nice-to-have (only if cold transitions exist): exclude .thumbnails/ ----
+  // The Browse / Gallery tabs fetch thumbs constantly. If thumbs tier
+  // to Glacier IR along with originals, every scroll through old
+  // folders triggers a per-GB retrieval fee. A rule is considered
+  // safe if it has an ObjectSizeGreaterThan filter ≥ 10 KB (thumbs
+  // are 20–50 KB and below that line in practice), or a Prefix filter
+  // that doesn't include `.thumbnails/`.
+  const THUMB_PREFIX = '.thumbnails/';
+  const SIZE_THRESHOLD = 10240; // 10 KB — thumbs are 20-50 KB; this catches a 100 KB filter too
+  const ruleExcludesThumbnails = (rule: LifecycleRule): boolean => {
+    const minSize =
+      rule.Filter?.ObjectSizeGreaterThan ?? rule.Filter?.And?.ObjectSizeGreaterThan;
+    if (minSize !== undefined && minSize >= SIZE_THRESHOLD) return true;
+    const prefix = rule.Filter?.Prefix ?? rule.Filter?.And?.Prefix ?? rule.Prefix;
+    if (prefix && prefix !== '' && !THUMB_PREFIX.startsWith(prefix)) return true;
+    return false;
+  };
+
+  const coldRulesPresent =
+    lifecycle.kind === 'ok' && lifecycle.rules.some(ruleHasColdTransition);
+
+  if (coldRulesPresent) {
+    results.push(
+      lifecycleCheck('Cold-tier rules skip .thumbnails/', 'nice-to-have', (rules) => {
+        const coldRules = rules.filter(ruleHasColdTransition);
+        const offending = coldRules.filter((r) => !ruleExcludesThumbnails(r));
+        if (offending.length === 0) {
+          return {
+            pass: true,
+            detail: `${coldRules.length} cold-tier rule(s) scoped to exclude thumbnails`,
+          };
+        }
+        return {
+          pass: false,
+          detail: `${offending.length} of ${coldRules.length} cold-tier rule(s) also tier .thumbnails/ — browsing old folders will incur retrieval fees`,
+          fix: 'Add a Minimum object size filter of 102400 (100 KB) to the rule — S3 console → Lifecycle rule → Filter → "Limit the scope using filters"',
+        };
+      }),
+    );
+  }
 
   printReport(results);
 
