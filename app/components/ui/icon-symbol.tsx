@@ -30,6 +30,8 @@ const MAPPING = {
   'magnifyingglass': 'search',
   'xmark.circle.fill': 'cancel',
   'checkmark.icloud.fill': 'cloud-done',
+  'line.3.horizontal.decrease.circle': 'filter-list',
+  'line.3.horizontal.decrease.circle.fill': 'filter-list',
 } as IconMapping;
 
 /**
