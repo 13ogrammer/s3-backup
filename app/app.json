@@ -8,6 +8,8 @@
     "scheme": "app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "runtimeVersion": { "policy": "appVersion" },
+    "updates": { "url": "https://u.expo.dev/89221e36-3815-4709-829f-ee5e7326e829" },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.x13ogrammer.s3backup"
