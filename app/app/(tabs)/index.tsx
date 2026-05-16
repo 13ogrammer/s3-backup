@@ -115,6 +115,10 @@ export default function GalleryScreen() {
   }, [dateFilter.start?.getTime(), dateFilter.end?.getTime()]);
 
   useLayoutEffect(() => {
+    if (!permission?.granted) {
+      navigation.setOptions({ headerRight: undefined });
+      return;
+    }
     navigation.setOptions({
       headerRight: () => (
         <Pressable
@@ -133,7 +137,7 @@ export default function GalleryScreen() {
         </Pressable>
       ),
     });
-  }, [filterActive, dateFilter, navigation, colors.tint, colors.icon]);
+  }, [permission?.granted, filterActive, dateFilter, navigation, colors.tint, colors.icon]);
 
   const uploading = uploadState !== null;
   useEffect(() => {
@@ -582,7 +586,7 @@ export default function GalleryScreen() {
             onPress={() => setDateFilter({ start: null, end: null })}
             hitSlop={8}
             style={{ paddingLeft: Spacing.sm }}>
-            <ThemedText style={{ color: colors.tint, fontSize: 16, lineHeight: 20 }}>×</ThemedText>
+            <ThemedText style={{ color: colors.tint, ...Type.body }}>×</ThemedText>
           </Pressable>
         </View>
       )}
