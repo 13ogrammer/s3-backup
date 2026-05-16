@@ -149,11 +149,29 @@ A sensible default for personal backup:
 | 90+ days | Glacier Instant Retrieval | $0.004/GB/mo |
 
 Add via the S3 console: **Bucket → Management → Lifecycle rules →
-Create rule**. Apply to all objects. Add two transitions
-(Standard-IA at 30 days, Glacier IR at 90).
+Create rule**. Add two transitions (Standard-IA at 30 days, Glacier
+IR at 90).
 
-Don't add this if you frequently re-download old photos — Glacier IR
-has a per-GB retrieval fee.
+**Important — exclude thumbnails from the rule.** Thumbnails live
+under the `.thumbnails/` prefix and the Browse / Gallery tabs fetch
+them every time you scroll through old folders. If thumbs also move
+to Glacier IR, every scroll triggers a per-GB retrieval fee. The fix:
+limit the rule to objects above the thumbnail size. In the rule's
+**Filter** section choose *"Limit the scope using filters"* and set:
+
+- **Minimum object size**: `102400` (100 KB)
+
+Thumbnails are typically 20–50 KB so they stay on Standard for free
+browsing, while originals (photos ≥ a few hundred KB, videos in the
+MBs) get tiered as intended.
+
+> If your filter form doesn't expose object size, prefer creating
+> the rule via the AWS CLI with an `ObjectSizeGreaterThan` filter on
+> the `And` clause.
+
+Don't add this rule at all if you frequently re-download old
+originals — Glacier IR's per-GB retrieval fee will dominate the
+storage savings.
 
 ---
 
