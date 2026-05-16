@@ -100,9 +100,15 @@ the app's Settings tab. **Do not commit it. Do not reuse the dev
 ```bash
 cd backend
 npm install
-sam build
+npm run build           # wraps `sam build`; see note below
 sam deploy --guided
 ```
+
+> **Why `npm run build` and not `sam build` directly?** SAM's
+> esbuild bundler needs `esbuild` on `$PATH`. `npm run` prepends
+> `node_modules/.bin`, so the local devDependency is found. Running
+> `sam build` directly fails with "Cannot find esbuild" unless you
+> install esbuild globally.
 
 The `--guided` flag walks you through prompts. Suggested answers:
 
@@ -238,7 +244,7 @@ After code changes in `backend/`:
 
 ```bash
 cd backend
-sam build
+npm run build
 sam deploy            # uses samconfig.toml from the guided deploy
 ```
 

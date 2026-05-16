@@ -26,7 +26,7 @@ openssl rand -hex 32
 # First-time deploy (asks for region, bucket name, etc.)
 cd backend
 npm install
-sam build
+npm run build           # wraps `sam build`; ensures local esbuild is on PATH
 sam deploy --guided
 ```
 
