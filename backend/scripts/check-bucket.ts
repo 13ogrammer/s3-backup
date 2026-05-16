@@ -32,6 +32,7 @@ import {
   GetBucketVersioningCommand,
   GetPublicAccessBlockCommand,
   HeadBucketCommand,
+  type LifecycleRule,
   S3Client,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
@@ -278,36 +279,101 @@ async function main() {
     }),
   );
 
+  // Fetch lifecycle config once; both nice-to-have checks below derive
+  // their result from this single response.
+  const lifecycle = await (async (): Promise<
+    | { kind: 'ok'; rules: LifecycleRule[] }
+    | { kind: 'absent' }
+    | { kind: 'access-denied' }
+    | { kind: 'error'; message: string }
+  > => {
+    try {
+      const r = await s3.send(
+        new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
+      );
+      return { kind: 'ok', rules: r.Rules ?? [] };
+    } catch (err) {
+      if (isNotFoundConfig(err)) return { kind: 'absent' };
+      if (isAccessDenied(err)) return { kind: 'access-denied' };
+      return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
+  })();
+
+  function lifecycleCheck(
+    name: string,
+    severity: Severity,
+    evaluate: (rules: LifecycleRule[]) => { pass: boolean; detail: string; fix?: string },
+  ): CheckResult {
+    if (lifecycle.kind === 'ok') {
+      const r = evaluate(lifecycle.rules);
+      return { name, severity, outcome: r.pass ? 'pass' : 'fail', detail: r.detail, fix: r.fix };
+    }
+    if (lifecycle.kind === 'absent') {
+      const r = evaluate([]);
+      return { name, severity, outcome: r.pass ? 'pass' : 'fail', detail: r.detail, fix: r.fix };
+    }
+    if (lifecycle.kind === 'access-denied') {
+      return {
+        name,
+        severity,
+        outcome: 'skip',
+        detail: 'Access denied — your IAM principal cannot read lifecycle config',
+        fix: 'Grant s3:GetLifecycleConfiguration to your IAM user',
+      };
+    }
+    return { name, severity, outcome: 'fail', detail: `Error: ${lifecycle.message}` };
+  }
+
   // ---- Nice-to-have: abort-incomplete-multipart lifecycle rule ----
   results.push(
-    await check('Abort incomplete multipart uploads', 'nice-to-have', async () => {
-      try {
-        const r = await s3.send(
-          new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
-        );
-        const hasAbort = (r.Rules ?? []).some(
-          (rule) =>
-            rule.Status === 'Enabled' &&
-            rule.AbortIncompleteMultipartUpload?.DaysAfterInitiation,
-        );
-        if (hasAbort) {
-          return { pass: true, detail: 'Lifecycle rule cleans up failed uploads' };
-        }
-        return {
-          pass: false,
-          detail: 'No abort-incomplete-multipart-upload rule',
-          fix: 'S3 console → Bucket → Management → Lifecycle → add rule with 7-day abort',
-        };
-      } catch (err) {
-        if (isNotFoundConfig(err)) {
-          return {
-            pass: false,
-            detail: 'No lifecycle configuration set',
-            fix: 'S3 console → Bucket → Management → Lifecycle → add rule with 7-day abort',
-          };
-        }
-        throw err;
+    lifecycleCheck('Abort incomplete multipart uploads', 'nice-to-have', (rules) => {
+      const hasAbort = rules.some(
+        (rule) =>
+          rule.Status === 'Enabled' &&
+          rule.AbortIncompleteMultipartUpload?.DaysAfterInitiation,
+      );
+      if (hasAbort) {
+        return { pass: true, detail: 'Lifecycle rule cleans up failed uploads' };
       }
+      return {
+        pass: false,
+        detail: 'No abort-incomplete-multipart-upload rule',
+        fix: 'S3 console → Bucket → Management → Lifecycle → add rule with 7-day abort',
+      };
+    }),
+  );
+
+  // ---- Nice-to-have: cost-saving storage class transitions ----
+  // Matches the optional lifecycle rule recommended in docs/DEPLOYMENT.md
+  // Step 4 (Standard-IA / Glacier IR), or any equivalent cold-tier
+  // transition (Intelligent-Tiering, Glacier, Deep Archive).
+  const COLD_TIERS = new Set([
+    'STANDARD_IA',
+    'ONEZONE_IA',
+    'INTELLIGENT_TIERING',
+    'GLACIER',
+    'GLACIER_IR',
+    'DEEP_ARCHIVE',
+  ]);
+  results.push(
+    lifecycleCheck('Cost-saving storage tiering', 'nice-to-have', (rules) => {
+      const transitions = rules.flatMap((rule) =>
+        rule.Status === 'Enabled' ? (rule.Transitions ?? []) : [],
+      );
+      const coldTransitions = transitions.filter(
+        (t) => t.StorageClass && COLD_TIERS.has(t.StorageClass),
+      );
+      if (coldTransitions.length > 0) {
+        const summary = coldTransitions
+          .map((t) => `${t.StorageClass} @ ${t.Days ?? '?'}d`)
+          .join(', ');
+        return { pass: true, detail: `Transitions: ${summary}` };
+      }
+      return {
+        pass: false,
+        detail: 'All objects stay in S3 Standard (no cold-tier transitions configured)',
+        fix: 'Optional — see docs/DEPLOYMENT.md Step 4 (Standard-IA @ 30d, Glacier IR @ 90d) for a 60–80% cost reduction on aged data',
+      };
     }),
   );
 
