@@ -20,9 +20,22 @@ Parameters:
     Description: >
       Name of an existing S3 bucket to back up to. Leave blank to have this
       stack create a new bucket with versioning and public-access-block on.
+  CreateReleaseBucket:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Set to "true" to provision a public-read S3 bucket for hosting APK
+      releases and the version manifest JSON consumed by the in-app
+      "update available" banner. Only the maintainer publishing APK
+      releases needs this — fork users downloading APKs should leave it
+      "false". DANGER: everything in this bucket is world-readable; only
+      put release artifacts there (manifest.json, signed APKs), never
+      anything else.
 
 Conditions:
   CreateBucket: !Equals [!Ref BucketName, '']
+  CreateReleases: !Equals [!Ref CreateReleaseBucket, 'true']
 
 Globals:
   Function:
@@ -58,6 +71,35 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+
+  ReleaseBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateReleases
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+
+  ReleaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateReleases
+    Properties:
+      Bucket: !Ref ReleaseBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGet
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${ReleaseBucket}/*'
 
   ApiFn:
     Type: AWS::Serverless::Function
@@ -111,3 +153,13 @@ Outputs:
   BucketName:
     Description: Name of the S3 bucket this stack will back up to
     Value: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+  ReleaseBucketName:
+    Condition: CreateReleases
+    Description: Public bucket name for hosting APK releases and manifest.json
+    Value: !Ref ReleaseBucket
+  ReleaseManifestUrl:
+    Condition: CreateReleases
+    Description: >
+      Base URL for the release bucket. Paste this + "/manifest.json" into
+      VERSION_MANIFEST_URL in app/lib/version.ts.
+    Value: !Sub 'https://${ReleaseBucket}.s3.${AWS::Region}.amazonaws.com'
