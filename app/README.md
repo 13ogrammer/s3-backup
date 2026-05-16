@@ -41,7 +41,7 @@ Profiles in `eas.json`:
 | Profile | What | When |
 |---|---|---|
 | `development` | dev client `.apk` / `.ipa` | Daily dev — install once, then `npm start` connects to it. |
-| `preview` | release `.apk` (Android) or signed `.ipa` (iOS), internal distribution | Smoke test before release; sideload on a device. |
+| `preview` | release `.apk` (Android) or signed `.ipa` (iOS), internal distribution; versionCode auto-incremented per build | Smoke test before release; sideload on a device. |
 | `production` | release build with auto-incremented version, ready to submit | App Store / Play Store submission. |
 
 Build commands:
@@ -62,6 +62,29 @@ a production build.
 For Android sideload, just download the `.apk` from the EAS build
 output and install on a device with "Install unknown apps" enabled for
 your file manager / browser.
+
+## Releasing
+
+Before each meaningful release, bump `version` in `app/app.json` manually
+(EAS autoIncrement only handles the native versionCode/build-number counter,
+not the human-readable semver string).
+
+Semver guidance:
+
+- **Patch** (`1.0.x`): JS-only changes that can ship as an OTA update — no
+  native rebuild needed.
+- **Minor** (`1.x.0`): new JS features or dependency changes that require a
+  native rebuild (new EAS preview build).
+- **Major** (`x.0.0`): breaking changes (new native module, removed
+  permission, change in minimum OS target) that users must manually install.
+
+Release flows:
+
+| Change type | Command | How users get it |
+|---|---|---|
+| JS-only fix / feature | `eas update --branch preview --message "..."` | OTA — auto-applied on next app launch |
+| New JS feature (native rebuild) | `eas build --profile preview --platform android` | Download + sideload new APK |
+| Breaking / new native dep | Bump major version in `app.json`, then build | In-app blocking modal + sideload |
 
 ## Structure
 
