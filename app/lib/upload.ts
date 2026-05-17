@@ -14,6 +14,7 @@ import {
   removePendingUpload,
   savePendingUpload,
   type PendingMultipartUpload,
+  type PendingUpload,
 } from './uploadState';
 
 export type MediaKind = 'image' | 'video' | 'other';
@@ -27,7 +28,8 @@ const THUMB_EXT = '.thumb.jpg';
 
 // Files larger than this go through S3 multipart upload so a flaky
 // connection only loses the in-flight part, not the whole file.
-const MULTIPART_THRESHOLD = 50 * 1024 * 1024; // 50 MB
+// 10 MB keeps even mid-sized videos on the resumable path.
+const MULTIPART_THRESHOLD = 10 * 1024 * 1024; // 10 MB
 // S3 requires every non-final part to be >= 5 MB; up to 10 000 parts.
 // 8 MB is a good middle ground — small enough to fit in memory comfortably,
 // big enough that even a 10 GB file stays well under the part-count cap.
@@ -55,6 +57,7 @@ export async function uploadFile(
   contentType: string,
   onProgress?: (progress: UploadProgress) => void,
   resume?: ResumeState,
+  opts?: { trackSimple?: boolean },
 ): Promise<void> {
   if (resume) {
     // A resume implies the file was previously sized > MULTIPART_THRESHOLD
@@ -66,16 +69,31 @@ export async function uploadFile(
   if (size > MULTIPART_THRESHOLD) {
     return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress);
   }
-  return withRetry(() => uploadFileSimple(localUri, remoteKey, contentType, onProgress));
+  return withRetry(() =>
+    uploadFileSimple(localUri, remoteKey, contentType, size, onProgress, opts?.trackSimple ?? false),
+  );
 }
 
 async function uploadFileSimple(
   localUri: string,
   remoteKey: string,
   contentType: string,
+  totalBytes: number,
   onProgress?: (progress: UploadProgress) => void,
+  trackSimple = false,
 ): Promise<void> {
   const { url } = await api.signUpload(remoteKey, contentType);
+
+  if (trackSimple) {
+    await savePendingUpload({
+      kind: 'simple',
+      localUri,
+      remoteKey,
+      contentType,
+      totalBytes,
+      updatedAt: Date.now(),
+    });
+  }
 
   const task = createUploadTask(
     url,
@@ -97,6 +115,10 @@ async function uploadFileSimple(
   if (!result) throw new UploadError(0, 'upload cancelled');
   if (result.status < 200 || result.status >= 300) {
     throw new UploadError(result.status, `upload failed: HTTP ${result.status}`);
+  }
+
+  if (trackSimple) {
+    await removePendingUpload(remoteKey).catch(() => undefined);
   }
 }
 
@@ -210,6 +232,7 @@ function makePending(
   completedParts: CompletedPart[],
 ): PendingMultipartUpload {
   return {
+    kind: 'multipart',
     localUri,
     remoteKey,
     contentType,
@@ -256,17 +279,31 @@ export async function uploadAsset(
   // Retries live inside uploadFile now (per-part for multipart, whole-PUT
   // for single). Wrapping again here would mean a multipart retry creates
   // a fresh uploadId and orphans the persisted resume state.
-  await uploadFile(localUri, remoteKey, contentType, onProgress);
+  await uploadFile(localUri, remoteKey, contentType, onProgress, undefined, {
+    trackSimple: true,
+  });
 }
 
 export async function resumeUpload(
-  pending: PendingMultipartUpload,
+  pending: PendingUpload,
   onProgress?: (progress: UploadProgress) => void,
 ): Promise<void> {
-  await uploadFile(pending.localUri, pending.remoteKey, pending.contentType, onProgress, {
-    uploadId: pending.uploadId,
-    completedParts: pending.completedParts,
-  });
+  if (pending.kind === 'simple') {
+    // Re-PUT from zero — no partial state to recover.
+    await uploadFile(
+      pending.localUri,
+      pending.remoteKey,
+      pending.contentType,
+      onProgress,
+      undefined,
+      { trackSimple: true },
+    );
+  } else {
+    await uploadFile(pending.localUri, pending.remoteKey, pending.contentType, onProgress, {
+      uploadId: pending.uploadId,
+      completedParts: pending.completedParts,
+    });
+  }
 }
 
 async function generateAndUploadThumb(

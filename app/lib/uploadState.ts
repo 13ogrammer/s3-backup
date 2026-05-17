@@ -7,21 +7,32 @@ import {
 
 import type { CompletedPart } from './api';
 
-// Records the state of an in-flight multipart upload so it can survive
-// an app suspend/kill and be resumed on next foreground. Not stored in
-// SecureStore because the per-part ETag list grows past the iOS Keychain
-// per-item budget for large videos (1000+ parts × ~40 bytes JSON each).
-// Tokens still live in SecureStore — this file holds non-sensitive state.
-export type PendingMultipartUpload = {
+// Records the state of an in-flight upload so it can survive an app
+// suspend/kill and be resumed on next foreground. Not stored in SecureStore
+// because the per-part ETag list grows past the iOS Keychain per-item budget
+// for large videos (1000+ parts × ~40 bytes JSON each). Tokens still live in
+// SecureStore — this file holds non-sensitive state.
+
+type PendingUploadBase = {
   localUri: string;
   remoteKey: string;
   contentType: string;
-  uploadId: string;
   totalBytes: number;
-  partSize: number;
-  completedParts: CompletedPart[];
   updatedAt: number;
 };
+
+export type PendingMultipartUpload = PendingUploadBase & {
+  kind: 'multipart';
+  uploadId: string;
+  partSize: number;
+  completedParts: CompletedPart[];
+};
+
+export type PendingSimpleUpload = PendingUploadBase & {
+  kind: 'simple';
+};
+
+export type PendingUpload = PendingMultipartUpload | PendingSimpleUpload;
 
 const STATE_FILE = `${documentDirectory ?? ''}upload-state.json`;
 
@@ -34,43 +45,73 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return next as Promise<T>;
 }
 
-async function readAll(): Promise<PendingMultipartUpload[]> {
+async function readAll(): Promise<PendingUpload[]> {
   try {
     const info = await getInfoAsync(STATE_FILE);
     if (!info.exists) return [];
     const raw = await readAsStringAsync(STATE_FILE);
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isValidPending);
+    return parsed.filter(isValidPending).map(normalizeEntry);
   } catch (err) {
     console.warn('upload-state read failed', err);
     return [];
   }
 }
 
-async function writeAll(items: PendingMultipartUpload[]): Promise<void> {
+// Entries written before the kind discriminator was introduced have all
+// multipart fields but no `kind` property. Normalise them here so every
+// caller receives a fully-typed PendingUpload.
+function normalizeEntry(x: PendingUpload | LegacyMultipartEntry): PendingUpload {
+  if (!('kind' in x) || x.kind === undefined) {
+    return { ...(x as LegacyMultipartEntry), kind: 'multipart' };
+  }
+  return x as PendingUpload;
+}
+
+async function writeAll(items: PendingUpload[]): Promise<void> {
   await writeAsStringAsync(STATE_FILE, JSON.stringify(items));
 }
 
-function isValidPending(x: unknown): x is PendingMultipartUpload {
+// A legacy entry looks like a multipart entry but has no `kind` field.
+type LegacyMultipartEntry = Omit<PendingMultipartUpload, 'kind'>;
+
+export function isValidPending(x: unknown): x is PendingUpload | LegacyMultipartEntry {
   if (!x || typeof x !== 'object') return false;
   const o = x as Record<string, unknown>;
-  return (
-    typeof o.localUri === 'string' &&
-    typeof o.remoteKey === 'string' &&
-    typeof o.contentType === 'string' &&
-    typeof o.uploadId === 'string' &&
-    typeof o.totalBytes === 'number' &&
-    typeof o.partSize === 'number' &&
-    Array.isArray(o.completedParts)
-  );
+
+  // Base fields required by all kinds.
+  if (
+    typeof o.localUri !== 'string' ||
+    typeof o.remoteKey !== 'string' ||
+    typeof o.contentType !== 'string' ||
+    typeof o.totalBytes !== 'number'
+  ) {
+    return false;
+  }
+
+  const kind = o.kind;
+
+  // Simple upload: just the base fields plus kind discriminator.
+  if (kind === 'simple') return true;
+
+  // Multipart (explicit or legacy untagged): needs uploadId, partSize, completedParts.
+  if (kind === 'multipart' || kind === undefined) {
+    return (
+      typeof o.uploadId === 'string' &&
+      typeof o.partSize === 'number' &&
+      Array.isArray(o.completedParts)
+    );
+  }
+
+  return false;
 }
 
-export function loadPendingUploads(): Promise<PendingMultipartUpload[]> {
+export function loadPendingUploads(): Promise<PendingUpload[]> {
   return serialize(readAll);
 }
 
-export function savePendingUpload(entry: PendingMultipartUpload): Promise<void> {
+export function savePendingUpload(entry: PendingUpload): Promise<void> {
   return serialize(async () => {
     const items = await readAll();
     const next = items.filter((e) => e.remoteKey !== entry.remoteKey);

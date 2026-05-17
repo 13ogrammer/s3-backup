@@ -1,11 +1,14 @@
 import { getInfoAsync } from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
+import type { AssetInfo } from 'expo-media-library';
 import { useNavigation } from 'expo-router';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  AppStateStatus,
   Dimensions,
   Linking,
   Pressable,
@@ -37,7 +40,7 @@ import {
 import {
   loadPendingUploads,
   removePendingUpload,
-  type PendingMultipartUpload,
+  type PendingUpload,
 } from '@/lib/uploadState';
 
 const UPLOAD_CONCURRENCY = 3;
@@ -71,12 +74,15 @@ export default function GalleryScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [lastFolder, setLastFolderState] = useState<string | undefined>(undefined);
-  const [pendingResume, setPendingResume] = useState<PendingMultipartUpload[]>([]);
+  const [pendingResume, setPendingResume] = useState<PendingUpload[]>([]);
   const [backedUpMap, setBackedUpMap] = useState<BackedUpMap>({});
   const [dateFilter, setDateFilter] = useState<DateFilter>({ start: null, end: null });
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const filterActive = dateFilter.start !== null || dateFilter.end !== null;
   const mountedRef = useRef(false);
+
+  // Cache of assetId → fileSize (bytes), populated lazily as items are selected.
+  const fileSizeCacheRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (permission?.granted) {
@@ -90,9 +96,34 @@ export default function GalleryScreen() {
     });
   }, []);
 
+  const refreshPendingResume = useCallback(async () => {
+    try {
+      const all = await loadPendingUploads();
+      const alive: PendingUpload[] = [];
+      for (const entry of all) {
+        const info = await getInfoAsync(entry.localUri);
+        if (info.exists) alive.push(entry);
+        else await removePendingUpload(entry.remoteKey).catch(() => undefined);
+      }
+      setPendingResume(alive);
+    } catch (err) {
+      console.warn('refreshPendingResume failed', err);
+    }
+  }, []);
+
   useEffect(() => {
     refreshPendingResume();
-  }, []);
+  }, [refreshPendingResume]);
+
+  // Re-check for paused uploads whenever the app returns to the foreground
+  // (covers the case where the app was backgrounded mid-upload and relaunched
+  // without a full cold start).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') refreshPendingResume();
+    });
+    return () => sub.remove();
+  }, [refreshPendingResume]);
 
   useEffect(() => {
     loadBackedUpMap()
@@ -147,21 +178,6 @@ export default function GalleryScreen() {
       deactivateKeepAwake('s3backup.upload');
     };
   }, [uploading]);
-
-  async function refreshPendingResume() {
-    try {
-      const all = await loadPendingUploads();
-      const alive: PendingMultipartUpload[] = [];
-      for (const entry of all) {
-        const info = await getInfoAsync(entry.localUri);
-        if (info.exists) alive.push(entry);
-        else await removePendingUpload(entry.remoteKey).catch(() => undefined);
-      }
-      setPendingResume(alive);
-    } catch (err) {
-      console.warn('refreshPendingResume failed', err);
-    }
-  }
 
   async function loadInitial(filter?: DateFilter) {
     const activeFilter = filter ?? dateFilter;
@@ -331,11 +347,14 @@ export default function GalleryScreen() {
     });
     if (!confirmed) return;
     for (const entry of items) {
-      try {
-        await api.abortMultipart(entry.remoteKey, entry.uploadId);
-      } catch (err) {
-        console.warn('discard abort failed', entry.remoteKey, err);
+      if (entry.kind === 'multipart') {
+        try {
+          await api.abortMultipart(entry.remoteKey, entry.uploadId);
+        } catch (err) {
+          console.warn('discard abort failed', entry.remoteKey, err);
+        }
       }
+      // Simple entries have no server-side multipart session to abort.
       await removePendingUpload(entry.remoteKey).catch(() => undefined);
     }
     setPendingResume([]);
@@ -484,13 +503,64 @@ export default function GalleryScreen() {
 
   const selectedCount = selectedIds.size;
 
+  // Fetch fileSize for newly-selected asset ids we haven't seen before.
+  // getAssetInfoAsync is called per-id; results are cached to avoid repeat
+  // network hits on re-renders or deselect/reselect cycles.
+  const [selectionBytes, setSelectionBytes] = useState(0);
+  useEffect(() => {
+    if (selectedIds.size === 0) {
+      setSelectionBytes(0);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const cache = fileSizeCacheRef.current;
+      const toFetch: string[] = [];
+      for (const id of selectedIds) {
+        if (!cache.has(id)) toFetch.push(id);
+      }
+      for (const id of toFetch) {
+        if (cancelled) return;
+        try {
+          const info = await MediaLibrary.getAssetInfoAsync(id);
+          // `fileSize` exists at runtime on both platforms but is absent from
+          // the published TypeScript types — cast to reach it safely.
+          const size = (info as AssetInfo & { fileSize?: number }).fileSize;
+          cache.set(id, size ?? 0);
+        } catch {
+          cache.set(id, 0);
+        }
+      }
+      if (cancelled) return;
+      let total = 0;
+      for (const id of selectedIds) {
+        total += cache.get(id) ?? 0;
+      }
+      setSelectionBytes(total);
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  // selectedIds is a Set so we stringify the size + a stable key to detect changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds]);
+
   const pendingBytesRemaining = pendingResume.reduce((sum, e) => {
+    if (e.kind === 'simple') {
+      return sum + e.totalBytes;
+    }
     const done = e.completedParts.reduce((b, p) => {
       const offset = (p.partNumber - 1) * e.partSize;
       return b + Math.min(e.partSize, Math.max(0, e.totalBytes - offset));
     }, 0);
     return sum + Math.max(0, e.totalBytes - done);
   }, 0);
+
+  const allSimple =
+    pendingResume.length > 0 && pendingResume.every((e) => e.kind === 'simple');
 
   if (!permission) {
     return (
@@ -565,7 +635,7 @@ export default function GalleryScreen() {
               { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
             ]}>
             <ThemedText style={{ color: colors.onAccent, fontWeight: '600' }}>
-              Resume
+              {allSimple ? 'Retry' : 'Resume'}
             </ThemedText>
           </Pressable>
         </View>
@@ -698,7 +768,7 @@ export default function GalleryScreen() {
         <View style={[styles.bottomBar, { backgroundColor: colors.background, borderColor: colors.icon }]}>
           <View style={{ flex: 1 }}>
             <ThemedText type="defaultSemiBold">
-              {selectedCount} selected
+              {selectedCount} selected{selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}
             </ThemedText>
             <Pressable onPress={clearSelection}>
               <ThemedText style={{ color: colors.tint, fontSize: 13 }}>Clear</ThemedText>
