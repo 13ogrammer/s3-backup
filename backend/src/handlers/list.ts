@@ -9,6 +9,7 @@ import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizePrefix } from '../s3.js';
+import { PREVIEW_PREFIX } from '../previews.js';
 import { THUMB_PREFIX, thumbKey, thumbPrefix } from '../thumbs.js';
 import type { ListRequest, ListResponse, ListedFile } from '../types.js';
 
@@ -53,7 +54,7 @@ export async function list(body: ListRequest): Promise<ListResponse> {
 
   const folders: string[] = [];
   for (const cp of pageRes.CommonPrefixes ?? []) {
-    if (cp.Prefix && cp.Prefix !== THUMB_PREFIX) folders.push(cp.Prefix);
+    if (cp.Prefix && cp.Prefix !== THUMB_PREFIX && cp.Prefix !== PREVIEW_PREFIX) folders.push(cp.Prefix);
   }
 
   const rawFiles: Array<{ key: string; size: number; lastModified: string }> = [];
