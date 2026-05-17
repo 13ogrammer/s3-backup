@@ -14,6 +14,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   useWindowDimensions,
@@ -228,6 +229,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                   isActive={i === index}
                   width={pageWidth}
                   height={windowHeight}
+                  bottomInset={Platform.OS === 'android' ? insets.bottom : 0}
                   onZoomChange={i === index ? setIsZoomed : undefined}
                 />
               );
@@ -295,10 +297,11 @@ type SlideProps = {
   isActive: boolean;
   width: number;
   height: number;
+  bottomInset: number;
   onZoomChange?: (zoomed: boolean) => void;
 };
 
-function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, onZoomChange }: SlideProps) {
+function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, bottomInset, onZoomChange }: SlideProps) {
   const filename = basename(file.key);
   const player = useVideoPlayer(file.kind === 'video' ? originalUrl ?? null : null, (p) => {
     p.loop = false;
@@ -318,14 +321,16 @@ function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, 
           <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
         )}
         {displayUrl && file.kind === 'video' && (
-          <VideoView
-            player={player}
-            style={styles.media}
-            allowsFullscreen
-            allowsPictureInPicture
-            contentFit="contain"
-            nativeControls
-          />
+          <View style={{ flex: 1, paddingBottom: bottomInset }}>
+            <VideoView
+              player={player}
+              style={styles.media}
+              allowsFullscreen
+              allowsPictureInPicture
+              contentFit="contain"
+              nativeControls
+            />
+          </View>
         )}
         {displayUrl && file.kind === 'other' && (
           <ThemedView style={styles.noPreview}>
