@@ -40,8 +40,8 @@ Conditions:
 Globals:
   Function:
     Runtime: nodejs20.x
-    Timeout: 15
-    MemorySize: 512
+    Timeout: 29
+    MemorySize: 1024
     Architectures: [arm64]
     Environment:
       Variables:
@@ -104,15 +104,7 @@ Resources:
   ApiFn:
     Type: AWS::Serverless::Function
     Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: es2022
-        Sourcemap: false
-        EntryPoints:
-          - index.ts
-        External:
-          - '@aws-sdk/*'
+      BuildMethod: makefile
     Properties:
       CodeUri: src/
       Handler: index.handler
