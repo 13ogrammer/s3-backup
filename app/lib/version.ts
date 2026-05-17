@@ -8,7 +8,6 @@ export function getVersionManifestUrl(): string {
 export type VersionManifest = {
   latestNativeVersion: string;
   apkUrl: string;
-  releaseNotes: string;
 };
 
 export async function fetchVersionManifest(): Promise<VersionManifest | null> {
@@ -20,12 +19,11 @@ export async function fetchVersionManifest(): Promise<VersionManifest | null> {
     const data = await res.json();
     if (
       typeof data?.latestNativeVersion !== 'string' ||
-      typeof data?.apkUrl !== 'string' ||
-      typeof data?.releaseNotes !== 'string'
+      typeof data?.apkUrl !== 'string'
     ) {
       return null;
     }
-    return data as VersionManifest;
+    return { latestNativeVersion: data.latestNativeVersion, apkUrl: data.apkUrl };
   } catch {
     return null;
   }

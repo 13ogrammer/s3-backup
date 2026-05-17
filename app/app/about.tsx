@@ -5,8 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { CHANGELOG_ENTRIES } from '@/constants/changelog';
-import { GITHUB_REPO_URL, ISSUES_URL, LICENSE_URL } from '@/constants/links';
+import { CHANGELOG_URL, GITHUB_REPO_URL, ISSUES_URL, LICENSE_URL } from '@/constants/links';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAppVersion } from '@/lib/version';
@@ -40,6 +39,17 @@ export default function AboutScreen() {
             <Ionicons name="logo-github" size={18} color={colors.tint} />
             <ThemedText style={[Type.body, styles.linkText, { color: colors.tint }]}>
               GitHub repository
+            </ThemedText>
+            <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => openUrl(CHANGELOG_URL)}
+            style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}>
+            <Ionicons name="list-outline" size={18} color={colors.tint} />
+            <ThemedText style={[Type.body, styles.linkText, { color: colors.tint }]}>
+              Changelog
             </ThemedText>
             <Ionicons name="chevron-forward" size={16} color={colors.muted} />
           </Pressable>
@@ -82,25 +92,6 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Changelog card */}
-        <View style={[styles.card, { backgroundColor: colors.surface }]}>
-          <ThemedText style={[Type.bodyStrong, { color: colors.text }]}>Changelog</ThemedText>
-          {CHANGELOG_ENTRIES.map((entry) => (
-            <View key={entry.version} style={styles.changelogEntry}>
-              <ThemedText style={[Type.label, styles.changelogHeader, { color: colors.text }]}>
-                v{entry.version} · {entry.date}
-              </ThemedText>
-              {entry.notes.map((note, i) => (
-                <View key={i} style={styles.bulletRow}>
-                  <ThemedText style={[Type.body, { color: colors.muted }]}>{'•'}</ThemedText>
-                  <ThemedText style={[Type.body, styles.bulletText, { color: colors.muted }]}>
-                    {note}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -127,12 +118,4 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  changelogEntry: { gap: Spacing.xs, marginTop: Spacing.xs },
-  changelogHeader: { fontWeight: '600' },
-  bulletRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    paddingLeft: Spacing.xs,
-  },
-  bulletText: { flex: 1 },
 });
