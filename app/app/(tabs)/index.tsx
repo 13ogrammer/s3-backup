@@ -42,6 +42,8 @@ import {
   removePendingUpload,
   type PendingUpload,
 } from '@/lib/uploadState';
+import { recordUploadFailure, toReason } from '@/lib/activityLog';
+import { setUploadSessionActive } from '@/lib/uploadSession';
 
 const UPLOAD_CONCURRENCY = 3;
 const PAGE_SIZE = 60;
@@ -286,49 +288,62 @@ export default function GalleryScreen() {
 
     setUploadState({ total: items.length, done: 0, failed: 0, inFlight: [] });
 
-    const failed = await runWithConcurrency(
-      items,
-      async (entry) => {
-        const filename = filenameForKey(entry.remoteKey);
-        setUploadState((s) => (s ? { ...s, inFlight: [...s.inFlight, filename] } : s));
-        try {
-          await resumeUpload(entry);
-          setUploadState((s) =>
-            s
-              ? {
-                  ...s,
-                  done: s.done + 1,
-                  inFlight: s.inFlight.filter((n) => n !== filename),
-                }
-              : s,
-          );
-        } catch (err) {
-          setUploadState((s) =>
-            s
-              ? {
-                  ...s,
-                  failed: s.failed + 1,
-                  inFlight: s.inFlight.filter((n) => n !== filename),
-                }
-              : s,
-          );
-          throw err;
-        }
-      },
-      UPLOAD_CONCURRENCY,
-    );
+    try {
+      setUploadSessionActive(true);
+      const failed = await runWithConcurrency(
+        items,
+        async (entry) => {
+          const filename = filenameForKey(entry.remoteKey);
+          setUploadState((s) => (s ? { ...s, inFlight: [...s.inFlight, filename] } : s));
+          try {
+            await resumeUpload(entry);
+            setUploadState((s) =>
+              s
+                ? {
+                    ...s,
+                    done: s.done + 1,
+                    inFlight: s.inFlight.filter((n) => n !== filename),
+                  }
+                : s,
+            );
+          } catch (err) {
+            await recordUploadFailure({
+              remoteKey: entry.remoteKey,
+              localUri: entry.localUri,
+              sizeBytes: entry.totalBytes,
+              reason: toReason(err),
+            }).catch(() => undefined);
+            setUploadState((s) =>
+              s
+                ? {
+                    ...s,
+                    failed: s.failed + 1,
+                    inFlight: s.inFlight.filter((n) => n !== filename),
+                  }
+                : s,
+            );
+            throw err;
+          }
+        },
+        UPLOAD_CONCURRENCY,
+      );
 
-    setUploadState(null);
-    await refreshPendingResume();
+      setUploadState(null);
 
-    if (failed.length === 0) {
-      Alert.alert('Resume complete', `${items.length} upload(s) finished.`);
+      await refreshPendingResume();
+
+      if (failed.length === 0) {
+        Alert.alert('Resume complete', `${items.length} upload(s) finished.`);
+        return;
+      }
+      Alert.alert(
+        'Some resumes failed',
+        `${items.length - failed.length}/${items.length} finished. The rest stay queued — try again later.`,
+      );
       return;
+    } finally {
+      setUploadSessionActive(false);
     }
-    Alert.alert(
-      'Some resumes failed',
-      `${items.length - failed.length}/${items.length} finished. The rest stay queued — try again later.`,
-    );
   }
 
   async function onDiscardPending() {
@@ -395,61 +410,73 @@ export default function GalleryScreen() {
       inFlight: [],
     });
 
-    const failed = await runWithConcurrency(
-      toUpload,
-      async (entry) => {
-        const { asset, filename } = entry;
-        // iOS gives a ph:// URI in the asset list — getAssetInfoAsync resolves
-        // to a readable file://. On Android the call is also needed to get
-        // the un-redacted localUri that preserves EXIF GPS (the plain
-        // asset.uri is stripped unless ACCESS_MEDIA_LOCATION is granted, which
-        // the expo-media-library plugin does via isAccessMediaLocationEnabled).
-        const info = await MediaLibrary.getAssetInfoAsync(asset.id);
-        const localUri = info.localUri || asset.uri;
-        const contentType = inferContentType(filename, asset.mediaType);
-        const key = prefix + filename;
-        const mediaKind: 'image' | 'video' | 'other' =
-          asset.mediaType === 'photo'
-            ? 'image'
-            : asset.mediaType === 'video'
-              ? 'video'
-              : 'other';
+    let failed: Array<{ item: typeof toUpload[number]; error: unknown }>;
+    try {
+      setUploadSessionActive(true);
+      failed = await runWithConcurrency(
+        toUpload,
+        async (entry) => {
+          const { asset, filename } = entry;
+          // iOS gives a ph:// URI in the asset list — getAssetInfoAsync resolves
+          // to a readable file://. On Android the call is also needed to get
+          // the un-redacted localUri that preserves EXIF GPS (the plain
+          // asset.uri is stripped unless ACCESS_MEDIA_LOCATION is granted, which
+          // the expo-media-library plugin does via isAccessMediaLocationEnabled).
+          const info = await MediaLibrary.getAssetInfoAsync(asset.id);
+          const localUri = info.localUri || asset.uri;
+          const contentType = inferContentType(filename, asset.mediaType);
+          const key = prefix + filename;
+          const mediaKind: 'image' | 'video' | 'other' =
+            asset.mediaType === 'photo'
+              ? 'image'
+              : asset.mediaType === 'video'
+                ? 'video'
+                : 'other';
 
-        setUploadState((s) =>
-          s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
-        );
-        try {
-          await uploadAsset(localUri, key, contentType, mediaKind);
+          setUploadState((s) =>
+            s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
+          );
           try {
-            await recordBackedUp(asset.id, key);
+            await uploadAsset(localUri, key, contentType, mediaKind);
+            try {
+              await recordBackedUp(asset.id, key);
+            } catch (err) {
+              console.warn('recordBackedUp failed', asset.id, err);
+            }
+            setBackedUpMap((prev) => ({ ...prev, [asset.id]: key }));
+            setUploadState((s) =>
+              s
+                ? {
+                    ...s,
+                    done: s.done + 1,
+                    inFlight: s.inFlight.filter((n) => n !== filename),
+                  }
+                : s,
+            );
           } catch (err) {
-            console.warn('recordBackedUp failed', asset.id, err);
+            await recordUploadFailure({
+              remoteKey: key,
+              localUri,
+              sizeBytes: fileSizeCacheRef.current.get(asset.id) ?? 0,
+              reason: toReason(err),
+            }).catch(() => undefined);
+            setUploadState((s) =>
+              s
+                ? {
+                    ...s,
+                    failed: s.failed + 1,
+                    inFlight: s.inFlight.filter((n) => n !== filename),
+                  }
+                : s,
+            );
+            throw err;
           }
-          setBackedUpMap((prev) => ({ ...prev, [asset.id]: key }));
-          setUploadState((s) =>
-            s
-              ? {
-                  ...s,
-                  done: s.done + 1,
-                  inFlight: s.inFlight.filter((n) => n !== filename),
-                }
-              : s,
-          );
-        } catch (err) {
-          setUploadState((s) =>
-            s
-              ? {
-                  ...s,
-                  failed: s.failed + 1,
-                  inFlight: s.inFlight.filter((n) => n !== filename),
-                }
-              : s,
-          );
-          throw err;
-        }
-      },
-      UPLOAD_CONCURRENCY,
-    );
+        },
+        UPLOAD_CONCURRENCY,
+      );
+    } finally {
+      setUploadSessionActive(false);
+    }
 
     setUploadState(null);
 
