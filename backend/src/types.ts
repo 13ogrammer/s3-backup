@@ -61,3 +61,15 @@ export type GetDerivedUrlResponse = {
   generated: boolean;
 };
 export type GetDerivedUrlError = { url: null; error: 'unsupported_format' | string };
+
+export type FolderPreviewRequest = { prefix: string };
+export type FolderPreviewThumb = {
+  key: string;
+  url: string;
+  kind: 'image' | 'video';
+};
+export type FolderPreviewResponse = {
+  prefix: string;
+  thumbs: FolderPreviewThumb[];
+  hasContent: boolean;
+};
