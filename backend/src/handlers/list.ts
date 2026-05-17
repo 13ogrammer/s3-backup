@@ -36,8 +36,51 @@ async function listThumbKeys(prefix: string): Promise<Set<string>> {
   return found;
 }
 
+// Single-part ETags are exactly 32 lowercase hex characters.
+// Multipart ETags include a "-N" suffix and are excluded by this check.
+const SINGLE_PART_ETAG_RE = /^[a-f0-9]{32}$/i;
+
+function parseEtag(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const stripped = raw.replace(/^"|"$/g, '');
+  return SINGLE_PART_ETAG_RE.test(stripped) ? stripped.toLowerCase() : undefined;
+}
+
 export async function list(body: ListRequest): Promise<ListResponse> {
   const prefix = sanitizePrefix(body.prefix);
+  const recursive = body.recursive === true;
+
+  if (recursive) {
+    // Recursive scan: no Delimiter, skip derived-asset prefixes, no thumb pre-warming.
+    const pageRes = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+        ContinuationToken: body.continuationToken,
+        MaxKeys: PAGE_SIZE,
+      }),
+    );
+
+    const files: ListedFile[] = [];
+    for (const obj of pageRes.Contents ?? []) {
+      if (!obj.Key || obj.Key === prefix) continue;
+      if (obj.Key.startsWith(THUMB_PREFIX) || obj.Key.startsWith(PREVIEW_PREFIX)) continue;
+      files.push({
+        key: obj.Key,
+        size: obj.Size ?? 0,
+        lastModified: obj.LastModified?.toISOString() ?? '',
+        kind: classifyKey(obj.Key),
+        etag: parseEtag(obj.ETag),
+      });
+    }
+
+    return {
+      prefix,
+      folders: [],
+      files,
+      nextToken: pageRes.IsTruncated ? pageRes.NextContinuationToken : undefined,
+    };
+  }
 
   const [pageRes, thumbKeys] = await Promise.all([
     s3.send(
@@ -57,13 +100,14 @@ export async function list(body: ListRequest): Promise<ListResponse> {
     if (cp.Prefix && cp.Prefix !== THUMB_PREFIX && cp.Prefix !== PREVIEW_PREFIX) folders.push(cp.Prefix);
   }
 
-  const rawFiles: Array<{ key: string; size: number; lastModified: string }> = [];
+  const rawFiles: Array<{ key: string; size: number; lastModified: string; etag?: string }> = [];
   for (const obj of pageRes.Contents ?? []) {
     if (!obj.Key || obj.Key === prefix) continue;
     rawFiles.push({
       key: obj.Key,
       size: obj.Size ?? 0,
       lastModified: obj.LastModified?.toISOString() ?? '',
+      etag: parseEtag(obj.ETag),
     });
   }
 

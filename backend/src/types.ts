@@ -1,10 +1,11 @@
-export type ListRequest = { prefix?: string; continuationToken?: string };
+export type ListRequest = { prefix?: string; continuationToken?: string; recursive?: boolean };
 export type ListedFile = {
   key: string;
   size: number;
   lastModified: string;
   kind: 'image' | 'video' | 'other';
   previewUrl?: string;
+  etag?: string;
 };
 export type ListResponse = {
   prefix: string;
