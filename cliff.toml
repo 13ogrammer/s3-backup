@@ -1,0 +1,54 @@
+# git-cliff configuration for generating GitHub Release notes from
+# Conventional Commits. Used by scripts/release-notes.sh.
+#
+# Workflow:
+#   ./scripts/release-notes.sh > /tmp/notes.md
+#   gh release create v1.3.0 --notes-file /tmp/notes.md
+#
+# Linear IDs in commit messages (S3B-NN) become live links automatically.
+
+[changelog]
+header = ""
+body = """
+{% if version -%}
+## {{ version | trim_start_matches(pat="v") }} — {{ timestamp | date(format="%Y-%m-%d") }}
+{%- else -%}
+## Unreleased
+{%- endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits -%}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}
+{%- endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+
+commit_preprocessors = [
+  { pattern = '\b(S3B-\d+)\b', replace = "[$1](https://linear.app/s3backup/issue/$1)" },
+]
+
+commit_parsers = [
+  { message = "^feat",     group = "Features" },
+  { message = "^fix",      group = "Bug fixes" },
+  { message = "^perf",     group = "Performance" },
+  { message = "^polish",   group = "Polish" },
+  { message = "^refactor", group = "Refactoring" },
+  { message = "^docs",     group = "Documentation" },
+  { message = "^chore",    skip = true },
+  { message = "^test",     skip = true },
+  { message = "^ci",       skip = true },
+  { message = "^build",    skip = true },
+  { message = "^Merge",    skip = true },
+]
+
+filter_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "newest"
