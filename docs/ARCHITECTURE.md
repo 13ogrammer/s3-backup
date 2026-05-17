@@ -38,6 +38,7 @@ from this.
 | Upload UX | `expo-image-picker` (system picker) | Inline gallery grid is blocked in Expo Go on Android — see [`CLAUDE.md`](../CLAUDE.md#gotchas). |
 | Image thumbnails | On-demand via Lambda (`/get-derived-url`), cached in `.thumbnails/` | Backend list returns the thumb URL when present; Browse lazy-fetches via `/get-derived-url` on first view. |
 | Image previews | On-demand via Lambda (`/get-derived-url`), cached in `.previews/` | PreviewModal fetches a 1920px JPEG for full-screen display; Download always uses the original signed URL. |
+| Video thumbnails | Client-side at upload time via `expo-video-thumbnails`, cached in `.thumbnails/` | Frame extracted at 1 s, resized to 320 px; Lambda never sees the video bytes. Pre-existing videos can be back-filled via `backend/scripts/backfill-video-thumbs.ts`. |
 | Preview | `expo-image` + `expo-video` + custom `ZoomableImage` for pinch | Adjacent files prefetched on index change. |
 
 ## Endpoints
@@ -88,10 +89,10 @@ Why separate trees instead of `<key>.thumb.jpg` sidecars: blast-radius.
 Either tree can be nuked with one `aws s3 rm` to regenerate from scratch,
 and listing real folders doesn't have to filter sidecars out.
 
-### On-demand generation (S3B-25)
+### On-demand generation for images (S3B-25)
 
-Derived assets are generated lazily on first request via `/get-derived-url`
-rather than eagerly at upload time. Flow:
+Derived assets for **images** are generated lazily on first request via
+`/get-derived-url` rather than eagerly at upload time. Flow:
 
 1. Browse calls `/get-derived-url { key, tier: 'thumbnail' }` for image rows
    returned by `/list` without a `previewUrl`.
@@ -108,6 +109,31 @@ Sharp specs:
 HEIC without libheif will return `{ url: null, error: 'unsupported_format' }`;
 the app degrades gracefully (placeholder icon / no resize attempt for unsupported
 formats).
+
+### Client-side generation for videos (S3B-30)
+
+Video thumbnails are generated **client-side at upload time** rather than
+via Lambda. This keeps video bytes off the backend entirely, consistent with
+the zero-egress monetisation principle (see [`MONETIZATION.md`](./MONETIZATION.md)).
+
+Flow at upload:
+1. `uploadAsset` in `app/lib/upload.ts` calls `generateAndUploadThumb` after
+   uploading the video.
+2. `expo-video-thumbnails` extracts a still frame at 1 000 ms (falls back
+   gracefully for clips shorter than 1 s).
+3. `expo-image-manipulator` resizes to 320 px wide, q=0.7 JPEG.
+4. The resulting JPEG is uploaded directly to `.thumbnails/<stripped-key>.thumb.jpg`
+   via a pre-signed PUT. Failure is best-effort and does not block the upload.
+
+Browse behaviour for videos:
+- If a `.thumbnails/` sidecar exists, `/list` returns `previewUrl` and the
+  Browse grid shows it.
+- If no sidecar exists, the video row renders a `▶` placeholder. Browse's
+  lazy-fetch guard (`mediaKind === 'image'`) ensures no spurious
+  `/get-derived-url` calls are made for video rows.
+
+Pre-existing videos (uploaded before S3B-30) have no sidecar. Use the
+operator backfill script to generate them (see below).
 
 ### Helpers
 
@@ -131,9 +157,15 @@ Backend handlers that touch image objects must maintain both trees:
 When extending the backend, any new operation that creates or moves image keys
 must update both parallel derived paths similarly.
 
-The optional cache-warming script (`backend/scripts/backfill-thumbnails.ts`)
-pre-generates thumbnails for existing images; it is no longer required for
-correctness since the on-demand path handles first-view generation.
+Two optional operator scripts handle pre-existing assets:
+
+- `backend/scripts/backfill-thumbnails.ts` — generates thumbnails for existing
+  **images**; no longer required for correctness since `/get-derived-url` handles
+  first-view generation on-demand.
+- `backend/scripts/backfill-video-thumbs.ts` — generates thumbnails for existing
+  **videos** using local ffmpeg (prerequisite: `brew install ffmpeg` / `apt-get
+  install ffmpeg`). Safe to re-run; keys with existing sidecars are skipped.
+  Run via `cd backend && npm run backfill:video-thumbs`.
 
 ## Distribution model
 
