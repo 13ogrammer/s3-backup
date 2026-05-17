@@ -1,12 +1,13 @@
 /**
- * One-time admin script: walks the bucket and generates a thumbnail
+ * Optional cache-warming script: walks the bucket and generates a thumbnail
  * for any image that doesn't already have one at
- *   .thumbnails/<original-key>.jpg
+ *   .thumbnails/<stripped-original-key>.thumb.jpg
  *
- * Useful for buckets that already contain photos (uploaded by other
- * means, or before this app existed). After running, the app's Browse
- * list will render proper thumbnails for those images instead of
- * falling back to fetching the original each time.
+ * As of S3B-25, the Browse tab generates thumbnails on demand (via
+ * /get-derived-url) the first time an image is viewed, so running this
+ * script is no longer required. It remains useful as a cache-warming tool:
+ * pre-generating thumbs for a large existing bucket avoids the per-image
+ * Lambda latency on first browse.
  *
  * Reads the same env vars as the dev server (BUCKET_NAME,
  * S3_ENDPOINT_URL, AWS credentials/region). For MinIO local dev:
@@ -17,7 +18,9 @@
  * chain (env vars / ~/.aws/credentials / IAM role / etc.).
  *
  * HEIC and other formats sharp can't decode without libheif will be
- * logged and skipped — they'll keep falling back to the original.
+ * logged and skipped — the on-demand path will return { url: null,
+ * error: 'unsupported_format' } for those and the app will degrade
+ * gracefully.
  */
 
 import { Readable } from 'node:stream';

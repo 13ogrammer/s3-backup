@@ -51,9 +51,15 @@ and compute stay near zero per active user. See
 These are hard constraints on what we build, because they preserve the
 near-zero per-user cost that makes the chosen path viable:
 
-- **Don't add features that route user bytes through Lambda.** No
-  server-side image resize on every request, no server-side video
-  transcode. Pre-compute on upload, or run a one-time backfill.
+- **Don't add features that route user bytes through Lambda.** The
+  on-demand derived-asset generation (`/get-derived-url`) is the
+  intentional exception: Lambda downloads the original and uploads a
+  resized JPEG on the first view of each image. After that the cached
+  derived asset is served directly from S3 via signed URL — no further
+  Lambda involvement. This is still S3-internal; no internet egress from
+  Lambda. Lambda memory was bumped to 1024 MB and timeout to 29 s to
+  accommodate the resize workload; this stays well within free-tier
+  limits for a personal-use instance. Video bytes never traverse Lambda.
 - **Keep the backend small enough that a single hosted instance can
   serve a non-trivial user base on the AWS free tier** when the
   hosted-tier moment arrives. Resist the urge to introduce stateful

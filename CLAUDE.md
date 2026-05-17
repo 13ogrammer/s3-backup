@@ -86,13 +86,27 @@ with. In local dev, that needs to be the **LAN IP** of your Mac
 (`http://192.168.x.y:9000`), not `localhost`, or the phone gets
 ECONNREFUSED. The `.env.example` flags this.
 
-### Thumbnail tree at `.thumbnails/`
-Thumbs live in a parallel tree (`.thumbnails/<original_key>.jpg`) that
-mirrors the bucket's folder structure, not as `<key>.thumb.jpg`
-sidecars next to originals. Any new backend handler that creates,
-moves, or deletes image keys must update the parallel thumb path in
-the same operation. See
-[`docs/ARCHITECTURE.md#thumbnail-tree`](./docs/ARCHITECTURE.md#thumbnail-tree).
+### Derived asset trees at `.thumbnails/` and `.previews/`
+Two parallel derived-asset trees mirror the bucket's folder structure:
+
+- `.thumbnails/<stripped-key>.thumb.jpg` — 320 px JPEG for Browse tiles
+- `.previews/<stripped-key>.preview.jpg` — 1920 px JPEG for PreviewModal
+
+Both are generated on demand by the Lambda (`/get-derived-url`) on first
+view and cached. Any new backend handler that creates, moves, or deletes
+image keys must update **both** parallel paths in the same operation.
+Helpers: `backend/src/thumbs.ts` and `backend/src/previews.ts`. See
+[`docs/ARCHITECTURE.md#derived-asset-trees`](./docs/ARCHITECTURE.md#derived-asset-trees).
+
+### Lambda build: Makefile + sharp native binary
+The Lambda uses `BuildMethod: makefile` (not esbuild) because sharp ships
+a native ARM64 binary that esbuild cannot bundle. The Makefile bundles
+TypeScript with esbuild (sharp external) and then `npm install`s sharp
+with `--platform=linux --arch=arm64` into the artifact. Run `sam build`
+(aliased to `npm run build` in `backend/`) — `build_in_source = true` is
+set in `backend/samconfig.toml` (gitignored) and also via the npm script
+flag `--build-in-source` so the Makefile can reach
+`../node_modules/.bin/esbuild` from the `src/` CodeUri directory.
 
 ### `expo-file-system` v19 split the API
 Use the legacy import path:
