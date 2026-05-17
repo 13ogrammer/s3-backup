@@ -2,6 +2,7 @@ import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
+import { previewKey, previewPrefix } from '../previews.js';
 import type { DeleteRequest, DeleteResponse } from '../types.js';
 
 const BATCH_SIZE = 1000;
@@ -24,10 +25,18 @@ export async function del(body: DeleteRequest): Promise<DeleteResponse> {
     if (kind === 'image' || kind === 'video') {
       allKeys.add(thumbKey(k));
     }
+    // Preview assets are only generated for images.
+    if (kind === 'image') {
+      allKeys.add(previewKey(k));
+    }
   }
 
-  // For each prefix, also delete the parallel tree under .thumbnails/.
-  const expandedPrefixes = [...prefixes, ...prefixes.map(thumbPrefix)];
+  // For each prefix, also delete the parallel trees under .thumbnails/ and .previews/.
+  const expandedPrefixes = [
+    ...prefixes,
+    ...prefixes.map(thumbPrefix),
+    ...prefixes.map(previewPrefix),
+  ];
 
   for (const prefix of expandedPrefixes) {
     let continuationToken: string | undefined;
