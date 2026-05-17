@@ -32,6 +32,15 @@ export type CompletedPart = { partNumber: number; etag: string };
 
 export type RestoreResponse = { restored: string[]; missing: string[] };
 
+export type DerivedTier = 'thumbnail' | 'preview';
+export type GetDerivedUrlResponse = {
+  url: string;
+  expiresIn: number;
+  tier: DerivedTier;
+  generated: boolean;
+};
+export type GetDerivedUrlError = { url: null; error: string };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
