@@ -1,3 +1,10 @@
+// /list returns previewUrl only when a cached thumbnail already exists in
+// .thumbnails/. If no thumb is present for an image key, previewUrl is
+// omitted — the Browse tab calls /get-derived-url to generate and cache
+// the thumb on demand. This is a one-way change: clients from before this
+// update that relied on the original-image fallback will briefly show a
+// placeholder for un-backfilled images until the on-demand path warms the
+// cache. Buckets that ran backfill-thumbnails.ts are unaffected.
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyKey } from '../mediaType.js';
@@ -65,12 +72,15 @@ export async function list(body: ListRequest): Promise<ListResponse> {
       let previewUrl: string | undefined;
       if (kind === 'image') {
         const expectedThumb = thumbKey(f.key);
-        const urlKey = thumbKeys.has(expectedThumb) ? expectedThumb : f.key;
-        previewUrl = await getSignedUrl(
-          s3,
-          new GetObjectCommand({ Bucket: BUCKET, Key: urlKey }),
-          { expiresIn: PREVIEW_TTL },
-        );
+        if (thumbKeys.has(expectedThumb)) {
+          previewUrl = await getSignedUrl(
+            s3,
+            new GetObjectCommand({ Bucket: BUCKET, Key: expectedThumb }),
+            { expiresIn: PREVIEW_TTL },
+          );
+        }
+        // If no thumb exists, leave previewUrl undefined — Browse calls
+        // /get-derived-url to generate and cache it on demand.
       } else if (kind === 'video') {
         // Videos have a thumb sidecar but no useful fallback (the
         // original is video bytes, not a still). If no thumb exists,
