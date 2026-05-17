@@ -39,6 +39,7 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
+        <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
       </Stack>
       <StatusBar style="auto" />
       <UpdateBanner />

@@ -6,6 +6,7 @@ export type ListedFile = {
   lastModified: string;
   kind: 'image' | 'video' | 'other';
   previewUrl?: string;
+  etag?: string;
 };
 
 export type ListResponse = {
@@ -90,7 +91,7 @@ export async function healthCheck(config: AppConfig): Promise<boolean> {
 }
 
 export const api = {
-  list: (params: { prefix?: string; continuationToken?: string } = {}) =>
+  list: (params: { prefix?: string; continuationToken?: string; recursive?: boolean } = {}) =>
     call<ListResponse>('/list', params),
   signUpload: (key: string, contentType: string) =>
     call<SignedUrlResponse>('/sign-upload', { key, contentType }),

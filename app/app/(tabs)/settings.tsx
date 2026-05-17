@@ -178,6 +178,14 @@ export default function SettingsScreen() {
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <Pressable
               accessibilityRole="button"
+              onPress={() => router.push('/duplicates')}
+              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
+              <ThemedText style={[Type.body, { color: colors.text }]}>Find duplicates</ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </Pressable>
+            <View style={[styles.navDivider, { backgroundColor: colors.divider }]} />
+            <Pressable
+              accessibilityRole="button"
               onPress={() => router.push('/about')}
               style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
               <ThemedText style={[Type.body, { color: colors.text }]}>About</ThemedText>
@@ -231,4 +239,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  navDivider: { height: 1 },
 });
