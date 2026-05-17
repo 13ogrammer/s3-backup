@@ -38,6 +38,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkAppTheme : LightAppTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
       </Stack>
       <StatusBar style="auto" />
       <UpdateBanner />
