@@ -299,7 +299,7 @@ disabled (no banner, no network call). To enable it:
 
 ```bash
 ./scripts/publish-manifest.sh
-# prompts for APK URL + release notes; reads version from app.json;
+# prompts for APK URL; reads version from app.json;
 # looks up the release bucket from the CFN stack outputs; uploads.
 ```
 
@@ -316,8 +316,7 @@ Manifest format (`manifest.json`):
 ```json
 {
   "latestNativeVersion": "1.2.0",
-  "apkUrl": "<EAS build artifact URL from expo.dev>",
-  "releaseNotes": "What's new in this version."
+  "apkUrl": "<EAS build artifact URL from expo.dev>"
 }
 ```
 
@@ -325,6 +324,8 @@ Manifest format (`manifest.json`):
   **expo.dev → your project → Builds → (select the build) → Download**.
 - `latestNativeVersion`: versions below this see a dismissible banner.
   Advance this on every native rebuild.
+- Release notes live on [GitHub Releases](https://github.com/13ogrammer/s3-backup/releases),
+  not in the manifest. The in-app "Changelog" link in About opens that page.
 
 ### Watching logs / errors
 

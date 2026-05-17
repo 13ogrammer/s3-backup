@@ -11,17 +11,15 @@ set -euo pipefail
 
 STACK_NAME="${STACK_NAME:-s3-backup}"
 APK_URL=""
-RELEASE_NOTES=""
 DRY_RUN=0
 ASSUME_YES=0
 
 usage() {
   cat <<EOF
-Usage: $0 [--apk-url <url>] [--notes <text>] [--stack-name <name>] [--dry-run] [--yes]
+Usage: $0 [--apk-url <url>] [--stack-name <name>] [--dry-run] [--yes]
 
 Flags:
   --apk-url <url>       APK download link from expo.dev. Prompted if omitted.
-  --notes <text>        Release notes (one line). Prompted if omitted.
   --stack-name <name>   CloudFormation stack name (default: s3-backup,
                         or \$STACK_NAME if set).
   --dry-run             Print the manifest and target without uploading.
@@ -30,8 +28,8 @@ Flags:
 
 Examples:
   $0                                          # interactive
-  $0 --apk-url https://expo.dev/... --notes "Fix gallery filter"
-  $0 --apk-url ... --notes ... --yes          # fully non-interactive
+  $0 --apk-url https://expo.dev/...
+  $0 --apk-url ... --yes                      # fully non-interactive
   $0 --dry-run                                # preview without upload
 EOF
 }
@@ -39,7 +37,6 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apk-url) APK_URL="${2:-}"; shift 2 ;;
-    --notes) RELEASE_NOTES="${2:-}"; shift 2 ;;
     --stack-name) STACK_NAME="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
@@ -67,11 +64,6 @@ if [[ -z "$APK_URL" ]]; then
 fi
 [[ -n "$APK_URL" ]] || { echo "APK URL is required." >&2; exit 1; }
 
-if [[ -z "$RELEASE_NOTES" ]]; then
-  read -r -p "Release notes (one line): " RELEASE_NOTES
-fi
-[[ -n "$RELEASE_NOTES" ]] || { echo "Release notes are required." >&2; exit 1; }
-
 echo "Looking up release bucket from stack '$STACK_NAME'..."
 BUCKET_NAME="$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
@@ -87,8 +79,7 @@ fi
 MANIFEST="$(jq -n \
   --arg version "$VERSION" \
   --arg apk_url "$APK_URL" \
-  --arg notes "$RELEASE_NOTES" \
-  '{latestNativeVersion: $version, apkUrl: $apk_url, releaseNotes: $notes}')"
+  '{latestNativeVersion: $version, apkUrl: $apk_url}')"
 
 echo
 echo "Manifest:"
