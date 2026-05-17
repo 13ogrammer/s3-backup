@@ -126,6 +126,16 @@ empty band above the close button on Android.
 A global gitignore is in play. If you want workspace settings tracked,
 `git add -f`.
 
+### Sentry plugin in `app.json` has placeholder slugs
+The `@sentry/react-native/expo` plugin entry in `app/app.json` uses
+`"<your-sentry-org>"` and `"<your-sentry-project>"` as literal placeholder
+strings. Before running `eas build` for a real project, replace them with
+your actual Sentry org and project slugs. Also create the auth-token EAS
+secret (`eas secret:create --scope project --name SENTRY_AUTH_TOKEN --value
+<token>`) — do **not** commit it or add it to `eas.json`. Without these two
+steps, source-map upload silently skips and stack traces will be
+unsymbolicated.
+
 ## Working on a new task
 
 1. Pick an issue from the Linear `S3Backup` team (Todo column). The

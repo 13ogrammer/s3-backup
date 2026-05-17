@@ -201,7 +201,25 @@ fields @timestamp, level, route, msg, durationMs
 
 Replace `REPLACE_ME` with the captured ID to see every log line — including timing — for that exact invocation.
 
-**App-side observability** (Sentry breadcrumbs, error capture) is tracked separately in **S3B-39**.
+**App-side observability — Sentry.**
+
+The app uses `@sentry/react-native` for crash reporting and upload-flow tracing. The DSN is read from the `EXPO_PUBLIC_SENTRY_DSN` environment variable (set in `.env`). When the variable is absent all helpers (`initSentry`, `addUploadBreadcrumb`, `captureApiError`) no-op silently, so development and CI builds work without a Sentry project.
+
+`initSentry()` runs once at module scope in `app/app/_layout.tsx` — before `RootLayout` renders and before any navigation is mounted. Running at module scope rather than inside the component body ensures it is not repeated on remount.
+
+The upload flow emits breadcrumbs in the `upload` category for each of: `upload start`, `sign-upload ok`, `PUT begin`, sampled progress at 25 / 50 / 75 % (simple path), `part complete` per part (multipart path), `upload complete`, `upload error`, `retry attempt`, and `upload error (giving up)`. These appear in the Sentry issue breadcrumb trail, making it easy to see exactly where a failed upload stalled.
+
+`captureApiError` reads the `requestId` field on `ApiError` (populated in `api.ts` from the `x-request-id` response header emitted by every backend route) and attaches it as a Sentry tag `backend_request_id` via `Sentry.withScope`. This joins the app-side Sentry event to the exact backend CloudWatch log lines via the debug recipe above.
+
+**Deployer setup.** A real Sentry project is required for production crash visibility. Steps:
+1. Create a Sentry project for the app (React Native platform).
+2. Replace the `<your-sentry-org>` and `<your-sentry-project>` placeholder slugs in the `@sentry/react-native/expo` plugin tuple in `app/app.json`.
+3. Add `EXPO_PUBLIC_SENTRY_DSN=https://…@…sentry.io/…` to `app/.env`.
+4. Create the auth-token EAS secret — do **not** commit it or put it in `eas.json`:
+   ```
+   eas secret:create --scope project --name SENTRY_AUTH_TOKEN --value <token>
+   ```
+5. Source maps are then uploaded automatically on every `eas build`. No `eas.json` changes are needed — the Sentry plugin v8+ reads `SENTRY_AUTH_TOKEN` from EAS project-scoped secrets at build time.
 
 ## Distribution model
 

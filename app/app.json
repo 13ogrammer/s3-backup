@@ -63,7 +63,7 @@
       ],
       "expo-video",
       "@react-native-community/datetimepicker",
-      "@sentry/react-native/expo"
+      ["@sentry/react-native/expo", { "organization": "<your-sentry-org>", "project": "<your-sentry-project>" }]
     ],
     "experiments": {
       "typedRoutes": true,
