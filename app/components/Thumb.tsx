@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleProp, ImageStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { Radius } from '@/constants/theme';
 import { ThumbSkeleton } from '@/components/ThumbSkeleton';
@@ -81,8 +81,9 @@ export function Thumb({
     clearTimers();
     if (skeletonVisible) {
       skeletonOpacity.value = withTiming(0, { duration: FADE_MS }, () => {
-        // Unmount the skeleton after fade.
-        setLoadState('loaded');
+        // withTiming's completion runs on the UI thread (worklet),
+        // so the setState dispatch has to be hopped back to JS.
+        runOnJS(setLoadState)('loaded');
       });
     } else {
       setLoadState('loaded');
