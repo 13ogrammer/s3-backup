@@ -36,6 +36,8 @@ import {
   S3Client,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { THUMB_PREFIX } from '../src/thumbs.js';
+import { PREVIEW_PREFIX } from '../src/previews.js';
 
 type Severity = 'blocker' | 'recommended' | 'nice-to-have';
 type Outcome = 'pass' | 'fail' | 'skip';
@@ -441,21 +443,25 @@ async function main() {
     }),
   );
 
-  // ---- Nice-to-have (only if cold transitions exist): exclude .thumbnails/ ----
-  // The Browse / Gallery tabs fetch thumbs constantly. If thumbs tier
-  // to Glacier IR along with originals, every scroll through old
-  // folders triggers a per-GB retrieval fee. A rule is considered
-  // safe if it has an ObjectSizeGreaterThan filter ≥ 10 KB (thumbs
-  // are 20–50 KB and below that line in practice), or a Prefix filter
-  // that doesn't include `.thumbnails/`.
-  const THUMB_PREFIX = '.thumbnails/';
-  const SIZE_THRESHOLD = 10240; // 10 KB — thumbs are 20-50 KB; this catches a 100 KB filter too
-  const ruleExcludesThumbnails = (rule: LifecycleRule): boolean => {
+  // ---- Nice-to-have (only if cold transitions exist): exclude derived asset trees ----
+  // The Browse tab fetches .thumbnails/ and .previews/ constantly. If those
+  // tier to Glacier IR along with originals, every scroll through old folders
+  // triggers a per-GB retrieval fee. A rule is considered safe if it has an
+  // ObjectSizeGreaterThan filter ≥ 10 KB (derived assets are 20–300 KB and
+  // above that line in practice when checking for a thumb/preview exclusion),
+  // or a Prefix filter that excludes both derived trees.
+  const SIZE_THRESHOLD = 10240; // 10 KB — thumbs are 20-50 KB; previews up to 300 KB
+  const ruleExcludesDerivedTrees = (rule: LifecycleRule): boolean => {
     const minSize =
       rule.Filter?.ObjectSizeGreaterThan ?? rule.Filter?.And?.ObjectSizeGreaterThan;
     if (minSize !== undefined && minSize >= SIZE_THRESHOLD) return true;
     const prefix = rule.Filter?.Prefix ?? rule.Filter?.And?.Prefix ?? rule.Prefix;
-    if (prefix && prefix !== '' && !THUMB_PREFIX.startsWith(prefix)) return true;
+    if (
+      prefix &&
+      prefix !== '' &&
+      !THUMB_PREFIX.startsWith(prefix) &&
+      !PREVIEW_PREFIX.startsWith(prefix)
+    ) return true;
     return false;
   };
 
@@ -464,18 +470,18 @@ async function main() {
 
   if (coldRulesPresent) {
     results.push(
-      lifecycleCheck('Cold-tier rules skip .thumbnails/', 'nice-to-have', (rules) => {
+      lifecycleCheck('Cold-tier rules skip .thumbnails/ and .previews/', 'nice-to-have', (rules) => {
         const coldRules = rules.filter(ruleHasColdTransition);
-        const offending = coldRules.filter((r) => !ruleExcludesThumbnails(r));
+        const offending = coldRules.filter((r) => !ruleExcludesDerivedTrees(r));
         if (offending.length === 0) {
           return {
             pass: true,
-            detail: `${coldRules.length} cold-tier rule(s) scoped to exclude thumbnails`,
+            detail: `${coldRules.length} cold-tier rule(s) scoped to exclude derived asset trees`,
           };
         }
         return {
           pass: false,
-          detail: `${offending.length} of ${coldRules.length} cold-tier rule(s) also tier .thumbnails/ — browsing old folders will incur retrieval fees`,
+          detail: `${offending.length} of ${coldRules.length} cold-tier rule(s) also tier .thumbnails/ and/or .previews/ — browsing old folders will incur retrieval fees`,
           fix: 'Add a Minimum object size filter of 102400 (100 KB) to the rule — S3 console → Lifecycle rule → Filter → "Limit the scope using filters"',
         };
       }),

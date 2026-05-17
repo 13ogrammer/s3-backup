@@ -30,13 +30,14 @@ from this.
 |---|---|---|
 | Mobile framework | **Expo (managed)** with `expo-router` | EAS Build covers iOS + Android. |
 | Mobile language | TypeScript | strict, `noUncheckedIndexedAccess`. |
-| Backend runtime | Node.js 20, ARM64 Lambda | Bundled with esbuild via SAM `BuildMethod: esbuild`. |
+| Backend runtime | Node.js 20, ARM64 Lambda | Bundled with esbuild via SAM `BuildMethod: makefile` (needed to ship sharp's native binary). 1024 MB / 29 s. |
 | API surface | HTTP API Gateway, single Lambda router | All routes go through `backend/src/index.ts`. |
 | Auth (v1) | Single bootstrap token, `timingSafeEqual` compare | Linear S3B-8 ("Rotatable / per-device auth tokens") tracks the replacement plan. |
 | Local S3 emulator | **MinIO** via docker-compose | LocalStack went paid in v2026.03 — don't reach for it. |
 | Local backend dev | Node `http` wrapper around the Lambda handler, `tsx watch` | `backend/src/dev-server.ts`. |
 | Upload UX | `expo-image-picker` (system picker) | Inline gallery grid is blocked in Expo Go on Android — see [`CLAUDE.md`](../CLAUDE.md#gotchas). |
-| Image thumbnails | Client-side resize via `expo-image-manipulator`, uploaded as `<key>.thumb.jpg` sidecar | Backend list returns the thumb URL when present, falls back to original otherwise. |
+| Image thumbnails | On-demand via Lambda (`/get-derived-url`), cached in `.thumbnails/` | Backend list returns the thumb URL when present; Browse lazy-fetches via `/get-derived-url` on first view. |
+| Image previews | On-demand via Lambda (`/get-derived-url`), cached in `.previews/` | PreviewModal fetches a 1920px JPEG for full-screen display; Download always uses the original signed URL. |
 | Preview | `expo-image` + `expo-video` + custom `ZoomableImage` for pinch | Adjacent files prefetched on index change. |
 
 ## Endpoints
@@ -56,53 +57,83 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 | POST | `/multipart/sign-part` | Pre-signed PUT URL for one part of an in-flight upload |
 | POST | `/multipart/complete` | Finalise the multipart upload with the part list + ETags |
 | POST | `/multipart/abort` | Cancel an in-flight multipart upload |
+| POST | `/get-derived-url` | Generate (on first call) and return a signed GET URL for a derived asset. Request: `{ key, tier: 'thumbnail' \| 'preview' }`. Response: `{ url, tier, generated, expiresIn }` or `{ url: null, error: 'unsupported_format' }`. |
 
-## Thumbnail tree
+## Derived asset trees
 
-Thumbnails live in a single top-level folder, `.thumbnails/`, that
-mirrors the bucket's directory structure. Each thumb is a 320 px JPEG
-(~30–50 KB) at:
+Two parallel trees live alongside originals in the bucket:
+
+| Tree | Prefix | Size | Purpose |
+|---|---|---|---|
+| Thumbnails | `.thumbnails/` | ~30–50 KB | Browse grid and list row icons |
+| Previews | `.previews/` | ~50–300 KB | Full-screen in-app view (PreviewModal) |
+
+### Path convention
+
+The original extension is stripped before appending the derived suffix,
+so the filename reads cleanly:
 
 ```
-.thumbnails/<original_key>.jpg
+photos/2025/IMG_001.heic  →  .thumbnails/photos/2025/IMG_001.thumb.jpg
+                          →  .previews/photos/2025/IMG_001.preview.jpg
+IMG_002.jpg               →  .thumbnails/IMG_002.thumb.jpg
+                          →  .previews/IMG_002.preview.jpg
 ```
 
-So `photos/2025/IMG_001.heic` has its thumb at
-`.thumbnails/photos/2025/IMG_001.thumb.jpg`. The original extension is
-stripped before appending `.thumb.jpg` so the filename reads cleanly.
 Trade-off: if `IMG_001.jpg` and `IMG_001.heic` coexist in the same
-folder, they share one thumb path; the last-written wins. Rare in
+folder, they share one derived path; the last-written wins. Rare in
 practice.
 
-Why a separate tree instead of `<key>.thumb.jpg` sidecars: blast-radius.
-The whole tree can be nuked with one `aws s3 rm` to drop every thumb,
+Why separate trees instead of `<key>.thumb.jpg` sidecars: blast-radius.
+Either tree can be nuked with one `aws s3 rm` to regenerate from scratch,
 and listing real folders doesn't have to filter sidecars out.
 
-Helpers live in `backend/src/thumbs.ts` — `THUMB_PREFIX`, `thumbKey()`,
-`thumbPrefix()`, `originalFromThumbKey()`.
+### On-demand generation (S3B-25)
 
-Backend handlers that touch image objects need to be thumb-aware:
+Derived assets are generated lazily on first request via `/get-derived-url`
+rather than eagerly at upload time. Flow:
 
-- `handlers/list.ts` — in parallel with the regular S3 listing, lists
-  `.thumbnails/<prefix>` and builds a set of original keys that have
-  thumbs. For each image in the user-facing listing, returns the thumb
-  URL as `previewUrl` if found, falls back to the original URL
-  otherwise. Filters `.thumbnails/` out of the root folder listing so
-  the user doesn't see it as a regular folder.
-- `handlers/del.ts` — when deleting an image key, also schedules its
-  thumb for deletion. When deleting a folder prefix, also deletes the
-  parallel `.thumbnails/<prefix>` tree.
-- `handlers/move.ts` — single-file moves move the thumb alongside.
-  Folder moves recursively move the `.thumbnails/<fromPrefix>` tree to
-  `.thumbnails/<toPrefix>`.
+1. Browse calls `/get-derived-url { key, tier: 'thumbnail' }` for image rows
+   returned by `/list` without a `previewUrl`.
+2. Lambda HEADs the derived key. If present → return signed URL (cache hit).
+3. On miss: GetObject original, sharp resize + JPEG encode, PutObject derived,
+   return signed URL (`generated: true`).
+4. Subsequent calls to the same key are cache hits — Lambda only touches the
+   original once per asset.
 
-When extending the backend, any new operation that creates or moves
-image keys must update the parallel thumb path similarly.
+Sharp specs:
+- `thumbnail`: 320 px wide, q=70, `.rotate()` for EXIF orientation.
+- `preview`: 1920 px wide, q=82, `withoutEnlargement: true`, `.rotate()`.
 
-The upload-time thumb generation (`expo-image-manipulator` in
-`app/lib/upload.ts`) and the one-time backfill script
-(`backend/scripts/backfill-thumbnails.ts`) both write to this same
-tree.
+HEIC without libheif will return `{ url: null, error: 'unsupported_format' }`;
+the app degrades gracefully (placeholder icon / no resize attempt for unsupported
+formats).
+
+### Helpers
+
+- `backend/src/thumbs.ts` — `THUMB_PREFIX`, `thumbKey()`, `thumbPrefix()`
+- `backend/src/previews.ts` — `PREVIEW_PREFIX`, `previewKey()`, `previewPrefix()`
+
+### Handler responsibilities
+
+Backend handlers that touch image objects must maintain both trees:
+
+- `handlers/list.ts` — lists `.thumbnails/<prefix>` in parallel and returns
+  `previewUrl` only when the thumb exists. Filters both derived-tree prefixes
+  from the root folder listing so the user doesn't see them. If no thumb exists,
+  `previewUrl` is omitted — Browse lazy-fetches via `/get-derived-url`.
+- `handlers/del.ts` — single-key image deletes schedule `thumbKey(k)` and
+  `previewKey(k)`. Folder-prefix deletes expand to include `thumbPrefix(p)`
+  and `previewPrefix(p)`.
+- `handlers/move.ts` — single-file renames move the thumb and preview (when
+  they exist) alongside. Folder moves recursively move both derived trees.
+
+When extending the backend, any new operation that creates or moves image keys
+must update both parallel derived paths similarly.
+
+The optional cache-warming script (`backend/scripts/backfill-thumbnails.ts`)
+pre-generates thumbnails for existing images; it is no longer required for
+correctness since the on-demand path handles first-view generation.
 
 ## Distribution model
 
