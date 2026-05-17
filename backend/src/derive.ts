@@ -6,7 +6,7 @@
 //
 // Spec (locked by Architect):
 //   thumbnail: 320 px wide, q=70
-//   preview  : 1920 px wide, q=82, withoutEnlargement
+//   preview  : 1920 px wide, q=75, withoutEnlargement
 //   Both: .rotate() before .resize() to honour EXIF orientation.
 //
 // Sharp lacks libheif in the standard Lambda build, so HEIC decodes will
@@ -29,7 +29,7 @@ const THUMB_WIDTH = 320;
 const THUMB_QUALITY = 70;
 
 const PREVIEW_WIDTH = 1920;
-const PREVIEW_QUALITY = 82;
+const PREVIEW_QUALITY = 75;
 
 /** Thrown when the original file is not an image (e.g. video, other). */
 export class NotAnImageError extends Error {
