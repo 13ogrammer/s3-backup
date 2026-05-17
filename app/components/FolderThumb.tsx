@@ -144,6 +144,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
+    // Raw rgba intentional — same convention as browse.tsx videoBadge; no token exists for this.
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -157,7 +158,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 7,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderLeftColor: '#fff',
+    // Always white — badge is always dark, so onAccent (scheme-aware) would be wrong here.
+    borderLeftColor: '#ffffff',
     marginLeft: 1,
   },
 });

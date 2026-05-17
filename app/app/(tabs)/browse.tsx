@@ -433,6 +433,9 @@ export default function BrowseScreen() {
 
   function onRefresh() {
     setRefreshing(true);
+    setThumbUrlCache(new Map());
+    setFolderPreviewCache(new Map());
+    folderPreviewInflight.current.clear();
     load(path, 'refresh');
   }
 
