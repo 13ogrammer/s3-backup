@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 
+import { FolderThumb } from '@/components/FolderThumb';
 import { FolderPicker } from '@/components/folder-picker';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { RenameModal } from '@/components/rename-modal';
@@ -23,12 +24,16 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, type ListResponse, type GetDerivedUrlResponse } from '@/lib/api';
+import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 
 const THUMB_SIZE = 56;
 const GRID_COLUMNS = 3;
+const FOLDER_VIEWABILITY_CONFIG = {
+  itemVisiblePercentThreshold: 30,
+  minimumViewTime: 100,
+} as const;
 const GRID_SPACING = 4;
 const GRID_TILE =
   (Dimensions.get('window').width - GRID_SPACING * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
@@ -112,6 +117,11 @@ export default function BrowseScreen() {
   // Map<key, url>. Keyed separately from row state so re-renders that
   // sort/filter rows don't reset the cache.
   const [thumbUrlCache, setThumbUrlCache] = useState<Map<string, string>>(new Map());
+
+  const [folderPreviewCache, setFolderPreviewCache] = useState<Map<string, FolderPreviewState>>(new Map());
+  // Tracks in-flight folder-preview requests so the viewability handler doesn't
+  // fire duplicates for the same prefix before the first resolves.
+  const folderPreviewInflight = useRef<Set<string>>(new Set());
 
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
@@ -262,9 +272,13 @@ export default function BrowseScreen() {
 
   useEffect(() => { setSearchQuery(''); }, [path]);
 
-  // Clear the thumb URL cache when the path changes so stale keys from the
-  // previous folder don't linger. A new load() call will populate fresh rows.
-  useEffect(() => { setThumbUrlCache(new Map()); }, [path]);
+  // Clear per-folder caches when the path changes so stale entries from the
+  // previous directory don't linger. A new load() call will populate fresh rows.
+  useEffect(() => {
+    setThumbUrlCache(new Map());
+    setFolderPreviewCache(new Map());
+    folderPreviewInflight.current.clear();
+  }, [path]);
 
   // Lazy-fetch thumbnail URLs for image rows that came back from /list without
   // a previewUrl. Bounded to MAX_CONCURRENT in-flight so we don't fire 500
@@ -326,6 +340,56 @@ export default function BrowseScreen() {
     const t = setTimeout(() => setSnack(null), 5000);
     return () => clearTimeout(t);
   }, [snack]);
+
+  // Keep a ref that always holds the latest folderPreviewCache Map so the
+  // stable viewability callback (below) can read current state without
+  // being re-created on every render.
+  const folderPreviewCacheRef = useRef<Map<string, FolderPreviewState>>(new Map());
+  useEffect(() => { folderPreviewCacheRef.current = folderPreviewCache; }, [folderPreviewCache]);
+
+  // Stable ref for the FlatList viewability handler — FlatList requires
+  // onViewableItemsChanged to not change identity between renders.
+  const onViewableFolders = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: Row }> }) => {
+      for (const { item } of viewableItems) {
+        if (item.kind !== 'folder') continue;
+        const prefix = item.prefix;
+        // Skip if already in-flight or already fetched (not idle/missing).
+        const existing = folderPreviewCacheRef.current.get(prefix);
+        if (
+          folderPreviewInflight.current.has(prefix) ||
+          (existing && existing.status !== 'idle')
+        ) {
+          continue;
+        }
+        folderPreviewInflight.current.add(prefix);
+        setFolderPreviewCache((prev) => {
+          const next = new Map(prev);
+          next.set(prefix, { status: 'loading' });
+          return next;
+        });
+        api
+          .folderPreview(prefix)
+          .then((res) => {
+            setFolderPreviewCache((prev) => {
+              const next = new Map(prev);
+              next.set(prefix, { status: 'ready', thumbs: res.thumbs, hasContent: res.hasContent });
+              return next;
+            });
+          })
+          .catch(() => {
+            setFolderPreviewCache((prev) => {
+              const next = new Map(prev);
+              next.set(prefix, { status: 'error' });
+              return next;
+            });
+          })
+          .finally(() => {
+            folderPreviewInflight.current.delete(prefix);
+          });
+      }
+    },
+  );
 
   const loadMore = useCallback(async () => {
     if (!nextToken || loadingMore) return;
@@ -722,6 +786,8 @@ export default function BrowseScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
+          viewabilityConfig={FOLDER_VIEWABILITY_CONFIG}
+          onViewableItemsChanged={onViewableFolders.current}
           ListEmptyComponent={
             <ThemedText style={styles.empty}>
               {rows.length > 0
@@ -744,6 +810,7 @@ export default function BrowseScreen() {
               item.kind === 'file' && !item.previewUrl && thumbUrlCache.has(item.key)
                 ? { ...item, previewUrl: thumbUrlCache.get(item.key) }
                 : item;
+            const folderPreview = item.kind === 'folder' ? folderPreviewCache.get(item.prefix) : undefined;
             if (viewMode === 'grid') {
               return renderGridTile({
                 item: resolved,
@@ -752,6 +819,7 @@ export default function BrowseScreen() {
                 colors,
                 onTap: () => onTapRow(item),
                 onLongPress: () => onLongPressRow(item),
+                folderPreview,
               });
             }
             return renderListRow({
@@ -761,6 +829,7 @@ export default function BrowseScreen() {
               colors,
               onTap: () => onTapRow(item),
               onLongPress: () => onLongPressRow(item),
+              folderPreview,
             });
           }}
         />
@@ -920,6 +989,12 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString();
 }
 
+type FolderPreviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; thumbs: FolderPreviewThumb[]; hasContent: boolean }
+  | { status: 'error' };
+
 type RowRenderProps = {
   item: Row;
   selected: boolean;
@@ -927,6 +1002,7 @@ type RowRenderProps = {
   colors: (typeof Colors)['light'];
   onTap: () => void;
   onLongPress: () => void;
+  folderPreview?: FolderPreviewState;
 };
 
 function renderListRow({
@@ -936,8 +1012,10 @@ function renderListRow({
   colors,
   onTap,
   onLongPress,
+  folderPreview,
 }: RowRenderProps) {
   const isFolder = item.kind === 'folder';
+  const fp = folderPreview;
   return (
     <Pressable
       onPress={onTap}
@@ -966,9 +1044,14 @@ function renderListRow({
         </View>
       )}
       {isFolder ? (
-        <View style={styles.thumbSlot}>
-          <IconSymbol name="folder" size={28} color={colors.icon} />
-        </View>
+        <FolderThumb
+          prefix={item.prefix}
+          size={THUMB_SIZE}
+          thumbs={fp?.status === 'ready' ? fp.thumbs : []}
+          loading={fp?.status === 'loading' || fp === undefined}
+          empty={fp?.status === 'ready' && fp.thumbs.length === 0 && !fp.hasContent}
+          name={item.name}
+        />
       ) : item.previewUrl ? (
         <View style={styles.thumb}>
           <Thumb
@@ -1018,8 +1101,10 @@ function renderGridTile({
   colors,
   onTap,
   onLongPress,
+  folderPreview,
 }: RowRenderProps) {
   const isFolder = item.kind === 'folder';
+  const fp = folderPreview;
   return (
     <Pressable
       onPress={onTap}
@@ -1027,7 +1112,14 @@ function renderGridTile({
       style={({ pressed }) => [styles.gridTile, { opacity: pressed ? 0.7 : 1 }]}>
       {isFolder ? (
         <View style={[styles.gridTile, styles.gridFolderTile]}>
-          <IconSymbol name="folder" size={40} color={colors.icon} />
+          <FolderThumb
+            prefix={item.prefix}
+            size={Math.round(GRID_TILE * 0.7)}
+            thumbs={fp?.status === 'ready' ? fp.thumbs : []}
+            loading={fp?.status === 'loading' || fp === undefined}
+            empty={fp?.status === 'ready' && fp.thumbs.length === 0 && !fp.hasContent}
+            name={item.name}
+          />
           <ThemedText style={styles.gridLabel} numberOfLines={2}>
             {item.name}
           </ThemedText>
