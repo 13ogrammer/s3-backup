@@ -1,10 +1,11 @@
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { BUCKET, s3, sanitizeKey } from '../s3.js';
 import type { ExistsRequest, ExistsResponse } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const PARALLELISM = 16;
 
-export async function exists(body: ExistsRequest): Promise<ExistsResponse> {
+export async function exists(body: ExistsRequest, ctx: RequestContext): Promise<ExistsResponse> {
   if (!Array.isArray(body.keys) || body.keys.length === 0) {
     throw new Error('keys must be a non-empty array');
   }
@@ -32,5 +33,6 @@ export async function exists(body: ExistsRequest): Promise<ExistsResponse> {
     Array.from({ length: Math.min(PARALLELISM, keys.length) }, () => worker()),
   );
 
+  ctx.log.info('exists', { checked: keys.length, found: existing.length });
   return { existing };
 }

@@ -10,6 +10,7 @@ import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
 import { previewKey, previewPrefix } from '../previews.js';
 import type { MoveRequest, MoveResponse } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 async function copyAndDelete(from: string, to: string): Promise<void> {
   await s3.send(
@@ -71,7 +72,7 @@ async function moveTree(fromPrefix: string, toPrefix: string): Promise<number> {
   return moved;
 }
 
-export async function move(body: MoveRequest): Promise<MoveResponse> {
+export async function move(body: MoveRequest, ctx: RequestContext): Promise<MoveResponse> {
   if (body.kind === 'file') {
     const from = sanitizeKey(body.from);
     const to = sanitizeKey(body.to);
@@ -94,6 +95,7 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
       }
     }
 
+    ctx.log.info('move', { kind: 'file', from, to });
     return { moved: 1 };
   }
 
@@ -112,5 +114,6 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
   await moveTree(thumbPrefix(fromPrefix), thumbPrefix(toPrefix));
   await moveTree(previewPrefix(fromPrefix), previewPrefix(toPrefix));
 
+  ctx.log.info('move', { kind: 'folder', fromPrefix, toPrefix, moved: movedOriginals });
   return { moved: movedOriginals };
 }

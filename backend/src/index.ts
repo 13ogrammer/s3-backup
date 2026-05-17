@@ -3,6 +3,7 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { isAuthorized } from './auth.js';
+import { createLogger, type Logger } from './logger.js';
 import { list } from './handlers/list.js';
 import { signUpload } from './handlers/signUpload.js';
 import { signDownload } from './handlers/signDownload.js';
@@ -19,7 +20,13 @@ import { restore } from './handlers/restore.js';
 import { getDerivedUrl } from './handlers/getDerivedUrl.js';
 import { folderPreview } from './handlers/folderPreview.js';
 
-type Route = (body: any) => Promise<unknown>;
+export type RequestContext = {
+  requestId: string;
+  route: string;
+  log: Logger;
+};
+
+type Route = (body: any, ctx: RequestContext) => Promise<unknown>;
 
 const routes: Record<string, Route> = {
   'POST /list': list,
@@ -42,37 +49,58 @@ export const handler = async (
 ): Promise<APIGatewayProxyResultV2> => {
   const method = event.requestContext.http.method;
   const path = event.rawPath.replace(/\/+$/, '') || '/';
+  const requestId = event.requestContext.requestId ?? 'unknown';
+  const route = `${method} ${path}`;
 
   if (method === 'GET' && path === '/health') {
-    return json(200, { ok: true });
+    return json(200, { ok: true }, requestId);
   }
 
   const authHeader =
     event.headers['authorization'] ?? event.headers['Authorization'];
   if (!isAuthorized(authHeader)) {
-    return json(401, { error: 'unauthorized' });
+    return json(401, { error: 'unauthorized' }, requestId);
   }
 
-  const route = routes[`${method} ${path}`];
-  if (!route) return json(404, { error: 'not found', path, method });
+  const routeHandler = routes[route];
+  if (!routeHandler) return json(404, { error: 'not found', path, method }, requestId);
 
   let body: unknown;
   try {
     body = event.body ? JSON.parse(event.body) : {};
   } catch {
-    return json(400, { error: 'invalid JSON body' });
+    return json(400, { error: 'invalid JSON body' }, requestId);
   }
 
+  const log = createLogger({ requestId, route });
+  const ctx: RequestContext = { requestId, route, log };
+
   try {
-    const result = await route(body);
-    return json(200, result);
+    const result = await withTiming(ctx, () => routeHandler(body, ctx));
+    return json(200, result, requestId);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'internal error';
     const status = isClientError(message) ? 400 : 500;
-    if (status === 500) console.error(err);
-    return json(status, { error: message });
+    return json(status, { error: message }, requestId);
   }
 };
+
+async function withTiming<T>(
+  ctx: RequestContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    const durationMs = Date.now() - start;
+    ctx.log.info('request complete', { durationMs, status: 200 });
+    return result;
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    ctx.log.error('request failed', { durationMs, err: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
+}
 
 function isClientError(message: string): boolean {
   return (
@@ -84,10 +112,13 @@ function isClientError(message: string): boolean {
   );
 }
 
-function json(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
+function json(statusCode: number, body: unknown, requestId?: string): APIGatewayProxyResultV2 {
   return {
     statusCode,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(requestId ? { 'x-request-id': requestId } : {}),
+    },
     body: JSON.stringify(body),
   };
 }

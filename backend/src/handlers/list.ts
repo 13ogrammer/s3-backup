@@ -12,6 +12,7 @@ import { BUCKET, s3, sanitizePrefix } from '../s3.js';
 import { PREVIEW_PREFIX } from '../previews.js';
 import { THUMB_PREFIX, thumbKey, thumbPrefix } from '../thumbs.js';
 import type { ListRequest, ListResponse, ListedFile } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const PREVIEW_TTL = 60 * 10;
 const PAGE_SIZE = 500;
@@ -46,7 +47,7 @@ function parseEtag(raw: string | undefined): string | undefined {
   return SINGLE_PART_ETAG_RE.test(stripped) ? stripped.toLowerCase() : undefined;
 }
 
-export async function list(body: ListRequest): Promise<ListResponse> {
+export async function list(body: ListRequest, ctx: RequestContext): Promise<ListResponse> {
   const prefix = sanitizePrefix(body.prefix);
   const recursive = body.recursive === true;
 
@@ -74,6 +75,7 @@ export async function list(body: ListRequest): Promise<ListResponse> {
       });
     }
 
+    ctx.log.info('list', { prefix, recursive: true, fileCount: files.length });
     return {
       prefix,
       folders: [],
@@ -144,6 +146,7 @@ export async function list(body: ListRequest): Promise<ListResponse> {
     }),
   );
 
+  ctx.log.info('list', { prefix, recursive: false, fileCount: files.length, folderCount: folders.length });
   return {
     prefix,
     folders,

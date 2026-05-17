@@ -2,10 +2,11 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { BUCKET, s3, sanitizeKey } from '../s3.js';
 import type { SignDownloadRequest, SignDownloadResponse } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const EXPIRES_IN = 60 * 10;
 
-export async function signDownload(body: SignDownloadRequest): Promise<SignDownloadResponse> {
+export async function signDownload(body: SignDownloadRequest, ctx: RequestContext): Promise<SignDownloadResponse> {
   const key = sanitizeKey(body.key);
 
   const url = await getSignedUrl(
@@ -14,5 +15,6 @@ export async function signDownload(body: SignDownloadRequest): Promise<SignDownl
     { expiresIn: EXPIRES_IN },
   );
 
+  ctx.log.info('sign-download', { key });
   return { url, expiresIn: EXPIRES_IN };
 }

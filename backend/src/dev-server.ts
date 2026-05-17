@@ -3,6 +3,8 @@ import { networkInterfaces } from 'node:os';
 
 import { handler } from './index.js';
 
+let requestCounter = 0;
+
 const PORT = Number(process.env.PORT ?? 8080);
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -34,6 +36,7 @@ const server = createServer(async (req, res) => {
       rawQueryString: url.search.slice(1),
       headers: normalizeHeaders(req.headers),
       requestContext: {
+        requestId: `dev-${++requestCounter}`,
         http: {
           method: req.method ?? 'GET',
           path: url.pathname,

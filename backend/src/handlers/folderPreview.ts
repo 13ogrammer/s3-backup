@@ -4,6 +4,7 @@ import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
 import type { FolderPreviewRequest, FolderPreviewResponse, FolderPreviewThumb } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const PREVIEW_TTL = 60 * 10;
 const MAX_THUMBS = 3;
@@ -72,7 +73,7 @@ async function scanPrefix(prefix: string): Promise<{
   return { candidates, hasContent, subPrefixes };
 }
 
-export async function folderPreview(body: FolderPreviewRequest): Promise<FolderPreviewResponse> {
+export async function folderPreview(body: FolderPreviewRequest, ctx: RequestContext): Promise<FolderPreviewResponse> {
   if (!body.prefix) throw new Error('prefix is required');
   const prefix = sanitizePrefix(body.prefix);
   if (!prefix) throw new Error('prefix is required');
@@ -114,5 +115,6 @@ export async function folderPreview(body: FolderPreviewRequest): Promise<FolderP
       }),
   );
 
+  ctx.log.info('folder-preview', { prefix, thumbCount: thumbs.length, hasContent });
   return { prefix, thumbs, hasContent };
 }

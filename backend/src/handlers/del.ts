@@ -4,10 +4,11 @@ import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
 import { previewKey, previewPrefix } from '../previews.js';
 import type { DeleteRequest, DeleteResponse } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const BATCH_SIZE = 1000;
 
-export async function del(body: DeleteRequest): Promise<DeleteResponse> {
+export async function del(body: DeleteRequest, ctx: RequestContext): Promise<DeleteResponse> {
   const keys = (body.keys ?? []).map(sanitizeKey);
   const prefixes = (body.prefixes ?? []).map((p) => sanitizePrefix(p));
 
@@ -75,5 +76,6 @@ export async function del(body: DeleteRequest): Promise<DeleteResponse> {
     }
   }
 
+  ctx.log.info('delete', { deletedCount: deleted.length, errorCount: errors.length });
   return { deleted, errors };
 }

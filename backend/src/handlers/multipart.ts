@@ -17,11 +17,13 @@ import type {
   SignPartRequest,
   SignPartResponse,
 } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 const PART_SIGN_TTL = 60 * 60; // 1 hour — enough time to upload a few large parts.
 
 export async function createMultipart(
   body: CreateMultipartRequest,
+  ctx: RequestContext,
 ): Promise<CreateMultipartResponse> {
   const key = sanitizeKey(body.key);
   if (!body.contentType || typeof body.contentType !== 'string') {
@@ -35,10 +37,11 @@ export async function createMultipart(
     }),
   );
   if (!res.UploadId) throw new Error('S3 returned no UploadId');
+  ctx.log.info('multipart-create', { key });
   return { uploadId: res.UploadId };
 }
 
-export async function signPart(body: SignPartRequest): Promise<SignPartResponse> {
+export async function signPart(body: SignPartRequest, ctx: RequestContext): Promise<SignPartResponse> {
   const key = sanitizeKey(body.key);
   if (!body.uploadId || typeof body.uploadId !== 'string') {
     throw new Error('uploadId is required');
@@ -60,11 +63,13 @@ export async function signPart(body: SignPartRequest): Promise<SignPartResponse>
     }),
     { expiresIn: PART_SIGN_TTL },
   );
+  ctx.log.info('multipart-sign-part', { key, partNumber: body.partNumber });
   return { url };
 }
 
 export async function completeMultipart(
   body: CompleteMultipartRequest,
+  ctx: RequestContext,
 ): Promise<CompleteMultipartResponse> {
   const key = sanitizeKey(body.key);
   if (!body.uploadId || typeof body.uploadId !== 'string') {
@@ -86,11 +91,13 @@ export async function completeMultipart(
       MultipartUpload: { Parts: parts },
     }),
   );
+  ctx.log.info('multipart-complete', { key, partCount: parts.length });
   return { ok: true };
 }
 
 export async function abortMultipart(
   body: AbortMultipartRequest,
+  ctx: RequestContext,
 ): Promise<AbortMultipartResponse> {
   const key = sanitizeKey(body.key);
   if (!body.uploadId || typeof body.uploadId !== 'string') {
@@ -103,5 +110,6 @@ export async function abortMultipart(
       UploadId: body.uploadId,
     }),
   );
+  ctx.log.info('multipart-abort', { key });
   return { ok: true };
 }

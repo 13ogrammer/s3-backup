@@ -4,13 +4,14 @@ import {
 } from '@aws-sdk/client-s3';
 import { BUCKET, s3, sanitizeKey } from '../s3.js';
 import type { RestoreRequest, RestoreResponse } from '../types.js';
+import type { RequestContext } from '../index.js';
 
 // Undo a delete by removing the latest delete marker for each key. Only
 // works on buckets with versioning enabled (the SAM-managed bucket has
 // it on; BYO buckets need to opt in themselves). For un-versioned
 // buckets, the previous delete is permanent — the key shows up in
 // `missing` and the client surfaces a non-fatal warning.
-export async function restore(body: RestoreRequest): Promise<RestoreResponse> {
+export async function restore(body: RestoreRequest, ctx: RequestContext): Promise<RestoreResponse> {
   if (!Array.isArray(body.keys) || body.keys.length === 0) {
     throw new Error('keys must be a non-empty array');
   }
@@ -38,6 +39,7 @@ export async function restore(body: RestoreRequest): Promise<RestoreResponse> {
     }
   }
 
+  ctx.log.info('restore', { restoredCount: restored.length, missingCount: missing.length });
   return { restored, missing };
 }
 
