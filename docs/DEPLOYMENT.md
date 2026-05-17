@@ -327,6 +327,31 @@ Manifest format (`manifest.json`):
 - Release notes live on [GitHub Releases](https://github.com/13ogrammer/s3-backup/releases),
   not in the manifest. The in-app "Changelog" link in About opens that page.
 
+#### Cutting a release
+
+Native releases (new APK) get a git tag and a GitHub Release. OTA-only
+shipments do not — they're invisible by design, and their commits are
+folded into the next native release's notes.
+
+```bash
+./scripts/bump-version.sh 1.3.0
+git add app/app.json && git commit -m "chore(app): bump version to 1.3.0"
+git tag v1.3.0
+git push --follow-tags
+
+./scripts/release-notes.sh > /tmp/notes.md   # preview, edit if needed
+gh release create v1.3.0 --notes-file /tmp/notes.md
+```
+
+`release-notes.sh` wraps `git-cliff` (install: `brew install git-cliff`)
+and groups commits since the last tag by Conventional Commits prefix
+(Features / Bug fixes / Performance / Polish / Refactoring / Documentation).
+Linear IDs in commit messages auto-link. Config lives at `cliff.toml`.
+
+The app version, the git tag, and the GitHub Release version are all
+the same number. `runtimeVersion: { policy: 'appVersion' }` ties them
+together — there is no separate "release version" to track.
+
 ### Watching logs / errors
 
 CloudWatch Logs → `/aws/lambda/s3-backup-ApiFn-<id>`. Filter by
