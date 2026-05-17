@@ -30,13 +30,17 @@ build-ApiFn:
 		--outfile=$(ARTIFACTS_DIR)/index.mjs
 
 	# Install sharp's linux/arm64 native binary into the artifact dir.
-	# --foreground-scripts ensures the @img/sharp-linux-arm64 postinstall
-	# actually runs inside the build container.
+	# npm 11+ selects optional deps via --cpu/--os/--libc (the older
+	# --platform/--arch flags don't drive optional-dep selection, which
+	# is how sharp ships per-arch binaries — it picks the host's arch).
+	# --include=optional is required so the matching
+	# @img/sharp-linux-arm64 isn't pruned. --foreground-scripts ensures
+	# its postinstall actually runs.
 	npm install --prefix $(ARTIFACTS_DIR) \
-		--platform=linux \
-		--arch=arm64 \
+		--cpu=arm64 \
 		--os=linux \
 		--libc=glibc \
+		--include=optional \
 		--omit=dev \
 		--foreground-scripts \
 		sharp
