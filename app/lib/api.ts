@@ -41,6 +41,17 @@ export type GetDerivedUrlResponse = {
 };
 export type GetDerivedUrlError = { url: null; error: string };
 
+export type FolderPreviewThumb = {
+  key: string;
+  url: string;
+  kind: 'image' | 'video';
+};
+export type FolderPreviewResponse = {
+  prefix: string;
+  thumbs: FolderPreviewThumb[];
+  hasContent: boolean;
+};
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -102,4 +113,6 @@ export const api = {
     call<MoveResponse>('/move', { kind: 'folder', fromPrefix, toPrefix }),
   getDerivedUrl: (key: string, tier: DerivedTier) =>
     call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
+  folderPreview: (prefix: string) =>
+    call<FolderPreviewResponse>('/folder-preview', { prefix }),
 };
