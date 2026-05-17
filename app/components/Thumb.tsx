@@ -21,7 +21,9 @@ export type ThumbProps = {
 type LoadState = 'loading' | 'loaded' | 'failed';
 
 const MIN_DISPLAY_MS = 80;
-const TIMEOUT_MS = 3000;
+// Extended from 3000 ms: on-demand derived-asset generation (first view of an
+// image) may take several seconds while sharp resizes and uploads the result.
+const TIMEOUT_MS = 8000;
 const FADE_MS = 150;
 
 export function Thumb({

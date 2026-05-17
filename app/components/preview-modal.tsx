@@ -28,7 +28,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ZoomableImage } from '@/components/zoomable-image';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api } from '@/lib/api';
+import { api, type GetDerivedUrlResponse } from '@/lib/api';
 import { basename } from '@/lib/format';
 
 export type PreviewFile = {
@@ -52,24 +52,39 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
 
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
   const [downloading, setDownloading] = useState(false);
-  const [urls, setUrls] = useState<Map<string, string>>(new Map());
+  // Dual-URL shape: previewUrl is the /get-derived-url preview tier for images
+  // (1920px JPEG); originalUrl is the signed download URL used for video
+  // playback and the Download button.
+  const [urls, setUrls] = useState<Map<string, { previewUrl?: string; originalUrl?: string }>>(new Map());
   const [isZoomed, setIsZoomed] = useState(false);
   const flatListRef = useRef<FlatList<PreviewFile> | null>(null);
 
   const current = visible && index >= 0 && index < files.length ? files[index] : null;
   const filename = current ? basename(current.key) : '';
-  const currentUrl = current ? urls.get(current.key) : undefined;
+  const currentEntry = current ? urls.get(current.key) : undefined;
+  // Download always uses the original signed URL.
+  const currentDownloadUrl = currentEntry?.originalUrl;
+  // Display URL: for images prefer the preview tier; fall back to original if
+  // preview isn't ready yet (should not happen normally).
+  const currentDisplayUrl =
+    current?.kind === 'image'
+      ? currentEntry?.previewUrl ?? currentEntry?.originalUrl
+      : currentEntry?.originalUrl;
 
   useEffect(() => {
     if (visible && initialIndex != null) {
       setIndex(initialIndex);
       // Reset URL cache when reopening for a different list/index.
-      setUrls(new Map());
+      setUrls(new Map<string, { previewUrl?: string; originalUrl?: string }>());
       setIsZoomed(false);
     }
   }, [visible, initialIndex]);
 
-  // Sign URLs for the current page and immediate neighbours; prefetch images.
+  // Fetch URLs for the current page and immediate neighbours; prefetch images.
+  //
+  // Images: fetch a preview-tier URL via /get-derived-url (1920px JPEG) for
+  // display, plus an originalUrl via /sign-download for the Download button.
+  // Videos and other kinds: only /sign-download (original) is needed.
   useEffect(() => {
     if (!visible) return;
     const wanted = [index - 1, index, index + 1]
@@ -78,20 +93,63 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       .filter((f): f is PreviewFile => !!f);
     let cancelled = false;
     for (const f of wanted) {
-      if (urls.has(f.key)) continue;
-      api
-        .signDownload(f.key)
-        .then(({ url }) => {
-          if (cancelled) return;
-          setUrls((prev) => {
-            if (prev.has(f.key)) return prev;
-            const next = new Map(prev);
-            next.set(f.key, url);
-            return next;
-          });
-          if (f.kind === 'image') Image.prefetch(url);
-        })
-        .catch(() => {});
+      const existing = urls.get(f.key);
+
+      if (f.kind === 'image') {
+        // For images we need both a preview URL and an original URL.
+        if (!existing?.previewUrl) {
+          api
+            .getDerivedUrl(f.key, 'preview')
+            .then((res) => {
+              if (cancelled) return;
+              const url = (res as { url: string | null }).url !== null
+                ? (res as GetDerivedUrlResponse).url
+                : undefined;
+              if (!url) return;
+              setUrls((prev) => {
+                const entry = prev.get(f.key) ?? {};
+                if (entry.previewUrl) return prev;
+                const next = new Map(prev);
+                next.set(f.key, { ...entry, previewUrl: url });
+                return next;
+              });
+              Image.prefetch(url);
+            })
+            .catch(() => {});
+        }
+        if (!existing?.originalUrl) {
+          api
+            .signDownload(f.key)
+            .then(({ url }) => {
+              if (cancelled) return;
+              setUrls((prev) => {
+                const entry = prev.get(f.key) ?? {};
+                if (entry.originalUrl) return prev;
+                const next = new Map(prev);
+                next.set(f.key, { ...entry, originalUrl: url });
+                return next;
+              });
+            })
+            .catch(() => {});
+        }
+      } else {
+        // Videos and other kinds: original URL is the only URL needed.
+        if (!existing?.originalUrl) {
+          api
+            .signDownload(f.key)
+            .then(({ url }) => {
+              if (cancelled) return;
+              setUrls((prev) => {
+                const entry = prev.get(f.key) ?? {};
+                if (entry.originalUrl) return prev;
+                const next = new Map(prev);
+                next.set(f.key, { ...entry, originalUrl: url });
+                return next;
+              });
+            })
+            .catch(() => {});
+        }
+      }
     }
     return () => {
       cancelled = true;
@@ -99,7 +157,8 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   }, [visible, index, files, urls]);
 
   async function onDownload() {
-    if (!current || !currentUrl) return;
+    if (!current || !currentDownloadUrl) return;
+    const currentUrl = currentDownloadUrl;
     setDownloading(true);
     try {
       const target = `${documentDirectory}${filename}`;
@@ -155,16 +214,24 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
               index: i,
             })}
             onMomentumScrollEnd={onMomentumScrollEnd}
-            renderItem={({ item, index: i }) => (
-              <PreviewSlide
-                file={item}
-                url={urls.get(item.key)}
-                isActive={i === index}
-                width={pageWidth}
-                height={windowHeight}
-                onZoomChange={i === index ? setIsZoomed : undefined}
-              />
-            )}
+            renderItem={({ item, index: i }) => {
+              const entry = urls.get(item.key);
+              const displayUrl =
+                item.kind === 'image'
+                  ? entry?.previewUrl ?? entry?.originalUrl
+                  : entry?.originalUrl;
+              return (
+                <PreviewSlide
+                  file={item}
+                  displayUrl={displayUrl}
+                  originalUrl={entry?.originalUrl}
+                  isActive={i === index}
+                  width={pageWidth}
+                  height={windowHeight}
+                  onZoomChange={i === index ? setIsZoomed : undefined}
+                />
+              );
+            }}
           />
           <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <Pressable
@@ -195,7 +262,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             </View>
             <Pressable
               onPress={onDownload}
-              disabled={!currentUrl || downloading}
+              disabled={!currentDownloadUrl || downloading}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Download"
@@ -203,7 +270,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 styles.headerIconButton,
                 {
                   backgroundColor: colors.tint,
-                  opacity: !currentUrl || downloading ? 0.5 : pressed ? 0.7 : 1,
+                  opacity: !currentDownloadUrl || downloading ? 0.5 : pressed ? 0.7 : 1,
                 },
               ]}>
               {downloading ? (
@@ -221,16 +288,19 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
 
 type SlideProps = {
   file: PreviewFile;
-  url: string | undefined;
+  /** URL for display: preview-tier JPEG for images, original for video/other. */
+  displayUrl: string | undefined;
+  /** Original signed URL — used for video player and (externally) for download. */
+  originalUrl: string | undefined;
   isActive: boolean;
   width: number;
   height: number;
   onZoomChange?: (zoomed: boolean) => void;
 };
 
-function PreviewSlide({ file, url, isActive, width, height, onZoomChange }: SlideProps) {
+function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, onZoomChange }: SlideProps) {
   const filename = basename(file.key);
-  const player = useVideoPlayer(file.kind === 'video' ? url ?? null : null, (p) => {
+  const player = useVideoPlayer(file.kind === 'video' ? originalUrl ?? null : null, (p) => {
     p.loop = false;
   });
 
@@ -243,11 +313,11 @@ function PreviewSlide({ file, url, isActive, width, height, onZoomChange }: Slid
   return (
     <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
       <View style={styles.slide}>
-        {!url && <ActivityIndicator color="#fff" />}
-        {url && file.kind === 'image' && (
-          <ZoomableImage uri={url} onZoomChange={onZoomChange} />
+        {!displayUrl && <ActivityIndicator color="#fff" />}
+        {displayUrl && file.kind === 'image' && (
+          <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
         )}
-        {url && file.kind === 'video' && (
+        {displayUrl && file.kind === 'video' && (
           <VideoView
             player={player}
             style={styles.media}
@@ -257,7 +327,7 @@ function PreviewSlide({ file, url, isActive, width, height, onZoomChange }: Slid
             nativeControls
           />
         )}
-        {url && file.kind === 'other' && (
+        {displayUrl && file.kind === 'other' && (
           <ThemedView style={styles.noPreview}>
             <ThemedText type="defaultSemiBold">No preview available</ThemedText>
             <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
