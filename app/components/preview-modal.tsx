@@ -303,15 +303,6 @@ type SlideProps = {
 
 function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, bottomInset, onZoomChange }: SlideProps) {
   const filename = basename(file.key);
-  const player = useVideoPlayer(file.kind === 'video' ? originalUrl ?? null : null, (p) => {
-    p.loop = false;
-  });
-
-  useEffect(() => {
-    if (file.kind !== 'video' || !player) return;
-    if (isActive) player.play();
-    else player.pause();
-  }, [isActive, player, file.kind]);
 
   return (
     <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
@@ -320,17 +311,8 @@ function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, 
         {displayUrl && file.kind === 'image' && (
           <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
         )}
-        {displayUrl && file.kind === 'video' && (
-          <View style={{ flex: 1, paddingBottom: bottomInset }}>
-            <VideoView
-              player={player}
-              style={styles.media}
-              allowsFullscreen
-              allowsPictureInPicture
-              contentFit="contain"
-              nativeControls
-            />
-          </View>
+        {file.kind === 'video' && originalUrl && (
+          <VideoSlide uri={originalUrl} isActive={isActive} bottomInset={bottomInset} />
         )}
         {displayUrl && file.kind === 'other' && (
           <ThemedView style={styles.noPreview}>
@@ -341,6 +323,31 @@ function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, 
           </ThemedView>
         )}
       </View>
+    </View>
+  );
+}
+
+function VideoSlide({ uri, isActive, bottomInset }: { uri: string; isActive: boolean; bottomInset: number }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+    if (isActive) player.play();
+    else player.pause();
+  }, [isActive, player]);
+
+  return (
+    <View style={{ flex: 1, paddingBottom: bottomInset }}>
+      <VideoView
+        player={player}
+        style={styles.media}
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+        contentFit="contain"
+        nativeControls
+      />
     </View>
   );
 }
