@@ -17,6 +17,7 @@ import {
 } from './handlers/multipart.js';
 import { restore } from './handlers/restore.js';
 import { getDerivedUrl } from './handlers/getDerivedUrl.js';
+import { folderPreview } from './handlers/folderPreview.js';
 
 type Route = (body: any) => Promise<unknown>;
 
@@ -29,6 +30,7 @@ const routes: Record<string, Route> = {
   'POST /move': move,
   'POST /restore': restore,
   'POST /get-derived-url': getDerivedUrl,
+  'POST /folder-preview': folderPreview,
   'POST /multipart/create': createMultipart,
   'POST /multipart/sign-part': signPart,
   'POST /multipart/complete': completeMultipart,
