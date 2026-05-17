@@ -6,6 +6,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '1.2.0',
+    date: '2026-05-17',
+    notes: [
+      'About screen with version + changelog',
+      'On-demand thumbnail and preview tier generation',
+      'Added expo-application (native module — requires native rebuild)',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-05-17',
     notes: [
