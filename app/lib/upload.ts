@@ -10,6 +10,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 import { ApiError, api, type CompletedPart } from './api';
+import { addUploadBreadcrumb } from './sentry';
 import {
   removePendingUpload,
   savePendingUpload,
@@ -82,7 +83,10 @@ async function uploadFileSimple(
   onProgress?: (progress: UploadProgress) => void,
   trackSimple = false,
 ): Promise<void> {
+  addUploadBreadcrumb('upload start', { remoteKey, mode: 'simple', totalBytes });
+
   const { url } = await api.signUpload(remoteKey, contentType);
+  addUploadBreadcrumb('sign-upload ok', { remoteKey, mode: 'simple', totalBytes });
 
   if (trackSimple) {
     await savePendingUpload({
@@ -94,6 +98,11 @@ async function uploadFileSimple(
       updatedAt: Date.now(),
     });
   }
+
+  addUploadBreadcrumb('PUT begin', { remoteKey, mode: 'simple' });
+
+  // Sample progress at 25 / 50 / 75 % — 100% is covered by 'upload complete'.
+  let lastBucket = 0;
 
   const task = createUploadTask(
     url,
@@ -108,6 +117,11 @@ async function uploadFileSimple(
         bytesSent: data.totalBytesSent,
         bytesTotal: data.totalBytesExpectedToSend,
       });
+      const bucket = Math.floor((data.totalBytesSent / data.totalBytesExpectedToSend) * 4);
+      if (bucket !== lastBucket && bucket > 0 && bucket < 4) {
+        lastBucket = bucket;
+        addUploadBreadcrumb('upload progress', { remoteKey, percent: bucket * 25 });
+      }
     },
   );
 
@@ -116,6 +130,8 @@ async function uploadFileSimple(
   if (result.status < 200 || result.status >= 300) {
     throw new UploadError(result.status, `upload failed: HTTP ${result.status}`);
   }
+
+  addUploadBreadcrumb('upload complete', { remoteKey, mode: 'simple', totalBytes });
 
   if (trackSimple) {
     await removePendingUpload(remoteKey).catch(() => undefined);
@@ -135,6 +151,14 @@ async function uploadFileMultipart(
   let uploadId: string;
   const parts: CompletedPart[] = [];
   let bytesSent = 0;
+
+  addUploadBreadcrumb('upload start', {
+    remoteKey,
+    mode: 'multipart',
+    totalBytes,
+    partCount,
+    resuming: Boolean(resume),
+  });
 
   if (resume) {
     uploadId = resume.uploadId;
@@ -195,6 +219,7 @@ async function uploadFileMultipart(
       parts.push({ partNumber, etag });
       bytesSent += length;
       onProgress?.({ bytesSent, bytesTotal: totalBytes });
+      addUploadBreadcrumb('part complete', { remoteKey, partNumber, bytesSent, totalBytes });
 
       // Persist after each successful part so we can resume exactly
       // where we left off if the app is suspended next.
@@ -204,8 +229,19 @@ async function uploadFileMultipart(
     }
 
     await withRetry(() => api.completeMultipart(remoteKey, uploadId, parts));
+    addUploadBreadcrumb('upload complete', { remoteKey, mode: 'multipart', totalBytes, parts: parts.length });
     await removePendingUpload(remoteKey).catch(() => undefined);
   } catch (err) {
+    addUploadBreadcrumb(
+      'upload error',
+      {
+        remoteKey,
+        mode: 'multipart',
+        retryable: defaultIsRetryable(err),
+        message: err instanceof Error ? err.message : String(err),
+      },
+      'error',
+    );
     // Retryable failures (network, 5xx, 429) → keep state and the
     // uploadId so the resume banner can pick up where we left off.
     // Non-retryable (4xx, malformed, etc.) → abort and clear.
@@ -367,7 +403,23 @@ export async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (attempt === maxAttempts || !isRetryable(err)) throw err;
+      if (attempt === maxAttempts || !isRetryable(err)) {
+        addUploadBreadcrumb(
+          'upload error (giving up)',
+          { attempt, message: err instanceof Error ? err.message : String(err) },
+          'error',
+        );
+        throw err;
+      }
+      addUploadBreadcrumb(
+        'retry attempt',
+        {
+          attempt: attempt + 1,
+          maxAttempts,
+          message: err instanceof Error ? err.message : String(err),
+        },
+        'warning',
+      );
       // Exponential backoff with jitter: ~baseDelay * 2^(n-1), ±50%.
       const delay = baseDelay * Math.pow(2, attempt - 1) * (0.5 + Math.random());
       await new Promise((r) => setTimeout(r, delay));
