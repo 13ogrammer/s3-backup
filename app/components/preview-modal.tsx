@@ -339,7 +339,7 @@ function VideoSlide({ uri, isActive, bottomInset }: { uri: string; isActive: boo
   }, [isActive, player]);
 
   return (
-    <View style={{ flex: 1, paddingBottom: bottomInset }}>
+    <View style={{ width: '100%', flex: 1, paddingBottom: bottomInset }}>
       <VideoView
         player={player}
         style={styles.media}
