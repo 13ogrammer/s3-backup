@@ -23,7 +23,7 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, type ListResponse } from '@/lib/api';
+import { api, ApiError, type ListResponse, type GetDerivedUrlResponse } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 
@@ -106,6 +106,12 @@ export default function BrowseScreen() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // Lazy-fetched thumbnail URLs for image rows that the server returned
+  // without a previewUrl (i.e. the thumb hasn't been backfilled yet).
+  // Map<key, url>. Keyed separately from row state so re-renders that
+  // sort/filter rows don't reset the cache.
+  const [thumbUrlCache, setThumbUrlCache] = useState<Map<string, string>>(new Map());
 
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionCount > 0;
@@ -255,6 +261,64 @@ export default function BrowseScreen() {
   );
 
   useEffect(() => { setSearchQuery(''); }, [path]);
+
+  // Clear the thumb URL cache when the path changes so stale keys from the
+  // previous folder don't linger. A new load() call will populate fresh rows.
+  useEffect(() => { setThumbUrlCache(new Map()); }, [path]);
+
+  // Lazy-fetch thumbnail URLs for image rows that came back from /list without
+  // a previewUrl. Bounded to MAX_CONCURRENT in-flight so we don't fire 500
+  // requests simultaneously in a large folder. Errors are logged once per key
+  // and not retried — the user can pull-to-refresh if needed.
+  const MAX_CONCURRENT = 4;
+  useEffect(() => {
+    const missing = rows.filter(
+      (r): r is Extract<typeof r, { kind: 'file' }> =>
+        r.kind === 'file' &&
+        r.mediaKind === 'image' &&
+        r.previewUrl === undefined &&
+        !thumbUrlCache.has(r.key),
+    );
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    let inFlight = 0;
+    let idx = 0;
+
+    function next() {
+      if (cancelled) return;
+      while (inFlight < MAX_CONCURRENT && idx < missing.length) {
+        const row = missing[idx++]!;
+        inFlight += 1;
+        api
+          .getDerivedUrl(row.key, 'thumbnail')
+          .then((res) => {
+            if (cancelled) return;
+            // res is GetDerivedUrlResponse | GetDerivedUrlError
+            if ((res as { url: null | string }).url !== null) {
+              const url = (res as GetDerivedUrlResponse).url;
+              setThumbUrlCache((prev) => {
+                if (prev.has(row.key)) return prev;
+                const next = new Map(prev);
+                next.set(row.key, url);
+                return next;
+              });
+            }
+          })
+          .catch((err) => {
+            console.warn('[Browse] getDerivedUrl failed for', row.key, err);
+          })
+          .finally(() => {
+            inFlight -= 1;
+            next();
+          });
+      }
+    }
+
+    next();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
 
   // Auto-dismiss the snackbar after 5s.
   useEffect(() => {
@@ -674,9 +738,15 @@ export default function BrowseScreen() {
           }
           renderItem={({ item }) => {
             const selected = isSelected(item);
+            // Merge lazily-fetched thumb URLs into the item so render
+            // functions don't need to know about thumbUrlCache.
+            const resolved: Row =
+              item.kind === 'file' && !item.previewUrl && thumbUrlCache.has(item.key)
+                ? { ...item, previewUrl: thumbUrlCache.get(item.key) }
+                : item;
             if (viewMode === 'grid') {
               return renderGridTile({
-                item,
+                item: resolved,
                 selected,
                 selectionActive,
                 colors,
@@ -685,7 +755,7 @@ export default function BrowseScreen() {
               });
             }
             return renderListRow({
-              item,
+              item: resolved,
               selected,
               selectionActive,
               colors,

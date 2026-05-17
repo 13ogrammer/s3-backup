@@ -100,4 +100,6 @@ export const api = {
     call<MoveResponse>('/move', { kind: 'file', from, to }),
   moveFolder: (fromPrefix: string, toPrefix: string) =>
     call<MoveResponse>('/move', { kind: 'folder', fromPrefix, toPrefix }),
+  getDerivedUrl: (key: string, tier: DerivedTier) =>
+    call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
 };
