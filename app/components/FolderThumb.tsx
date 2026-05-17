@@ -12,7 +12,6 @@ export type FolderThumbProps = {
   size: number;
   thumbs: ReadonlyArray<FolderPreviewThumb>;
   loading: boolean;
-  empty: boolean;
   name?: string;
 };
 
@@ -20,15 +19,16 @@ export type FolderThumbProps = {
 const CARD_ANGLES = [-7, 0, 7];
 const CARD_Z = [1, 3, 2];
 
-function FolderThumbInner({ size, thumbs, loading, empty }: FolderThumbProps) {
+function FolderThumbInner({ size, thumbs, loading }: FolderThumbProps) {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
   const cardSize = Math.round(size * 0.78);
   const translateX = Math.round(size * 0.08);
 
-  // Empty state: generic folder icon, same visual as the pre-collage render site.
-  if (empty && thumbs.length === 0) {
+  // No previews available (empty folder, videos-only, sub-folders-only): fall back
+  // to the generic folder icon regardless of why there are no image thumbnails.
+  if (!loading && thumbs.length === 0) {
     const iconSize = size > 40 ? 40 : 28;
     return (
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -38,7 +38,7 @@ function FolderThumbInner({ size, thumbs, loading, empty }: FolderThumbProps) {
   }
 
   // Loading state: 3 skeleton cards at the same rotations.
-  if (loading || thumbs.length === 0) {
+  if (loading) {
     const count = 3;
     return (
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -118,8 +118,7 @@ function areEqual(prev: FolderThumbProps, next: FolderThumbProps): boolean {
   if (
     prev.prefix !== next.prefix ||
     prev.size !== next.size ||
-    prev.loading !== next.loading ||
-    prev.empty !== next.empty
+    prev.loading !== next.loading
   ) {
     return false;
   }
