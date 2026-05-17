@@ -1049,7 +1049,6 @@ function renderListRow({
           size={THUMB_SIZE}
           thumbs={fp?.status === 'ready' ? fp.thumbs : []}
           loading={fp?.status === 'loading' || fp === undefined}
-          empty={fp?.status === 'ready' && fp.thumbs.length === 0 && !fp.hasContent}
           name={item.name}
         />
       ) : item.previewUrl ? (
@@ -1117,7 +1116,6 @@ function renderGridTile({
             size={Math.round(GRID_TILE * 0.7)}
             thumbs={fp?.status === 'ready' ? fp.thumbs : []}
             loading={fp?.status === 'loading' || fp === undefined}
-            empty={fp?.status === 'ready' && fp.thumbs.length === 0 && !fp.hasContent}
             name={item.name}
           />
           <ThemedText style={styles.gridLabel} numberOfLines={2}>
