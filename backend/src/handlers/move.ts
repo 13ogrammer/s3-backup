@@ -8,6 +8,7 @@ import {
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
+import { previewKey, previewPrefix } from '../previews.js';
 import type { MoveRequest, MoveResponse } from '../types.js';
 
 async function copyAndDelete(from: string, to: string): Promise<void> {
@@ -85,6 +86,13 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
         await copyAndDelete(thumbFrom, thumbKey(to));
       }
     }
+    // Preview assets are only generated for images.
+    if (fromKind === 'image') {
+      const previewFrom = previewKey(from);
+      if (await exists(previewFrom)) {
+        await copyAndDelete(previewFrom, previewKey(to));
+      }
+    }
 
     return { moved: 1 };
   }
@@ -99,9 +107,10 @@ export async function move(body: MoveRequest): Promise<MoveResponse> {
     throw new Error('cannot move a folder into itself');
   }
 
-  // Move the originals tree, then the parallel thumbs tree.
+  // Move the originals tree, then the parallel derived-asset trees.
   const movedOriginals = await moveTree(fromPrefix, toPrefix);
   await moveTree(thumbPrefix(fromPrefix), thumbPrefix(toPrefix));
+  await moveTree(previewPrefix(fromPrefix), previewPrefix(toPrefix));
 
   return { moved: movedOriginals };
 }
