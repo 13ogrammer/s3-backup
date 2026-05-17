@@ -13,10 +13,11 @@ STACK_NAME="${STACK_NAME:-s3-backup}"
 APK_URL=""
 RELEASE_NOTES=""
 DRY_RUN=0
+ASSUME_YES=0
 
 usage() {
   cat <<EOF
-Usage: $0 [--apk-url <url>] [--notes <text>] [--stack-name <name>] [--dry-run]
+Usage: $0 [--apk-url <url>] [--notes <text>] [--stack-name <name>] [--dry-run] [--yes]
 
 Flags:
   --apk-url <url>       APK download link from expo.dev. Prompted if omitted.
@@ -24,11 +25,13 @@ Flags:
   --stack-name <name>   CloudFormation stack name (default: s3-backup,
                         or \$STACK_NAME if set).
   --dry-run             Print the manifest and target without uploading.
+  --yes, -y             Skip the upload confirmation prompt (non-interactive).
   -h, --help            Show this help.
 
 Examples:
   $0                                          # interactive
   $0 --apk-url https://expo.dev/... --notes "Fix gallery filter"
+  $0 --apk-url ... --notes ... --yes          # fully non-interactive
   $0 --dry-run                                # preview without upload
 EOF
 }
@@ -39,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --notes) RELEASE_NOTES="${2:-}"; shift 2 ;;
     --stack-name) STACK_NAME="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --yes|-y) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown flag: $1" >&2; usage; exit 1 ;;
   esac
@@ -97,11 +101,13 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
-echo
-read -r -p "Upload? [y/N] " CONFIRM
-if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-  echo "Aborted."
-  exit 0
+if [[ "$ASSUME_YES" -ne 1 ]]; then
+  echo
+  read -r -p "Upload? [y/N] " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
 fi
 
 TMP_FILE="$(mktemp -t manifest-XXXXXX.json)"
