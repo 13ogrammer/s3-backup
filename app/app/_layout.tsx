@@ -6,6 +6,10 @@ import 'react-native-reanimated';
 import { UpdateBanner } from '@/components/update-banner';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { initSentry } from '@/lib/sentry';
+
+// Run once at bundle load — not inside RootLayout to avoid re-running on remount.
+initSentry();
 
 export const unstable_settings = {
   anchor: '(tabs)',

@@ -54,7 +54,11 @@ export type FolderPreviewResponse = {
 };
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public requestId?: string,
+  ) {
     super(message);
     this.name = 'ApiError';
   }
@@ -74,12 +78,13 @@ async function call<T>(path: string, body: unknown, configOverride?: AppConfig):
   });
 
   if (!res.ok) {
+    const requestId = res.headers.get('x-request-id') ?? undefined;
     let message = `HTTP ${res.status}`;
     try {
       const data = (await res.json()) as { error?: string };
       if (data.error) message = data.error;
     } catch {}
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, requestId);
   }
 
   return (await res.json()) as T;
