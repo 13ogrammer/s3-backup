@@ -1,3 +1,5 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +15,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
@@ -21,6 +23,7 @@ import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const router = useRouter();
 
   const [backendUrl, setBackendUrl] = useState('');
   const [bootstrapToken, setBootstrapToken] = useState('');
@@ -172,6 +175,16 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
 
+          <View style={[styles.card, { backgroundColor: colors.surface }]}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/about')}
+              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
+              <ThemedText style={[Type.body, { color: colors.text }]}>About</ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </Pressable>
+          </View>
+
           <Pressable
             accessibilityRole="button"
             onPress={onClear}
@@ -213,4 +226,9 @@ const styles = StyleSheet.create({
   },
   buttonText: { fontWeight: '600', fontSize: 15 },
   clearButton: { marginTop: Spacing.xl, alignItems: 'center', paddingVertical: 8 },
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
 });
