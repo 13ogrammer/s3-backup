@@ -50,3 +50,14 @@ export type AbortMultipartResponse = { ok: true };
 
 export type RestoreRequest = { keys: string[] };
 export type RestoreResponse = { restored: string[]; missing: string[] };
+
+export type DerivedTier = 'thumbnail' | 'preview';
+export type GetDerivedUrlRequest = { key: string; tier: DerivedTier };
+export type GetDerivedUrlResponse = {
+  url: string;
+  expiresIn: number;
+  tier: DerivedTier;
+  /** true when this request generated the derived asset; false when it was a cache hit */
+  generated: boolean;
+};
+export type GetDerivedUrlError = { url: null; error: 'unsupported_format' | string };
