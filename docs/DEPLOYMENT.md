@@ -295,7 +295,17 @@ disabled (no banner, no network call). To enable it:
      `preview` (and/or `production`) profile's environment variables
      in the EAS dashboard. The value is read by `app/app.config.ts` at
      build time and baked into `Constants.expoConfig.extra` in the APK.
-3. After each native release, upload an updated manifest:
+3. After each native release (a fresh APK that existing installs should be nudged to download), publish an updated manifest. Easiest path is the helper script:
+
+```bash
+./scripts/publish-manifest.sh
+# prompts for APK URL + release notes; reads version from app.json;
+# looks up the release bucket from the CFN stack outputs; uploads.
+```
+
+Skip this step for OTA-only releases (no new APK, no manifest change).
+
+Or do it by hand:
 
 ```bash
 aws s3 cp manifest.json s3://<ReleaseBucketName>/manifest.json --acl bucket-owner-full-control
