@@ -167,6 +167,42 @@ Two optional operator scripts handle pre-existing assets:
   install ffmpeg`). Safe to re-run; keys with existing sidecars are skipped.
   Run via `cd backend && npm run backfill:video-thumbs`.
 
+## Observability
+
+Every Lambda invocation emits structured JSON logs so failures can be traced end-to-end from a client error response back to the exact log lines that caused it.
+
+**Structured logger.** `backend/src/logger.ts` exports `createLogger(base)`, which returns a logger with `debug`, `info`, `warn`, `error`, and `child` methods. Every call writes one JSON line to stdout:
+
+```
+{ "ts": "…", "level": "info", "requestId": "…", "route": "POST /list", "msg": "…", …fields }
+```
+
+`child(extra)` merges additional fields into the base context — useful inside handlers that want to attach a key or prefix to all their log calls.
+
+**Request ID propagation.** At handler entry, `event.requestContext.requestId` is captured (fallback `'unknown'`) and threaded through `RequestContext = { requestId, route, log }` passed to every route handler. The same ID is echoed back to the caller as the `x-request-id` response header — including 4xx and 5xx error responses — so the client can surface it for support. In local dev, `backend/src/dev-server.ts` synthesises `dev-<n>` IDs so local logs have the same shape as production.
+
+**Per-route timing.** `withTiming(ctx, fn)` wraps each route handler. On success it emits one `request complete` log line with a `durationMs` field; on failure it emits `request failed` with `durationMs` and the error message, then re-throws. One timing record per invocation.
+
+**CloudWatch dashboard.** `backend/template.yaml` defines a `ObservabilityDashboard` resource (logical ID `ObservabilityDashboard`) named `<stack-name>-observability` via `!Sub '${AWS::StackName}-observability'`. Panels:
+
+- Lambda: Invocations, Errors, Duration p95
+- API Gateway: 4xx, 5xx
+- S3: GetRequests, PutRequests
+
+The S3 panels rely on `MetricsConfigurations` added to the `BackupBucket` resource. If you are deploying against a pre-existing bucket (not managed by this SAM stack), add a metrics configuration to it manually or the S3 panels will be empty.
+
+**Debug recipe.** When the app surfaces an error, grab the `x-request-id` value from the failing response. In CloudWatch Logs Insights, query the Lambda log group:
+
+```
+fields @timestamp, level, route, msg, durationMs
+| filter requestId = "REPLACE_ME"
+| sort @timestamp asc
+```
+
+Replace `REPLACE_ME` with the captured ID to see every log line — including timing — for that exact invocation.
+
+**App-side observability** (Sentry breadcrumbs, error capture) is tracked separately in **S3B-39**.
+
 ## Distribution model
 
 V1 ships as **open-source bring-your-own-AWS**. Users deploy the SAM
