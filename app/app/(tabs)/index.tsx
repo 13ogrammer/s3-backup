@@ -6,7 +6,6 @@ import { useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   AppStateStatus,
   Dimensions,
@@ -23,6 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useAlert } from '@/components/ui/alert-provider';
 import { ModalCard } from '@/components/ui/modal-card';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -66,6 +66,7 @@ export default function GalleryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const navigation = useNavigation();
+  const { showAlert } = useAlert();
 
   const [permission, requestPermission] = MediaLibrary.usePermissions({
     granularPermissions: ['photo', 'video'],
@@ -265,7 +266,7 @@ export default function GalleryScreen() {
     if (selectedIds.size === 0) return;
     const cfg = await loadConfig();
     if (!cfg) {
-      Alert.alert('Not configured', 'Open Settings and add your backend URL + token.');
+      showAlert('Not configured', 'Open Settings and add your backend URL + token.');
       return;
     }
     setPickerVisible(true);
@@ -283,7 +284,7 @@ export default function GalleryScreen() {
   async function onResumePending() {
     const cfg = await loadConfig();
     if (!cfg) {
-      Alert.alert('Not configured', 'Open Settings and add your backend URL + token.');
+      showAlert('Not configured', 'Open Settings and add your backend URL + token.');
       return;
     }
     const items = pendingResume;
@@ -337,10 +338,10 @@ export default function GalleryScreen() {
       await refreshPendingResume();
 
       if (failed.length === 0) {
-        Alert.alert('Resume complete', `${items.length} upload(s) finished.`);
+        showAlert('Resume complete', `${items.length} upload(s) finished.`);
         return;
       }
-      Alert.alert(
+      showAlert(
         'Some resumes failed',
         `${items.length - failed.length}/${items.length} finished. The rest stay queued — try again later.`,
       );
@@ -350,21 +351,7 @@ export default function GalleryScreen() {
     }
   }
 
-  async function onDiscardPending() {
-    const items = pendingResume;
-    if (items.length === 0) return;
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        'Discard paused uploads?',
-        `${items.length} in-flight upload(s) will be aborted on the server. The originals stay on your device.`,
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Discard', style: 'destructive', onPress: () => resolve(true) },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-    if (!confirmed) return;
+  async function doDiscardPending(items: typeof pendingResume) {
     for (const entry of items) {
       if (entry.kind === 'multipart') {
         try {
@@ -379,34 +366,24 @@ export default function GalleryScreen() {
     setPendingResume([]);
   }
 
-  async function uploadSelected(prefix: string) {
-    const chosen = assets.filter((a) => selectedIds.has(a.id));
-    if (chosen.length === 0) return;
+  function onDiscardPending() {
+    const items = pendingResume;
+    if (items.length === 0) return;
+    showAlert(
+      'Discard paused uploads?',
+      `${items.length} in-flight upload(s) will be aborted on the server. The originals stay on your device.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => doDiscardPending(items) },
+      ],
+      { cancelable: true },
+    );
+  }
 
-    const plan = chosen.map((asset) => ({
-      asset,
-      filename: filenameFor(asset),
-    }));
-    const destKeys = plan.map((p) => prefix + p.filename);
-    let toUpload = plan;
-    try {
-      const { existing } = await api.exists(destKeys);
-      if (existing.length > 0) {
-        const choice = await promptForCollision(existing.length, plan.length);
-        if (choice === 'cancel') return;
-        if (choice === 'skip') {
-          const existingSet = new Set(existing);
-          toUpload = plan.filter((p) => !existingSet.has(prefix + p.filename));
-          if (toUpload.length === 0) {
-            Alert.alert('Nothing to upload', 'All selected items already exist.');
-            return;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('pre-flight /exists failed', err);
-    }
-
+  async function runUpload(
+    prefix: string,
+    toUpload: Array<{ asset: MediaLibrary.Asset; filename: string }>,
+  ) {
     setUploadState({
       total: toUpload.length,
       done: 0,
@@ -494,7 +471,7 @@ export default function GalleryScreen() {
 
     if (failed.length === 0) {
       clearSelection();
-      Alert.alert('Upload complete', `${toUpload.length} item(s) uploaded to /${prefix}.`);
+      showAlert('Upload complete', `${toUpload.length} item(s) uploaded to /${prefix}.`);
       return;
     }
 
@@ -507,37 +484,74 @@ export default function GalleryScreen() {
       .map(({ item, error }) => `• ${item.filename}: ${describeError(error)}`)
       .join('\n');
     const more = failed.length > 3 ? `\n…and ${failed.length - 3} more.` : '';
-    Alert.alert(
+    showAlert(
       'Some uploads failed',
       `${succeeded}/${toUpload.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
     );
   }
 
-  async function promptForCollision(
+  async function uploadSelected(prefix: string) {
+    const chosen = assets.filter((a) => selectedIds.has(a.id));
+    if (chosen.length === 0) return;
+
+    const plan = chosen.map((asset) => ({
+      asset,
+      filename: filenameFor(asset),
+    }));
+    const destKeys = plan.map((p) => prefix + p.filename);
+
+    try {
+      const { existing } = await api.exists(destKeys);
+      if (existing.length > 0) {
+        // Show the collision dialog and continue in its callback to keep the
+        // upload flow in sync with the user's choice.
+        promptForCollision(existing.length, plan.length, (choice) => {
+          if (choice === 'cancel') return;
+          if (choice === 'skip') {
+            const existingSet = new Set(existing);
+            const filtered = plan.filter((p) => !existingSet.has(prefix + p.filename));
+            if (filtered.length === 0) {
+              showAlert('Nothing to upload', 'All selected items already exist.');
+              return;
+            }
+            runUpload(prefix, filtered).catch(console.warn);
+          } else {
+            runUpload(prefix, plan).catch(console.warn);
+          }
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('pre-flight /exists failed', err);
+    }
+
+    await runUpload(prefix, plan);
+  }
+
+  function promptForCollision(
     existingCount: number,
     totalCount: number,
-  ): Promise<'skip' | 'overwrite' | 'cancel'> {
-    return new Promise((resolve) => {
-      const remaining = totalCount - existingCount;
-      const message =
-        existingCount === totalCount
-          ? `All ${existingCount} selected item(s) already exist in this folder.`
-          : `${existingCount} of ${totalCount} selected item(s) already exist in this folder.`;
-      Alert.alert(
-        'Items already exist',
-        `${message}\n\nSkip existing (upload ${remaining}), overwrite them, or cancel?`,
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
-          { text: 'Skip existing', onPress: () => resolve('skip') },
-          {
-            text: 'Overwrite',
-            style: 'destructive',
-            onPress: () => resolve('overwrite'),
-          },
-        ],
-        { cancelable: true, onDismiss: () => resolve('cancel') },
-      );
-    });
+    onResult: (choice: 'skip' | 'overwrite' | 'cancel') => void,
+  ): void {
+    const remaining = totalCount - existingCount;
+    const message =
+      existingCount === totalCount
+        ? `All ${existingCount} selected item(s) already exist in this folder.`
+        : `${existingCount} of ${totalCount} selected item(s) already exist in this folder.`;
+    showAlert(
+      'Items already exist',
+      `${message}\n\nSkip existing (upload ${remaining}), overwrite them, or cancel?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => onResult('cancel') },
+        { text: 'Skip existing', onPress: () => onResult('skip') },
+        {
+          text: 'Overwrite',
+          style: 'destructive',
+          onPress: () => onResult('overwrite'),
+        },
+      ],
+      { cancelable: true },
+    );
   }
 
   const selectedCount = selectedIds.size;

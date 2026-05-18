@@ -3,7 +3,6 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   SectionList,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
@@ -44,6 +44,7 @@ type Section = {
 export default function ActivityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { showAlert } = useAlert();
 
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +130,7 @@ export default function ActivityScreen() {
         reason: toReason(err),
       }).catch(() => undefined);
       await refresh();
-      Alert.alert('Resume failed', toReason(err));
+      showAlert('Resume failed', toReason(err));
     } finally {
       setUploadSessionActive(false);
       setBusy(null);
@@ -161,7 +162,7 @@ export default function ActivityScreen() {
         reason: toReason(err),
       }).catch(() => undefined);
       await refresh();
-      Alert.alert('Retry failed', toReason(err));
+      showAlert('Retry failed', toReason(err));
     } finally {
       setBusy(null);
     }
@@ -237,7 +238,7 @@ export default function ActivityScreen() {
   }
 
   function onClearAll() {
-    Alert.alert(
+    showAlert(
       'Clear all activity?',
       'This removes all entries from the log. Pending uploads in the Gallery tab are not affected.',
       [

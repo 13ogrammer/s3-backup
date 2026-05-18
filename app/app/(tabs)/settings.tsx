@@ -3,7 +3,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import {
 import { QrScannerModal } from '@/components/qr-scanner-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
@@ -27,6 +27,7 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
+  const { showAlert } = useAlert();
 
   const [backendUrl, setBackendUrl] = useState('');
   const [bootstrapToken, setBootstrapToken] = useState('');
@@ -61,15 +62,15 @@ export default function SettingsScreen() {
 
   async function onSave() {
     if (!backendUrl.trim() || !bootstrapToken.trim()) {
-      Alert.alert('Missing fields', 'Both backend URL and bootstrap token are required.');
+      showAlert('Missing fields', 'Both backend URL and bootstrap token are required.');
       return;
     }
     setBusy(true);
     try {
       await saveConfig({ backendUrl, bootstrapToken });
-      Alert.alert('Saved', 'Settings stored securely on device.');
+      showAlert('Saved', 'Settings stored securely on device.');
     } catch (err) {
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Unknown error');
+      showAlert('Save failed', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setBusy(false);
     }
@@ -80,14 +81,14 @@ export default function SettingsScreen() {
     try {
       const cfg = { backendUrl: backendUrl.trim().replace(/\/+$/, ''), bootstrapToken };
       const ok = await healthCheck(cfg);
-      Alert.alert(
+      showAlert(
         ok ? 'Connected' : 'Reachable but unhealthy',
         ok
           ? 'Backend health check passed.'
           : 'Backend responded but /health returned non-2xx.',
       );
     } catch (err) {
-      Alert.alert(
+      showAlert(
         'Connection failed',
         err instanceof Error ? err.message : 'Could not reach the backend.',
       );
@@ -97,7 +98,7 @@ export default function SettingsScreen() {
   }
 
   function onClear() {
-    Alert.alert(
+    showAlert(
       'Clear settings?',
       'This removes the backend URL and bootstrap token from this device.',
       [
@@ -129,7 +130,7 @@ export default function SettingsScreen() {
         'missing-fields': 'The scanned QR code is missing the apiUrl or bootstrapToken field.',
         'bad-url': 'The API URL in the QR code must start with https://. Re-generate the QR with npm run qr.',
       };
-      Alert.alert('Invalid QR code', messages[result.reason]);
+      showAlert('Invalid QR code', messages[result.reason]);
       return;
     }
 
@@ -139,9 +140,9 @@ export default function SettingsScreen() {
         await saveConfig(result.config);
         setBackendUrl(result.config.backendUrl);
         setBootstrapToken(result.config.bootstrapToken);
-        Alert.alert('Saved', 'Settings stored securely on device.');
+        showAlert('Saved', 'Settings stored securely on device.');
       } catch (err) {
-        Alert.alert('Save failed', err instanceof Error ? err.message : 'Unknown error');
+        showAlert('Save failed', err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setBusy(false);
       }
@@ -149,7 +150,7 @@ export default function SettingsScreen() {
 
     const hasExisting = backendUrl.trim() || bootstrapToken.trim();
     if (hasExisting) {
-      Alert.alert(
+      showAlert(
         'Replace existing config?',
         'This will overwrite the current API URL and bootstrap token.',
         [

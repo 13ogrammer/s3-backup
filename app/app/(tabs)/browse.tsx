@@ -2,7 +2,6 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   Dimensions,
   FlatList,
@@ -21,6 +20,7 @@ import { RenameModal } from '@/components/rename-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
+import { useAlert } from '@/components/ui/alert-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -94,6 +94,7 @@ function compareRows(a: Row, b: Row, field: SortField, dir: SortDir): number {
 export default function BrowseScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { showAlert } = useAlert();
 
   const [path, setPath] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -197,7 +198,7 @@ export default function BrowseScreen() {
     if (!singleSelected) return;
     const trimmed = newName.trim();
     if (!trimmed || trimmed.includes('/')) {
-      Alert.alert('Invalid name', 'Name cannot be empty or contain "/".');
+      showAlert('Invalid name', 'Name cannot be empty or contain "/".');
       return;
     }
     setBusy('Renaming…');
@@ -213,7 +214,7 @@ export default function BrowseScreen() {
       setSelection(emptySelection());
       await load(path, 'refresh');
     } catch (err) {
-      Alert.alert(
+      showAlert(
         'Rename failed',
         err instanceof Error ? err.message : 'Unknown error',
       );
@@ -499,7 +500,7 @@ export default function BrowseScreen() {
       folderCount > 0
         ? `Delete ${selectionCount} item(s)? This permanently removes ${fileCount} file(s) and everything inside ${folderCount} folder(s).`
         : `Delete ${fileCount} file(s)? This can't be undone.`;
-    Alert.alert('Confirm delete', message, [
+    showAlert('Confirm delete', message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: runDelete },
     ]);
@@ -512,7 +513,7 @@ export default function BrowseScreen() {
     try {
       const res = await api.delete({ keys, prefixes });
       if (res.errors.length > 0) {
-        Alert.alert(
+        showAlert(
           'Partial delete',
           `Deleted ${res.deleted.length} object(s). ${res.errors.length} failed:\n` +
             res.errors
@@ -531,7 +532,7 @@ export default function BrowseScreen() {
         });
       }
     } catch (err) {
-      Alert.alert(
+      showAlert(
         'Delete failed',
         err instanceof Error ? err.message : 'Unknown error',
       );
@@ -545,14 +546,14 @@ export default function BrowseScreen() {
     try {
       const res = await api.restore(keys);
       if (res.missing.length > 0) {
-        Alert.alert(
+        showAlert(
           'Partial restore',
           `Restored ${res.restored.length}. ${res.missing.length} couldn't be restored — the bucket may not have versioning enabled.`,
         );
       }
       await load(path, 'refresh');
     } catch (err) {
-      Alert.alert(
+      showAlert(
         'Restore failed',
         err instanceof Error ? err.message : 'Unknown error',
       );
@@ -608,7 +609,7 @@ export default function BrowseScreen() {
     await load(path, 'refresh');
 
     if (failed.length > 0) {
-      Alert.alert(
+      showAlert(
         'Partial move',
         `${total - failed.length} succeeded, ${failed.length} failed:\n` +
           failed
@@ -641,7 +642,7 @@ export default function BrowseScreen() {
       }
       await load(path, 'refresh');
     } catch (err) {
-      Alert.alert(
+      showAlert(
         'Undo move failed',
         err instanceof Error ? err.message : 'Unknown error',
       );

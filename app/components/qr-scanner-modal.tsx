@@ -43,9 +43,12 @@ export function QrScannerModal({ visible, onClose, onScanned }: QrScannerModalPr
   // haven't asked yet (permission is null = not determined).
   useEffect(() => {
     if (visible && permission !== null && !permission.granted && !permission.canAskAgain) {
+      // TODO(S3B-41): replace via inline UI
       // Permission was previously denied and cannot be asked again — show
       // guidance to go to system Settings. We do this inside the effect so
       // the alert appears after the modal animation completes.
+      // Keeping Alert.alert here because rendering a Modal inside this Modal
+      // causes fragility on Android (back-press handling conflicts).
       Alert.alert(
         'Camera permission required',
         'Camera access was denied. To scan a QR code, enable camera permission for this app in your device Settings.',
@@ -69,6 +72,8 @@ export function QrScannerModal({ visible, onClose, onScanned }: QrScannerModalPr
   async function handleRequestPermission() {
     const result = await requestPermission();
     if (!result.granted && !result.canAskAgain) {
+      // TODO(S3B-41): replace via inline UI
+      // Same Modal-in-Modal concern as above — keeping Alert.alert for now.
       Alert.alert(
         'Camera permission required',
         'Camera access was denied. To scan a QR code, enable camera permission for this app in your device Settings.',

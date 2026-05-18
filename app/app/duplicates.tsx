@@ -3,7 +3,6 @@ import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, type GetDerivedUrlResponse } from '@/lib/api';
@@ -32,6 +32,7 @@ type GroupDecision =
 export default function DuplicatesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { showAlert } = useAlert();
 
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [scanError, setScanError] = useState<string | null>(null);
@@ -173,7 +174,7 @@ export default function DuplicatesScreen() {
         .slice(0, 5)
         .map((e) => `• ${basename(e.key)}: ${e.message}`)
         .join('\n');
-      Alert.alert(
+      showAlert(
         'Partial delete',
         `Deleted ${res.deleted.length} of ${discardKeys.length} duplicates.\n${res.errors.length} failed:\n${errList}`,
       );
@@ -205,7 +206,7 @@ export default function DuplicatesScreen() {
         });
       }
     } catch (err) {
-      Alert.alert('Delete failed', err instanceof Error ? err.message : 'Unknown error');
+      showAlert('Delete failed', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setApplying(false);
     }
@@ -214,7 +215,7 @@ export default function DuplicatesScreen() {
   function confirmApplyGroup(group: DuplicateGroup) {
     const decision = decisions.get(group.id);
     if (!decision || decision.kind === 'skip') {
-      Alert.alert('No action selected', 'Choose Keep newest, Keep oldest, or Pick manually first.');
+      showAlert('No action selected', 'Choose Keep newest, Keep oldest, or Pick manually first.');
       return;
     }
 
@@ -225,7 +226,7 @@ export default function DuplicatesScreen() {
       : { discard: group.files.filter((f) => f.key !== (decision as { keepKey: string }).keepKey) };
 
     const bytes = discard.reduce((acc, f) => acc + f.size, 0);
-    Alert.alert(
+    showAlert(
       'Delete duplicates?',
       `This will permanently delete ${discard.length} file(s) (${formatBytes(bytes)}). S3 versioning recommended.`,
       [
@@ -273,7 +274,7 @@ export default function DuplicatesScreen() {
       return acc + discard.reduce((s, f) => s + f.size, 0);
     }, 0);
 
-    Alert.alert(
+    showAlert(
       `Apply to all ${toProcess.length} group(s)?`,
       `Keeps newest in each group with no decision set.\nDeletes ${fileCount} file(s) (${formatBytes(bytes)}).`,
       [
@@ -317,7 +318,7 @@ export default function DuplicatesScreen() {
     setApplying(false);
 
     if (errors.length > 0) {
-      Alert.alert(
+      showAlert(
         'Batch complete with errors',
         `${deletedGroupIds.length} group(s) resolved. ${errors.length} failed:\n${errors.slice(0, 5).join('\n')}`,
       );
@@ -338,7 +339,7 @@ export default function DuplicatesScreen() {
   }
 
   function confirmClearAudit() {
-    Alert.alert('Clear audit log?', 'This removes all recorded duplicate-resolution history.', [
+    showAlert('Clear audit log?', 'This removes all recorded duplicate-resolution history.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -499,11 +500,11 @@ export default function DuplicatesScreen() {
   }
 
   function showManualPicker(group: DuplicateGroup) {
-    const options = group.files.map((f, i) => ({
+    const options = group.files.map((f) => ({
       text: `Keep: ${basename(f.key)} (${new Date(f.lastModified).toLocaleDateString()})`,
       onPress: () => setDecision(group.id, { kind: 'manual', keepKey: f.key }),
     }));
-    Alert.alert(
+    showAlert(
       'Pick which file to keep',
       'All others in this group will be deleted.',
       [...options, { text: 'Cancel', style: 'cancel' as const }],
