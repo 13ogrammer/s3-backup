@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -10,8 +9,8 @@ import {
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { ModalCard } from '@/components/ui/modal-card';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type Props = {
@@ -42,67 +41,50 @@ export function RenameModal({ visible, title, initialValue, onCancel, onSubmit }
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ThemedView style={styles.card}>
-          <ThemedText type="defaultSemiBold">{title}</ThemedText>
-          <TextInput
-            value={value}
-            onChangeText={setValue}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
-            onSubmitEditing={submit}
-            returnKeyType="done"
-            placeholderTextColor={colors.muted}
-            style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surfaceMuted },
-            ]}
-          />
-          <View style={styles.actions}>
-            <Pressable
-              onPress={onCancel}
-              style={({ pressed }) => [styles.button, { opacity: pressed ? 0.6 : 1 }]}>
-              <ThemedText>Cancel</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={submit}
-              disabled={!value.trim() || value.trim() === initialValue}
-              style={({ pressed }) => [
-                styles.button,
-                {
-                  opacity:
-                    pressed || !value.trim() || value.trim() === initialValue ? 0.6 : 1,
-                },
-              ]}>
-              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
-            </Pressable>
-          </View>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </Modal>
+    <KeyboardAvoidingView
+      style={StyleSheet.absoluteFill}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      pointerEvents={visible ? 'auto' : 'none'}>
+      <ModalCard visible={visible} onRequestClose={onCancel} title={title}>
+        <TextInput
+          value={value}
+          onChangeText={setValue}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          onSubmitEditing={submit}
+          returnKeyType="done"
+          placeholderTextColor={colors.muted}
+          style={[
+            styles.input,
+            { color: colors.text, backgroundColor: colors.surfaceMuted },
+          ]}
+        />
+        <View style={styles.actions}>
+          <Pressable
+            onPress={onCancel}
+            style={({ pressed }) => [styles.button, { opacity: pressed ? 0.6 : 1 }]}>
+            <ThemedText>Cancel</ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={submit}
+            disabled={!value.trim() || value.trim() === initialValue}
+            style={({ pressed }) => [
+              styles.button,
+              {
+                opacity:
+                  pressed || !value.trim() || value.trim() === initialValue ? 0.6 : 1,
+              },
+            ]}>
+            <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
+          </Pressable>
+        </View>
+      </ModalCard>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.xl,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    padding: Spacing.xl,
-    borderRadius: Radius.lg,
-    gap: Spacing.md,
-    ...Shadow.cardElevated,
-  },
   input: {
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
