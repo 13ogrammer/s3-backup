@@ -4,6 +4,17 @@ export const BUCKET = process.env.BUCKET_NAME ?? '';
 
 const endpoint = process.env.S3_ENDPOINT_URL;
 
+// AWS SDK v3 (since 2024) auto-adds an `x-amz-checksum-crc32` query param to
+// presigned PUT URLs with a placeholder zero value, expecting the client to
+// compute the real CRC32 and send it as an HTTP trailer over chunked encoding.
+// expo-file-system's createUploadTask does not send trailers, so MinIO sees a
+// checksum mismatch and returns 400. WHEN_REQUIRED makes the SDK only add
+// checksums when the operation explicitly demands one.
+const checksumOpts = {
+  requestChecksumCalculation: 'WHEN_REQUIRED' as const,
+  responseChecksumValidation: 'WHEN_REQUIRED' as const,
+};
+
 export const s3 = new S3Client(
   endpoint
     ? {
@@ -14,8 +25,9 @@ export const s3 = new S3Client(
           accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? 'test',
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? 'test',
         },
+        ...checksumOpts,
       }
-    : {},
+    : checksumOpts,
 );
 
 // Reject keys that try to escape the bucket or use absolute paths.
