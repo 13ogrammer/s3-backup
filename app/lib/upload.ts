@@ -1,10 +1,12 @@
 import {
   EncodingType,
   FileSystemUploadType,
+  cacheDirectory,
   createUploadTask,
   deleteAsync,
   getInfoAsync,
   readAsStringAsync,
+  writeAsStringAsync,
 } from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -208,25 +210,35 @@ async function uploadFileMultipart(
         position: offset,
         length,
       });
-      const bytes = base64ToBytes(b64);
 
       const { url } = await withRetry(() =>
         api.signPart(remoteKey, uploadId, partNumber),
       );
 
+      // RN's fetch can't accept Uint8Array / ArrayBuffer / Blob-from-typed-array
+      // as a request body — the request never leaves the device and surfaces
+      // as TypeError "Network request failed". Stage each chunk to a temp file
+      // and upload via createUploadTask (NSURLSession on iOS, OkHttp on
+      // Android), the same native path simple-PUT uses successfully.
+      const tempPath = `${cacheDirectory ?? ''}s3b-part-${uploadId.slice(0, 12)}-${partNumber}`;
       const etag = await withRetry(async () => {
-        // RN's fetch accepts a typed-array body at runtime; the TS lib
-        // type doesn't list Uint8Array, hence the cast.
-        const res = await fetch(url, {
-          method: 'PUT',
-          body: bytes as unknown as BodyInit,
-        });
-        if (!res.ok) {
-          throw new UploadError(res.status, `part ${partNumber} HTTP ${res.status}`);
+        await writeAsStringAsync(tempPath, b64, { encoding: EncodingType.Base64 });
+        try {
+          const task = createUploadTask(url, tempPath, {
+            httpMethod: 'PUT',
+            uploadType: FileSystemUploadType.BINARY_CONTENT,
+          });
+          const result = await task.uploadAsync();
+          if (!result) throw new UploadError(0, `part ${partNumber} upload cancelled`);
+          if (result.status < 200 || result.status >= 300) {
+            throw new UploadError(result.status, `part ${partNumber} HTTP ${result.status}`);
+          }
+          const raw = result.headers['etag'] ?? result.headers['ETag'];
+          if (!raw) throw new UploadError(0, `part ${partNumber} response had no ETag`);
+          return raw.replace(/^"|"$/g, '');
+        } finally {
+          await deleteAsync(tempPath, { idempotent: true }).catch(() => undefined);
         }
-        const raw = res.headers.get('etag') ?? res.headers.get('ETag');
-        if (!raw) throw new UploadError(0, `part ${partNumber} response had no ETag`);
-        return raw.replace(/^"|"$/g, '');
       });
 
       parts.push({ partNumber, etag });
@@ -299,14 +311,6 @@ async function fileSize(localUri: string): Promise<number> {
     return info.size;
   }
   return 0;
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  // Native atob is available on Hermes / JSC. Fast enough for 8 MB chunks.
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 // Upload an asset to S3, plus a small thumb sidecar for images and
