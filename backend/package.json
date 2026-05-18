@@ -17,6 +17,7 @@
     "backfill:thumbs": "tsx --env-file-if-exists=.env scripts/backfill-thumbnails.ts",
     "backfill:video-thumbs": "tsx --env-file-if-exists=.env scripts/backfill-video-thumbs.ts",
     "check:bucket": "tsx scripts/check-bucket.ts",
+    "qr": "tsx scripts/qr.ts",
     "bootstrap:dist-bucket": "./scripts/bootstrap-dist-bucket.sh",
     "publish:template": "./scripts/publish-template.sh",
     "ip": "ipconfig getifaddr en0"
@@ -27,9 +28,13 @@
     "sharp": "^0.34.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-cloudformation": "^3.700.0",
+    "@aws-sdk/client-lambda": "^3.700.0",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^20.14.0",
+    "@types/qrcode-terminal": "^0.12.2",
     "esbuild": "^0.28.0",
+    "qrcode-terminal": "^0.12.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
