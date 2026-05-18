@@ -12,7 +12,6 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 import { ApiError, api, type CompletedPart, type MetadataBag } from './api';
-import { metadataBagToHeaders } from './metadata';
 import { addUploadBreadcrumb } from './sentry';
 import {
   removePendingUpload,
@@ -112,17 +111,18 @@ async function uploadFileSimple(
   // Sample progress at 25 / 50 / 75 % — 100% is covered by 'upload complete'.
   let lastBucket = 0;
 
-  // Merge x-amz-meta-* headers alongside content-type so they match the
-  // signed URL. metadataBagToHeaders returns {} when metadata is undefined.
-  const metaHeaders = metadataBagToHeaders(metadata);
-
+  // Note: metadata is carried in the signed URL's query string (the SDK puts
+  // x-amz-meta-* in the URL for presigned PUTs with host-only SignedHeaders),
+  // so we do NOT send x-amz-meta-* as HTTP headers. Sending them duplicates
+  // the metadata source and some S3 implementations (MinIO observed) reject
+  // the request with a generic 400.
   const task = createUploadTask(
     url,
     localUri,
     {
       httpMethod: 'PUT',
       uploadType: FileSystemUploadType.BINARY_CONTENT,
-      headers: { 'content-type': contentType, ...metaHeaders },
+      headers: { 'content-type': contentType },
     },
     (data) => {
       onProgress?.({

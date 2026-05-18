@@ -62,23 +62,3 @@ export async function buildMetadataBag(
 
   return bag;
 }
-
-/**
- * Convert a MetadataBag into HTTP headers for expo-file-system's
- * createUploadTask. The simple-PUT path needs these headers to match exactly
- * what was signed in PutObjectCommand.Metadata — otherwise S3 returns
- * SignatureDoesNotMatch.
- *
- * S3 lowercases x-amz-meta-* header names on the wire. The AWS SDK
- * prefixes each key with "x-amz-meta-" when signing; createUploadTask must
- * send the same prefixed headers so the signature covers them.
- */
-export function metadataBagToHeaders(bag: MetadataBag | undefined): Record<string, string> {
-  if (!bag) return {};
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(bag)) {
-    if (!v) continue;
-    headers[`x-amz-meta-${k.toLowerCase()}`] = v;
-  }
-  return headers;
-}
