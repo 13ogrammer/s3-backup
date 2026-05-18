@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
+import { AlertProvider } from '@/components/ui/alert-provider';
 import { UpdateBanner } from '@/components/update-banner';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -40,13 +41,15 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkAppTheme : LightAppTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
-        <Stack.Screen name="activity" options={{ title: 'Activity', headerBackTitle: 'Settings' }} />
-        <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
-        <Stack.Screen name="storage" options={{ title: 'Storage', headerBackTitle: 'Settings' }} />
-      </Stack>
+      <AlertProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
+          <Stack.Screen name="activity" options={{ title: 'Activity', headerBackTitle: 'Settings' }} />
+          <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
+          <Stack.Screen name="storage" options={{ title: 'Storage', headerBackTitle: 'Settings' }} />
+        </Stack>
+      </AlertProvider>
       <StatusBar style="auto" />
       <UpdateBanner />
     </ThemeProvider>
