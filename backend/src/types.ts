@@ -98,3 +98,22 @@ export type FolderPreviewResponse = {
   thumbs: FolderPreviewThumb[];
   hasContent: boolean;
 };
+
+export type StorageStatsRequest = { refresh?: boolean };
+
+export type StorageStats = {
+  totalBytes: number;
+  totalCount: number;
+  estimatedMonthlyUsd: number;
+  byType: {
+    photos: { bytes: number; count: number };
+    videos: { bytes: number; count: number };
+    other:  { bytes: number; count: number };
+  };
+  largeFiles:     Array<{ key: string; sizeBytes: number; lastModified: string }>;
+  veryLargeFiles: Array<{ key: string; sizeBytes: number; lastModified: string }>;
+  topFolders:     Array<{ prefix: string; bytes: number; count: number }>;
+  growth:         Array<{ date: string; bytes: number; count: number }>;
+  generatedAt:    string;
+  cached:         boolean;
+};

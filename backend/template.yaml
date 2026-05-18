@@ -126,6 +126,11 @@ Resources:
                 - !Sub
                   - 'arn:aws:s3:::${B}/*'
                   - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+            - Sid: CloudWatchMetrics
+              Effect: Allow
+              Action:
+                - cloudwatch:GetMetricStatistics
+              Resource: '*'
       Events:
         ApiRoute:
           Type: HttpApi
