@@ -18,7 +18,6 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@sentry/react-native": "^8.11.1",
-    "exifr": "^7.1.3",
     "expo": "~54.0.33",
     "expo-application": "~7.0.8",
     "expo-constants": "~18.0.13",
