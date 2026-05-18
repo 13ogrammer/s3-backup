@@ -72,6 +72,8 @@ export async function list(body: ListRequest, ctx: RequestContext): Promise<List
         lastModified: obj.LastModified?.toISOString() ?? '',
         kind: classifyKey(obj.Key),
         etag: parseEtag(obj.ETag),
+        // TODO(S3B-16b): populate via /head fanout or sidecar
+        createdAt: undefined,
       });
     }
 
@@ -113,6 +115,8 @@ export async function list(body: ListRequest, ctx: RequestContext): Promise<List
     });
   }
 
+  // TODO(S3B-16b): populate createdAt via /head fanout or sidecar.
+
   const files: ListedFile[] = await Promise.all(
     rawFiles.map(async (f) => {
       const kind = classifyKey(f.key);
@@ -142,7 +146,7 @@ export async function list(body: ListRequest, ctx: RequestContext): Promise<List
           );
         }
       }
-      return { ...f, kind, previewUrl };
+      return { ...f, kind, previewUrl, createdAt: undefined };
     }),
   );
 

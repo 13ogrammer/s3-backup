@@ -6,6 +6,9 @@ export type ListedFile = {
   kind: 'image' | 'video' | 'other';
   previewUrl?: string;
   etag?: string;
+  // S3B-34: populated in future S3B-16b via /head fanout; undefined for files
+  // uploaded before S3B-34 and for pre-S3B-34 objects (no metadata on S3 object).
+  createdAt?: string;
 };
 export type ListResponse = {
   prefix: string;
@@ -14,7 +17,28 @@ export type ListResponse = {
   nextToken?: string;
 };
 
-export type SignUploadRequest = { key: string; contentType: string };
+/**
+ * Curated EXIF/dimensions/GPS bag written as x-amz-meta-* headers on upload.
+ * S3B-34: total metadata budget is 2 KB. With 11 fields at max 100 chars each
+ * the ceiling is ~1.1 KB key+value pairs — well within the 2 KB S3 limit.
+ * Absent fields are not written as empty strings. GPS PII written by default
+ * for this BYO-AWS personal-use card (opt-in deferred to a future card).
+ */
+export type MetadataBag = {
+  width?: string;
+  height?: string;
+  createdAt?: string;
+  make?: string;
+  model?: string;
+  lens?: string;
+  iso?: string;
+  aperture?: string;
+  shutter?: string;
+  lat?: string;
+  lng?: string;
+};
+
+export type SignUploadRequest = { key: string; contentType: string; metadata?: MetadataBag };
 export type SignUploadResponse = { url: string; expiresIn: number };
 
 export type SignDownloadRequest = { key: string };
@@ -31,7 +55,7 @@ export type MoveResponse = { moved: number };
 export type ExistsRequest = { keys: string[] };
 export type ExistsResponse = { existing: string[] };
 
-export type CreateMultipartRequest = { key: string; contentType: string };
+export type CreateMultipartRequest = { key: string; contentType: string; metadata?: MetadataBag };
 export type CreateMultipartResponse = { uploadId: string };
 
 export type SignPartRequest = { key: string; uploadId: string; partNumber: number };

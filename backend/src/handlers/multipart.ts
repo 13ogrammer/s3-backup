@@ -6,6 +6,7 @@ import {
   type CompletedPart as S3CompletedPart,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { toS3Metadata } from '../metadata.js';
 import { BUCKET, s3, sanitizeKey } from '../s3.js';
 import type {
   AbortMultipartRequest,
@@ -29,15 +30,20 @@ export async function createMultipart(
   if (!body.contentType || typeof body.contentType !== 'string') {
     throw new Error('contentType is required');
   }
+
+  const s3Meta = toS3Metadata(body.metadata);
+
   const res = await s3.send(
     new CreateMultipartUploadCommand({
       Bucket: BUCKET,
       Key: key,
       ContentType: body.contentType,
+      Metadata: s3Meta,
     }),
   );
   if (!res.UploadId) throw new Error('S3 returned no UploadId');
-  ctx.log.info('multipart-create', { key });
+  // Log keys only — avoid writing GPS coordinates or other PII to logs.
+  ctx.log.info('multipart-create', { key, metaKeys: s3Meta ? Object.keys(s3Meta) : [] });
   return { uploadId: res.UploadId };
 }
 
