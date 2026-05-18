@@ -1,4 +1,4 @@
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { type AccessibilityRole, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -16,6 +16,10 @@ export type ModalCardProps = {
   maxWidth?: number;
   children: React.ReactNode;
   testID?: string;
+  /** Forwarded to the card View — useful for alert-style modals. */
+  accessibilityViewIsModal?: boolean;
+  /** Forwarded to the card View — useful for alert-style modals. */
+  accessibilityRole?: AccessibilityRole;
 };
 
 export function ModalCard({
@@ -26,6 +30,8 @@ export function ModalCard({
   maxWidth = 420,
   children,
   testID,
+  accessibilityViewIsModal,
+  accessibilityRole,
 }: ModalCardProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -47,7 +53,9 @@ export function ModalCard({
             style={[
               styles.card,
               { maxWidth, borderColor: colors.border },
-            ]}>
+            ]}
+            accessibilityViewIsModal={accessibilityViewIsModal}
+            accessibilityRole={accessibilityRole}>
             {title !== undefined && (
               <ThemedText style={styles.title}>{title}</ThemedText>
             )}
