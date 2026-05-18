@@ -59,15 +59,17 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 | POST | `/multipart/complete` | Finalise the multipart upload with the part list + ETags |
 | POST | `/multipart/abort` | Cancel an in-flight multipart upload |
 | POST | `/get-derived-url` | Generate (on first call) and return a signed GET URL for a derived asset. Request: `{ key, tier: 'thumbnail' \| 'preview' }`. Response: `{ url, tier, generated, expiresIn }` or `{ url: null, error: 'unsupported_format' }`. |
+| POST | `/stats` | Full bucket walk (skipping `.thumbnails/`, `.previews/`, `.cache/`): total size/count, `byType` breakdown, large-file callouts, top folders, 30-day CloudWatch growth series, estimated monthly cost. Results are cached for 1 hour in `.cache/stats.json`; pass `{ refresh: true }` to bypass. |
 
 ## Derived asset trees
 
-Two parallel trees live alongside originals in the bucket:
+Three derived/cache trees live alongside originals in the bucket:
 
 | Tree | Prefix | Size | Purpose |
 |---|---|---|---|
 | Thumbnails | `.thumbnails/` | ~30–50 KB | Browse grid and list row icons |
 | Previews | `.previews/` | ~50–300 KB | Full-screen in-app view (PreviewModal) |
+| Stats cache | `.cache/` | ~10–50 KB | Cached `/stats` response (TTL 1 hour, `stats.json`) |
 
 ### Path convention
 
