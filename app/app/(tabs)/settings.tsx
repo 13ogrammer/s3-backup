@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { QrScannerModal } from '@/components/qr-scanner-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
@@ -20,6 +21,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
 import { loadActivityCount } from '@/lib/activityLog';
+import { parseQrPayload } from '@/lib/qr-config';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -31,6 +33,7 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [activityCount, setActivityCount] = useState(0);
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -112,6 +115,53 @@ export default function SettingsScreen() {
     );
   }
 
+  function onScanQr() {
+    setScannerVisible(true);
+  }
+
+  async function applyQrConfig(raw: string) {
+    setScannerVisible(false);
+
+    const result = parseQrPayload(raw);
+    if (!result.ok) {
+      const messages: Record<typeof result.reason, string> = {
+        'invalid-json': 'The scanned code did not contain valid JSON. Make sure you scanned the QR code printed by npm run qr.',
+        'missing-fields': 'The scanned QR code is missing the apiUrl or bootstrapToken field.',
+        'bad-url': 'The API URL in the QR code must start with https://. Re-generate the QR with npm run qr.',
+      };
+      Alert.alert('Invalid QR code', messages[result.reason]);
+      return;
+    }
+
+    const doSave = async () => {
+      setBusy(true);
+      try {
+        await saveConfig(result.config);
+        setBackendUrl(result.config.backendUrl);
+        setBootstrapToken(result.config.bootstrapToken);
+        Alert.alert('Saved', 'Settings stored securely on device.');
+      } catch (err) {
+        Alert.alert('Save failed', err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const hasExisting = backendUrl.trim() || bootstrapToken.trim();
+    if (hasExisting) {
+      Alert.alert(
+        'Replace existing config?',
+        'This will overwrite the current API URL and bootstrap token.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Replace', style: 'destructive', onPress: doSave },
+        ],
+      );
+    } else {
+      await doSave();
+    }
+  }
+
   if (loading) {
     return (
       <ThemedView style={[styles.container, styles.center]}>
@@ -127,8 +177,27 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <ThemedView style={styles.container}>
           <ThemedText style={[styles.hint, { color: colors.muted }]}>
-            Paste the API URL and bootstrap token from your backend deploy.
+            Paste the API URL and bootstrap token from your backend deploy, or scan the QR code
+            printed by <ThemedText style={{ color: colors.text, fontWeight: '600' }}>npm run qr</ThemedText>.
           </ThemedText>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={onScanQr}
+            style={({ pressed }) => [
+              styles.scanButton,
+              {
+                backgroundColor: colors.accentSoft,
+                borderColor: colors.tint,
+                opacity: pressed || busy ? 0.7 : 1,
+              },
+            ]}>
+            <Ionicons name="qr-code-outline" size={20} color={colors.tint} />
+            <ThemedText style={[styles.scanButtonText, { color: colors.tint }]}>
+              Scan QR
+            </ThemedText>
+          </Pressable>
 
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <View style={styles.field}>
@@ -234,6 +303,12 @@ export default function SettingsScreen() {
           </Pressable>
         </ThemedView>
       </ScrollView>
+
+      <QrScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScanned={applyQrConfig}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -256,6 +331,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  scanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 14,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
+  scanButtonText: { fontWeight: '600', fontSize: 15 },
   buttonRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xs },
   button: {
     flex: 1,

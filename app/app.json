@@ -62,6 +62,13 @@
         }
       ],
       "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access the camera to scan QR codes.",
+          "microphonePermission": false
+        }
+      ],
       "@react-native-community/datetimepicker",
       ["@sentry/react-native/expo", { "organization": "<your-sentry-org>", "project": "<your-sentry-project>" }]
     ],

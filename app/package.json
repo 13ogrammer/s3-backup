@@ -20,6 +20,7 @@
     "@sentry/react-native": "^8.11.1",
     "expo": "~54.0.33",
     "expo-application": "~7.0.8",
+    "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",
     "expo-file-system": "~19.0.22",
