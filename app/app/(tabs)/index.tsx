@@ -23,7 +23,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
+import { ModalCard } from '@/components/ui/modal-card';
+import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
 import { loadBackedUpMap, recordBackedUp, type BackedUpMap } from '@/lib/backedUpState';
@@ -846,39 +847,42 @@ export default function GalleryScreen() {
         initialPath={lastFolder}
       />
 
-      {uploadState && (
-        <View style={styles.uploadOverlay}>
-          <ThemedView style={styles.uploadCard}>
-            <ActivityIndicator />
-            <ThemedText type="defaultSemiBold">
-              Uploading {uploadState.done} / {uploadState.total}
+      {/* dismissOnBackdrop=false + no-op onRequestClose so Android back
+          button cannot cancel an in-progress upload accidentally. */}
+      <ModalCard
+        visible={uploadState !== null}
+        onRequestClose={() => {}}
+        dismissOnBackdrop={false}>
+        <View style={styles.uploadContent}>
+          <ActivityIndicator />
+          <ThemedText type="defaultSemiBold">
+            Uploading {uploadState?.done} / {uploadState?.total}
+          </ThemedText>
+          <View style={styles.progressBarBg}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  backgroundColor: colors.tint,
+                  width: `${Math.min(
+                    100,
+                    Math.round(((uploadState?.done ?? 0) / (uploadState?.total ?? 1)) * 100),
+                  )}%`,
+                },
+              ]}
+            />
+          </View>
+          {(uploadState?.inFlight.length ?? 0) > 0 && (
+            <ThemedText style={{ opacity: 0.65, fontSize: 12 }} numberOfLines={3}>
+              In flight: {uploadState?.inFlight.join(', ')}
             </ThemedText>
-            <View style={styles.progressBarBg}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    backgroundColor: colors.tint,
-                    width: `${Math.min(
-                      100,
-                      Math.round((uploadState.done / uploadState.total) * 100),
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-            {uploadState.inFlight.length > 0 && (
-              <ThemedText style={{ opacity: 0.65, fontSize: 12 }} numberOfLines={3}>
-                In flight: {uploadState.inFlight.join(', ')}
-              </ThemedText>
-            )}
-            <ThemedText
-              style={{ opacity: 0.55, fontSize: 11, textAlign: 'center' }}>
-              Keep the app open — uploads pause if you switch away.
-            </ThemedText>
-          </ThemedView>
+          )}
+          <ThemedText
+            style={{ opacity: 0.55, fontSize: 11, textAlign: 'center' }}>
+            Keep the app open — uploads pause if you switch away.
+          </ThemedText>
         </View>
-      )}
+      </ModalCard>
     </ThemedView>
   );
 }
@@ -1004,23 +1008,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   primaryButtonText: { fontWeight: '600', fontSize: 14 },
-  uploadOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  uploadCard: {
-    width: '80%',
-    padding: Spacing.xl,
-    borderRadius: Radius.lg,
+  uploadContent: {
     gap: Spacing.sm,
     alignItems: 'center',
-    ...Shadow.cardElevated,
   },
   progressBarBg: {
     width: '100%',
