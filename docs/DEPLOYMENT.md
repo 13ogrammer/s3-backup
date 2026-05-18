@@ -204,12 +204,39 @@ the phone, or open the EAS URL on the phone's browser).
 1. On the Android phone, tap the downloaded `.apk`. If it warns about
    "unknown apps," allow it for your file manager.
 2. After install, open **s3-backup** → **Settings** tab.
+
+### Option A: Scan QR (recommended)
+
+Run this from your Mac after deploying:
+
+```bash
+cd backend
+npm run qr
+```
+
+The script retrieves the API URL and bootstrap token from the live
+CloudFormation stack and prints a scannable QR code.
+
+> **SECURITY WARNING — treat the QR code like a password.** The QR
+> encodes your bootstrap token. Do not share it, screenshot it, or
+> leave it on screen in a shared space. Anyone who scans it gains full
+> access to your backend.
+
+In the app, tap **Scan QR**, point the camera at the code, and the
+fields fill automatically. Tap **Test** to verify.
+
+Pass `--stack <name>` if you chose a custom stack name during deploy
+(default: `s3-backup`), and `--region <region>` if needed.
+
+### Option B: Paste manually
+
 3. Paste:
    - **API URL**: the `ApiUrl` from the SAM outputs (no trailing slash).
    - **Bootstrap token**: the token from Step 2.
-4. Tap **Test**. You should see a green confirmation.
+4. Tap **Save**, then **Test**. You should see a green confirmation.
 
-If Test fails:
+### If Test fails
+
 - Check the URL is exactly what SAM printed — no trailing `/`, no
   typos.
 - Check the token matches.

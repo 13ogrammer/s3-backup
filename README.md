@@ -74,7 +74,10 @@ Then either:
 
 ### 3. Connect the app to your backend
 
-Open the **Settings** tab in the app. Paste:
+Open the **Settings** tab in the app. The easiest path is QR-code
+onboarding: run `npm run qr` in `backend/` after deploying — it prints
+a scannable code containing both the API URL and token. Tap **Scan QR**
+in the app to fill both fields in one shot. Or paste manually:
 
 - **API URL** — the `ApiUrl` from your SAM deploy outputs.
 - **Bootstrap token** — the value you supplied during deploy.
