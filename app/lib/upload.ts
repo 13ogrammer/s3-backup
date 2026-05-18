@@ -9,7 +9,8 @@ import {
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
-import { ApiError, api, type CompletedPart } from './api';
+import { ApiError, api, type CompletedPart, type MetadataBag } from './api';
+import { metadataBagToHeaders } from './metadata';
 import { addUploadBreadcrumb } from './sentry';
 import {
   removePendingUpload,
@@ -58,20 +59,21 @@ export async function uploadFile(
   contentType: string,
   onProgress?: (progress: UploadProgress) => void,
   resume?: ResumeState,
-  opts?: { trackSimple?: boolean },
+  opts?: { trackSimple?: boolean; metadata?: MetadataBag },
 ): Promise<void> {
   if (resume) {
     // A resume implies the file was previously sized > MULTIPART_THRESHOLD
-    // and an uploadId already exists.
+    // and an uploadId already exists. Metadata was already set on the
+    // CreateMultipartUpload call — no need to re-send it here.
     const size = await fileSize(localUri);
     return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress, resume);
   }
   const size = await fileSize(localUri);
   if (size > MULTIPART_THRESHOLD) {
-    return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress);
+    return uploadFileMultipart(localUri, remoteKey, contentType, size, onProgress, undefined, opts?.metadata);
   }
   return withRetry(() =>
-    uploadFileSimple(localUri, remoteKey, contentType, size, onProgress, opts?.trackSimple ?? false),
+    uploadFileSimple(localUri, remoteKey, contentType, size, onProgress, opts?.trackSimple ?? false, opts?.metadata),
   );
 }
 
@@ -82,10 +84,14 @@ async function uploadFileSimple(
   totalBytes: number,
   onProgress?: (progress: UploadProgress) => void,
   trackSimple = false,
+  metadata?: MetadataBag,
 ): Promise<void> {
   addUploadBreadcrumb('upload start', { remoteKey, mode: 'simple', totalBytes });
 
-  const { url } = await api.signUpload(remoteKey, contentType);
+  // Metadata is embedded in the pre-signed PutObjectCommand — the signed URL
+  // covers the x-amz-meta-* headers. createUploadTask MUST send those same
+  // headers or S3 returns SignatureDoesNotMatch.
+  const { url } = await api.signUpload(remoteKey, contentType, metadata);
   addUploadBreadcrumb('sign-upload ok', { remoteKey, mode: 'simple', totalBytes });
 
   if (trackSimple) {
@@ -104,13 +110,17 @@ async function uploadFileSimple(
   // Sample progress at 25 / 50 / 75 % — 100% is covered by 'upload complete'.
   let lastBucket = 0;
 
+  // Merge x-amz-meta-* headers alongside content-type so they match the
+  // signed URL. metadataBagToHeaders returns {} when metadata is undefined.
+  const metaHeaders = metadataBagToHeaders(metadata);
+
   const task = createUploadTask(
     url,
     localUri,
     {
       httpMethod: 'PUT',
       uploadType: FileSystemUploadType.BINARY_CONTENT,
-      headers: { 'content-type': contentType },
+      headers: { 'content-type': contentType, ...metaHeaders },
     },
     (data) => {
       onProgress?.({
@@ -145,6 +155,7 @@ async function uploadFileMultipart(
   totalBytes: number,
   onProgress?: (progress: UploadProgress) => void,
   resume?: ResumeState,
+  metadata?: MetadataBag,
 ): Promise<void> {
   const partSize = MULTIPART_PART_SIZE;
   const partCount = Math.ceil(totalBytes / partSize);
@@ -171,7 +182,9 @@ async function uploadFileMultipart(
     }
     onProgress?.({ bytesSent, bytesTotal: totalBytes });
   } else {
-    const created = await withRetry(() => api.createMultipart(remoteKey, contentType));
+    // Metadata is set on CreateMultipartUpload; individual UploadPart calls
+    // don't carry Metadata — S3 associates it with the multipart session.
+    const created = await withRetry(() => api.createMultipart(remoteKey, contentType, metadata));
     uploadId = created.uploadId;
     // Persist a baseline entry immediately so a failure before the
     // first part still leaves something resumable (and tied to this
@@ -306,6 +319,7 @@ export async function uploadAsset(
   contentType: string,
   mediaKind: MediaKind,
   onProgress?: (progress: UploadProgress) => void,
+  metadata?: MetadataBag,
 ): Promise<void> {
   if (mediaKind === 'image') {
     await generateAndUploadThumb(localUri, remoteKey, 'image');
@@ -317,6 +331,7 @@ export async function uploadAsset(
   // a fresh uploadId and orphans the persisted resume state.
   await uploadFile(localUri, remoteKey, contentType, onProgress, undefined, {
     trackSimple: true,
+    metadata,
   });
 }
 

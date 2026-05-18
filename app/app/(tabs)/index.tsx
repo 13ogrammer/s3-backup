@@ -30,6 +30,7 @@ import { loadBackedUpMap, recordBackedUp, type BackedUpMap } from '@/lib/backedU
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import { formatBytes } from '@/lib/format';
 import { buildGallerySections, type GalleryRow, type GallerySection } from '@/lib/gallerySections';
+import { buildMetadataBag } from '@/lib/metadata';
 import {
   UploadError,
   inferContentType,
@@ -437,7 +438,14 @@ export default function GalleryScreen() {
             s ? { ...s, inFlight: [...s.inFlight, filename] } : s,
           );
           try {
-            await uploadAsset(localUri, key, contentType, mediaKind);
+            // Build metadata bag from media-library + EXIF before upload.
+            // EXIF parse failure inside buildMetadataBag is non-fatal — it
+            // returns a partial bag from media-library data in that case.
+            const metadata = await buildMetadataBag(localUri, asset, info, mediaKind).catch((err) => {
+              console.warn('buildMetadataBag failed, uploading without metadata', err);
+              return undefined;
+            });
+            await uploadAsset(localUri, key, contentType, mediaKind, undefined, metadata);
             try {
               await recordBackedUp(asset.id, key);
             } catch (err) {
