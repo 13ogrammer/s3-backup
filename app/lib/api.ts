@@ -76,6 +76,23 @@ export type FolderPreviewResponse = {
   hasContent: boolean;
 };
 
+export type StorageStats = {
+  totalBytes: number;
+  totalCount: number;
+  estimatedMonthlyUsd: number;
+  byType: {
+    photos: { bytes: number; count: number };
+    videos: { bytes: number; count: number };
+    other:  { bytes: number; count: number };
+  };
+  largeFiles:     Array<{ key: string; sizeBytes: number; lastModified: string }>;
+  veryLargeFiles: Array<{ key: string; sizeBytes: number; lastModified: string }>;
+  topFolders:     Array<{ prefix: string; bytes: number; count: number }>;
+  growth:         Array<{ date: string; bytes: number; count: number }>;
+  generatedAt:    string;
+  cached:         boolean;
+};
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -144,4 +161,6 @@ export const api = {
     call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
   folderPreview: (prefix: string) =>
     call<FolderPreviewResponse>('/folder-preview', { prefix }),
+  stats: (params: { refresh?: boolean } = {}) =>
+    call<StorageStats>('/stats', params),
 };

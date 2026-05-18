@@ -44,3 +44,7 @@ export async function getLastFolder(): Promise<string | null> {
 export async function setLastFolder(prefix: string): Promise<void> {
   await SecureStore.setItemAsync(LAST_FOLDER_KEY, prefix);
 }
+
+// S3 Standard storage pricing used for in-app cost estimates.
+// Ref: https://aws.amazon.com/s3/pricing/ (us-east-1, first 50 TB/month)
+export const S3_STANDARD_USD_PER_GB = 0.023;

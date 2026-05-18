@@ -45,6 +45,7 @@ export default function RootLayout() {
         <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
         <Stack.Screen name="activity" options={{ title: 'Activity', headerBackTitle: 'Settings' }} />
         <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
+        <Stack.Screen name="storage" options={{ title: 'Storage', headerBackTitle: 'Settings' }} />
       </Stack>
       <StatusBar style="auto" />
       <UpdateBanner />
