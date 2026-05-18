@@ -3,7 +3,6 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import {
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,8 +10,8 @@ import {
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
+import { ModalCard } from '@/components/ui/modal-card';
+import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export type DateFilter = {
@@ -135,86 +134,50 @@ export function DateFilterModal({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        {/* stop propagation so tapping the card doesn't close */}
-        <Pressable onPress={() => {}}>
-          <ThemedView
-            style={[
-              styles.card,
-              { borderColor: colors.border },
-              Shadow.cardElevated,
-            ]}>
-            <ThemedText style={styles.title}>Filter by date</ThemedText>
+    <ModalCard visible={visible} onRequestClose={onClose} title="Filter by date">
+      {renderPickerRow('From', 'start')}
+      {renderPickerRow('To', 'end')}
 
-            {renderPickerRow('From', 'start')}
-            {renderPickerRow('To', 'end')}
+      {startInvalid && (
+        <ThemedText style={[styles.errorText, { color: colors.danger }]}>
+          Start date must be on or before end date.
+        </ThemedText>
+      )}
 
-            {startInvalid && (
-              <ThemedText style={[styles.errorText, { color: colors.danger }]}>
-                Start date must be on or before end date.
-              </ThemedText>
-            )}
-
-            <View style={styles.actions}>
-              <Pressable onPress={onClose} style={styles.actionBtn}>
-                <ThemedText style={{ color: colors.muted }}>Cancel</ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setDraft({ start: null, end: null });
-                  onClear();
-                }}
-                disabled={!hasValue}
-                style={[styles.actionBtn, !hasValue && styles.disabledBtn]}>
-                <ThemedText style={{ color: hasValue ? colors.danger : colors.muted }}>
-                  Clear
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={handleApply}
-                disabled={startInvalid}
-                style={[
-                  styles.actionBtn,
-                  styles.applyBtn,
-                  { backgroundColor: colors.tint },
-                  startInvalid && styles.disabledBtn,
-                ]}>
-                <ThemedText style={{ color: colors.onAccent, ...Type.bodyStrong }}>
-                  Apply
-                </ThemedText>
-              </Pressable>
-            </View>
-          </ThemedView>
+      <View style={styles.actions}>
+        <Pressable onPress={onClose} style={styles.actionBtn}>
+          <ThemedText style={{ color: colors.muted }}>Cancel</ThemedText>
         </Pressable>
-      </Pressable>
-    </Modal>
+        <Pressable
+          onPress={() => {
+            setDraft({ start: null, end: null });
+            onClear();
+          }}
+          disabled={!hasValue}
+          style={[styles.actionBtn, !hasValue && styles.disabledBtn]}>
+          <ThemedText style={{ color: hasValue ? colors.danger : colors.muted }}>
+            Clear
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={handleApply}
+          disabled={startInvalid}
+          style={[
+            styles.actionBtn,
+            styles.applyBtn,
+            { backgroundColor: colors.tint },
+            startInvalid && styles.disabledBtn,
+          ]}>
+          <ThemedText style={{ color: colors.onAccent, ...Type.bodyStrong }}>
+            Apply
+          </ThemedText>
+        </Pressable>
+      </View>
+    </ModalCard>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.xl,
-  },
-  card: {
-    width: '100%',
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  title: {
-    ...Type.bodyStrong,
-    marginBottom: Spacing.xs,
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

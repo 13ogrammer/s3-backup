@@ -1,3 +1,6 @@
+// PreviewModal is intentionally full-screen (statusBarTranslucent +
+// navigationBarTranslucent with safe-area padding) and does NOT use the
+// ModalCard shell. S3B-41 scoped ModalCard to card-style overlays only.
 import {
   documentDirectory,
   downloadAsync,
