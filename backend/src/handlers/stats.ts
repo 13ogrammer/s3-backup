@@ -3,7 +3,7 @@ import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3 } from '../s3.js';
 import { THUMB_PREFIX } from '../thumbs.js';
 import { PREVIEW_PREFIX } from '../previews.js';
-import { readCache, writeCache, STATS_CACHE_KEY } from '../statsCache.js';
+import { readCache, writeCache } from '../statsCache.js';
 import type { StorageStats, StorageStatsRequest } from '../types.js';
 import type { RequestContext } from '../index.js';
 

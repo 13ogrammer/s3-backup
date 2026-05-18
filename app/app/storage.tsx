@@ -144,7 +144,7 @@ export default function StorageScreen() {
             bytes={stats.byType.videos.bytes}
             count={stats.byType.videos.count}
             total={totalType}
-            barColor="#f59e0b"
+            barColor={colors.videoBar}
             colors={colors}
           />
           <TypeRow
@@ -193,7 +193,7 @@ export default function StorageScreen() {
           </View>
         )}
 
-        {/* Large files (>=500 MB, excludes >=1 GB duplicates shown above) */}
+        {/* Large files (>=500 MB — includes files also shown in the >=1 GB section above) */}
         {stats.largeFiles.length > 0 && (
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <ThemedText style={[Type.section, { color: colors.text }]}>
