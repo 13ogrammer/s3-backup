@@ -21,7 +21,10 @@ export function toS3Metadata(bag: MetadataBag | undefined): Record<string, strin
     if (!v) continue;
     const maxLen = numericKeys.has(k) ? 20 : 100;
     const truncated = v.slice(0, maxLen);
-    if (truncated) out[k] = truncated;
+    // Lowercase to match metadataBagToHeaders on the client; otherwise the
+    // simple-PUT path signs x-amz-meta-createdAt but sends x-amz-meta-createdat
+    // and the SigV4 header-name mismatch surfaces as a 400 from S3/MinIO.
+    if (truncated) out[k.toLowerCase()] = truncated;
   }
 
   return Object.keys(out).length > 0 ? out : undefined;
