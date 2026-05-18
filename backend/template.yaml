@@ -153,7 +153,7 @@ Resources:
                 "properties": {
                   "title": "Lambda Invocations",
                   "metrics": [["AWS/Lambda", "Invocations", "FunctionName", "${ApiFn}"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -161,7 +161,7 @@ Resources:
                 "properties": {
                   "title": "Lambda Errors",
                   "metrics": [["AWS/Lambda", "Errors", "FunctionName", "${ApiFn}"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -169,7 +169,7 @@ Resources:
                 "properties": {
                   "title": "Lambda Duration p95",
                   "metrics": [["AWS/Lambda", "Duration", "FunctionName", "${ApiFn}"]],
-                  "stat": "p95", "period": 300, "view": "timeSeries"
+                  "stat": "p95", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -177,7 +177,7 @@ Resources:
                 "properties": {
                   "title": "API Gateway 4xx",
                   "metrics": [["AWS/ApiGateway", "4xx", "ApiId", "${Api}"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -185,7 +185,7 @@ Resources:
                 "properties": {
                   "title": "API Gateway 5xx",
                   "metrics": [["AWS/ApiGateway", "5xx", "ApiId", "${Api}"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -193,7 +193,7 @@ Resources:
                 "properties": {
                   "title": "S3 GET Requests",
                   "metrics": [["AWS/S3", "GetRequests", "BucketName", "${BucketRef}", "FilterId", "EntireBucket"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               },
               {
@@ -201,7 +201,7 @@ Resources:
                 "properties": {
                   "title": "S3 PUT Requests",
                   "metrics": [["AWS/S3", "PutRequests", "BucketName", "${BucketRef}", "FilterId", "EntireBucket"]],
-                  "stat": "Sum", "period": 300, "view": "timeSeries"
+                  "stat": "Sum", "period": 300, "view": "timeSeries", "region": "${AWS::Region}"
                 }
               }
             ]
