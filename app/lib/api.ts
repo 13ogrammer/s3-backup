@@ -1,5 +1,25 @@
 import { loadConfig, type AppConfig } from './config';
 
+/**
+ * Curated EXIF/dimensions/GPS bag written as x-amz-meta-* headers on upload.
+ * S3B-34: 11 fields max; all values are strings. Absent fields are omitted —
+ * never written as empty strings. GPS PII is written by default for this
+ * BYO-AWS personal-use card.
+ */
+export type MetadataBag = {
+  width?: string;
+  height?: string;
+  createdAt?: string;
+  make?: string;
+  model?: string;
+  lens?: string;
+  iso?: string;
+  aperture?: string;
+  shutter?: string;
+  lat?: string;
+  lng?: string;
+};
+
 export type ListedFile = {
   key: string;
   size: number;
@@ -7,6 +27,9 @@ export type ListedFile = {
   kind: 'image' | 'video' | 'other';
   previewUrl?: string;
   etag?: string;
+  // S3B-34: will be populated in S3B-16b via /head fanout; undefined for
+  // pre-S3B-34 files and files where head hasn't been fetched yet.
+  createdAt?: string;
 };
 
 export type ListResponse = {
@@ -98,14 +121,14 @@ export async function healthCheck(config: AppConfig): Promise<boolean> {
 export const api = {
   list: (params: { prefix?: string; continuationToken?: string; recursive?: boolean } = {}) =>
     call<ListResponse>('/list', params),
-  signUpload: (key: string, contentType: string) =>
-    call<SignedUrlResponse>('/sign-upload', { key, contentType }),
+  signUpload: (key: string, contentType: string, metadata?: MetadataBag) =>
+    call<SignedUrlResponse>('/sign-upload', { key, contentType, ...(metadata ? { metadata } : {}) }),
   signDownload: (key: string) => call<SignedUrlResponse>('/sign-download', { key }),
   delete: (params: { keys?: string[]; prefixes?: string[] }) =>
     call<DeleteResponse>('/delete', params),
   exists: (keys: string[]) => call<ExistsResponse>('/exists', { keys }),
-  createMultipart: (key: string, contentType: string) =>
-    call<CreateMultipartResponse>('/multipart/create', { key, contentType }),
+  createMultipart: (key: string, contentType: string, metadata?: MetadataBag) =>
+    call<CreateMultipartResponse>('/multipart/create', { key, contentType, ...(metadata ? { metadata } : {}) }),
   signPart: (key: string, uploadId: string, partNumber: number) =>
     call<SignPartResponse>('/multipart/sign-part', { key, uploadId, partNumber }),
   completeMultipart: (key: string, uploadId: string, parts: CompletedPart[]) =>
