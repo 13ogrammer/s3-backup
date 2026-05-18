@@ -44,6 +44,7 @@ import {
   type PendingUpload,
 } from '@/lib/uploadState';
 import { recordUploadFailure, toReason } from '@/lib/activityLog';
+import { captureApiError } from '@/lib/sentry';
 import { setUploadSessionActive } from '@/lib/uploadSession';
 
 const UPLOAD_CONCURRENCY = 3;
@@ -308,6 +309,7 @@ export default function GalleryScreen() {
                 : s,
             );
           } catch (err) {
+            captureApiError(err);
             await recordUploadFailure({
               remoteKey: entry.remoteKey,
               localUri: entry.localUri,
@@ -462,6 +464,7 @@ export default function GalleryScreen() {
                 : s,
             );
           } catch (err) {
+            captureApiError(err);
             await recordUploadFailure({
               remoteKey: key,
               localUri,

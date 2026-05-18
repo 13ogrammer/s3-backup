@@ -28,6 +28,7 @@ import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type Fold
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 import { recordMoveFailure, toReason } from '@/lib/activityLog';
+import { captureApiError } from '@/lib/sentry';
 
 const THUMB_SIZE = 56;
 const GRID_COLUMNS = 3;
@@ -579,6 +580,7 @@ export default function BrowseScreen() {
         await api.moveFile(key, dest);
         movedFiles.push({ from: key, to: dest });
       } catch (err) {
+        captureApiError(err);
         await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
         failed.push({ src: key, message: err instanceof Error ? err.message : 'failed' });
       }
@@ -593,6 +595,7 @@ export default function BrowseScreen() {
         await api.moveFolder(prefix, dest);
         movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
+        captureApiError(err);
         await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
         failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
       }
