@@ -192,3 +192,7 @@ BOOTSTRAP_TOKEN=devtoken BUCKET_NAME=dev-bucket S3_ENDPOINT_URL=http://host.dock
 ```
 
 Requires SAM CLI + Docker. Slower iteration than `npm run dev`.
+
+## Metadata write path (S3B-34)
+
+New uploads carry up to 11 curated EXIF/dimensions/GPS fields as `x-amz-meta-*` headers (`width`, `height`, `createdAt`, `make`, `model`, `lens`, `iso`, `aperture`, `shutter`, `lat`, `lng`). Total metadata budget is 2 KB per S3's object metadata limit. Absent fields are omitted — not written as empty strings. Verify with `aws s3api head-object --bucket <bucket> --key <key>` and inspect the `Metadata` map in the response.

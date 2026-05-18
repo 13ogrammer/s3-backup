@@ -49,6 +49,9 @@ type Row =
       name: string;
       size: number;
       lastModified: string;
+      // S3B-34: populated for files uploaded after S3B-34; undefined for older
+      // files. compareRows falls back to lastModified when undefined.
+      createdAt?: string;
       mediaKind: 'image' | 'video' | 'other';
       previewUrl?: string;
     };
@@ -75,8 +78,14 @@ function compareRows(a: Row, b: Row, field: SortField, dir: SortDir): number {
     cmp = a.name.localeCompare(b.name);
   } else if (a.kind === 'file' && b.kind === 'file') {
     if (field === 'name') cmp = a.name.localeCompare(b.name);
-    else if (field === 'date') cmp = (a.lastModified || '').localeCompare(b.lastModified || '');
-    else if (field === 'size') cmp = a.size - b.size;
+    else if (field === 'date') {
+      // Prefer createdAt (from EXIF/media-library, written on upload by S3B-34).
+      // Falls back to lastModified for pre-S3B-34 files — no error, just
+      // sorts by S3's own last-modified timestamp in that case.
+      const aDate = a.createdAt ?? a.lastModified;
+      const bDate = b.createdAt ?? b.lastModified;
+      cmp = (aDate || '').localeCompare(bDate || '');
+    } else if (field === 'size') cmp = a.size - b.size;
   }
   return dir === 'asc' ? cmp : -cmp;
 }
@@ -224,6 +233,7 @@ export default function BrowseScreen() {
       name: basename(f.key),
       size: f.size,
       lastModified: f.lastModified,
+      createdAt: f.createdAt,
       mediaKind: f.kind,
       previewUrl: f.previewUrl,
     }));
