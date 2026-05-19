@@ -47,13 +47,11 @@ export function ModalCard({
       <Pressable
         style={styles.backdrop}
         onPress={dismissOnBackdrop ? onRequestClose : undefined}>
-        {/* Stop touches propagating from the card to the backdrop */}
-        <Pressable onPress={() => {}}>
+        {/* Stop touches propagating from the card to the backdrop; also
+            anchors the width cap so the card never stretches beyond it. */}
+        <Pressable style={[styles.cardWrapper, { maxWidth }]} onPress={() => {}}>
           <ThemedView
-            style={[
-              styles.card,
-              { maxWidth, borderColor: colors.border },
-            ]}
+            style={[styles.card, { borderColor: colors.border }]}
             accessibilityViewIsModal={accessibilityViewIsModal}
             accessibilityRole={accessibilityRole}>
             {title !== undefined && (
@@ -74,6 +72,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
+  },
+  cardWrapper: {
+    width: '100%',
   },
   card: {
     width: '100%',
