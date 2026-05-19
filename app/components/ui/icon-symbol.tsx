@@ -22,6 +22,7 @@ const MAPPING = {
   'arrow.up': 'arrow-upward',
   'photo.on.rectangle': 'photo-library',
   'folder': 'folder',
+  'icloud.fill': 'cloud',
   'gearshape': 'settings',
   'list.bullet': 'view-list',
   'square.grid.2x2': 'view-module',
