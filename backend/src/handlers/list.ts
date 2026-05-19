@@ -10,6 +10,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizePrefix } from '../s3.js';
 import { PREVIEW_PREFIX } from '../previews.js';
+import { CACHE_PREFIX } from '../statsCache.js';
 import { THUMB_PREFIX, thumbKey, thumbPrefix } from '../thumbs.js';
 import type { ListRequest, ListResponse, ListedFile } from '../types.js';
 import type { RequestContext } from '../index.js';
@@ -65,7 +66,11 @@ export async function list(body: ListRequest, ctx: RequestContext): Promise<List
     const files: ListedFile[] = [];
     for (const obj of pageRes.Contents ?? []) {
       if (!obj.Key || obj.Key === prefix) continue;
-      if (obj.Key.startsWith(THUMB_PREFIX) || obj.Key.startsWith(PREVIEW_PREFIX)) continue;
+      if (
+        obj.Key.startsWith(THUMB_PREFIX) ||
+        obj.Key.startsWith(PREVIEW_PREFIX) ||
+        obj.Key.startsWith(CACHE_PREFIX)
+      ) continue;
       files.push({
         key: obj.Key,
         size: obj.Size ?? 0,
@@ -101,7 +106,12 @@ export async function list(body: ListRequest, ctx: RequestContext): Promise<List
 
   const folders: string[] = [];
   for (const cp of pageRes.CommonPrefixes ?? []) {
-    if (cp.Prefix && cp.Prefix !== THUMB_PREFIX && cp.Prefix !== PREVIEW_PREFIX) folders.push(cp.Prefix);
+    if (
+      cp.Prefix &&
+      cp.Prefix !== THUMB_PREFIX &&
+      cp.Prefix !== PREVIEW_PREFIX &&
+      cp.Prefix !== CACHE_PREFIX
+    ) folders.push(cp.Prefix);
   }
 
   const rawFiles: Array<{ key: string; size: number; lastModified: string; etag?: string }> = [];

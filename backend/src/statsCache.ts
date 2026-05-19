@@ -6,7 +6,8 @@ import {
 import { BUCKET, s3 } from './s3.js';
 import type { StorageStats } from './types.js';
 
-export const STATS_CACHE_KEY = '.cache/stats.json';
+export const CACHE_PREFIX = '.cache/';
+export const STATS_CACHE_KEY = `${CACHE_PREFIX}stats.json`;
 export const STATS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export async function readCache(): Promise<StorageStats | null> {
