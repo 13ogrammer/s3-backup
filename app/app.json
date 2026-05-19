@@ -70,7 +70,7 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      ["@sentry/react-native/expo", { "organization": "<your-sentry-org>", "project": "<your-sentry-project>" }]
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,
