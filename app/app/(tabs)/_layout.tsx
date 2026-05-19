@@ -42,9 +42,6 @@ export default function TabLayout() {
         options={{
           title: 'Dashboard',
           headerTitle: APP_NAME,
-          headerTitleAlign: 'left',
-          headerTitleStyle: { fontWeight: '700', fontSize: 22 },
-          headerLeftContainerStyle: { paddingLeft: Spacing.lg },
           headerRightContainerStyle: { paddingRight: Spacing.lg },
           headerRight: () => (
             <Pressable
