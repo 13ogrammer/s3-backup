@@ -32,6 +32,8 @@ const MAPPING = {
   'checkmark.icloud.fill': 'cloud-done',
   'line.3.horizontal.decrease.circle': 'filter-list',
   'line.3.horizontal.decrease.circle.fill': 'filter-list',
+  'sparkles': 'auto-awesome',
+  'ellipsis': 'more-vert',
 } as IconMapping;
 
 /**
