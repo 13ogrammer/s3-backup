@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { networkInterfaces } from 'node:os';
 
+import qrcode from 'qrcode-terminal';
+
 import { handler } from './index.js';
 
 let requestCounter = 0;
@@ -80,17 +82,29 @@ function lanIp(): string | undefined {
 
 server.listen(PORT, '0.0.0.0', () => {
   const ip = lanIp() ?? 'localhost';
+  const apiUrl = `http://${ip}:${PORT}`;
+  const token = process.env.BOOTSTRAP_TOKEN;
   const sep = '─'.repeat(60);
   console.log(`\n${sep}`);
   console.log(`  s3-backup dev server`);
-  console.log(`  Listening on: http://${ip}:${PORT}`);
-  console.log(`  Health check: curl http://${ip}:${PORT}/health`);
+  console.log(`  Listening on: ${apiUrl}`);
+  console.log(`  Health check: curl ${apiUrl}/health`);
   console.log(`  Bucket:       ${process.env.BUCKET_NAME ?? '(not set)'}`);
   console.log(`  S3 endpoint:  ${process.env.S3_ENDPOINT_URL ?? '(real AWS)'}`);
-  console.log(`  Auth token:   ${process.env.BOOTSTRAP_TOKEN ? '(set)' : '(NOT SET)'}`);
+  console.log(`  Auth token:   ${token ? '(set)' : '(NOT SET)'}`);
   console.log(`${sep}`);
-  console.log(`  In the app's Settings tab, paste:`);
-  console.log(`    API URL: http://${ip}:${PORT}`);
-  console.log(`    Token:   ${process.env.BOOTSTRAP_TOKEN ?? '<set BOOTSTRAP_TOKEN env var>'}`);
-  console.log(`${sep}\n`);
+
+  if (token) {
+    console.log(`  Scan the QR below with the "Scan QR" button in Settings,`);
+    console.log(`  or paste manually:`);
+    console.log(`    API URL: ${apiUrl}`);
+    console.log(`    Token:   (hidden — encoded in QR only)`);
+    console.log(`${sep}\n`);
+    qrcode.generate(JSON.stringify({ apiUrl, bootstrapToken: token }), { small: true }, (qr) => {
+      console.log(qr);
+    });
+  } else {
+    console.log(`  Set BOOTSTRAP_TOKEN in backend/.env to enable QR onboarding.`);
+    console.log(`${sep}\n`);
+  }
 });
