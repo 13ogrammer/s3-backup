@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,7 +20,6 @@ import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
-import { loadActivityCount } from '@/lib/activityLog';
 import { parseQrPayload } from '@/lib/qr-config';
 
 export default function SettingsScreen() {
@@ -33,7 +32,6 @@ export default function SettingsScreen() {
   const [bootstrapToken, setBootstrapToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [activityCount, setActivityCount] = useState(0);
   const [scannerVisible, setScannerVisible] = useState(false);
 
   useEffect(() => {
@@ -45,20 +43,6 @@ export default function SettingsScreen() {
       setLoading(false);
     });
   }, []);
-
-  const refreshActivityCount = useCallback(() => {
-    loadActivityCount().then(setActivityCount).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refreshActivityCount();
-  }, [refreshActivityCount]);
-
-  useFocusEffect(
-    useCallback(() => {
-      refreshActivityCount();
-    }, [refreshActivityCount]),
-  );
 
   async function onSave() {
     if (!backendUrl.trim() || !bootstrapToken.trim()) {
@@ -264,29 +248,6 @@ export default function SettingsScreen() {
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push('/sync')}
-              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
-              <View style={styles.navRowLabel}>
-                <ThemedText style={[Type.body, { color: colors.text }]}>Activity</ThemedText>
-                {activityCount > 0 && (
-                  <ThemedText style={[Type.label, { color: colors.muted }]}>
-                    {' '}({activityCount})
-                  </ThemedText>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Pressable>
-            <View style={[styles.navDivider, { backgroundColor: colors.divider }]} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/duplicates')}
-              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
-              <ThemedText style={[Type.body, { color: colors.text }]}>Find duplicates</ThemedText>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Pressable>
-            <View style={[styles.navDivider, { backgroundColor: colors.divider }]} />
-            <Pressable
-              accessibilityRole="button"
               onPress={() => router.push('/about')}
               style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
               <ThemedText style={[Type.body, { color: colors.text }]}>About</ThemedText>
@@ -354,10 +315,6 @@ const styles = StyleSheet.create({
   navRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  navRowLabel: {
-    flexDirection: 'row',
     alignItems: 'center',
   },
   navDivider: { height: 1 },
