@@ -264,7 +264,7 @@ export default function SettingsScreen() {
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push('/activity')}
+              onPress={() => router.push('/sync')}
               style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
               <View style={styles.navRowLabel}>
                 <ThemedText style={[Type.body, { color: colors.text }]}>Activity</ThemedText>
