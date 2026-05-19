@@ -1,30 +1,43 @@
-// Fallback for using MaterialIcons on Android and web.
+// Fallback for using MaterialIcons / MaterialCommunityIcons on Android and web.
 
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
+type MaterialIconName = ComponentProps<typeof MaterialIcons>['name'];
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+type IconMappingValue =
+  | MaterialIconName
+  | { mci: MaterialCommunityIconName };
+
+type IconMapping = Record<SymbolViewProps['name'], IconMappingValue>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
+ * Add your SF Symbols to MaterialIcons (or MaterialCommunityIcons) mappings here.
  * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
  * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ *
+ * Values may be either a MaterialIcons name (string) or `{ mci: <name> }` for
+ * MaterialCommunityIcons. MCI is used for icons that need a clean `-outline`
+ * variant that MaterialIcons doesn't ship (e.g. `home-outline`).
  */
 const MAPPING = {
+  'house': { mci: 'home-outline' },
   'house.fill': 'home',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
   'chevron.left': 'chevron-left',
   'arrow.up': 'arrow-upward',
-  'photo.on.rectangle': 'photo-library',
+  'photo.on.rectangle': { mci: 'image-multiple-outline' },
   'folder': 'folder',
   'icloud.fill': 'cloud',
   'icloud': 'cloud-queue',
-  'gearshape': 'settings',
+  'gearshape': { mci: 'cog-outline' },
   'list.bullet': 'view-list',
   'square.grid.2x2': 'view-module',
   'xmark': 'close',
@@ -34,7 +47,7 @@ const MAPPING = {
   'checkmark.icloud.fill': 'cloud-done',
   'line.3.horizontal.decrease.circle': 'filter-list',
   'line.3.horizontal.decrease.circle.fill': 'filter-list',
-  'sparkles': 'auto-awesome',
+  'sparkles': { mci: 'star-four-points-outline' },
   'ellipsis': 'more-vert',
 } as IconMapping;
 
@@ -55,5 +68,11 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  const mapped = MAPPING[name];
+  if (typeof mapped === 'string') {
+    return <MaterialIcons color={color} size={size} name={mapped} style={style} />;
+  }
+  return (
+    <MaterialCommunityIcons color={color} size={size} name={mapped.mci} style={style} />
+  );
 }
