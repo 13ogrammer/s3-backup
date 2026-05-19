@@ -18,10 +18,13 @@ export type ActionSheetProps = {
   items: ActionSheetItem[];
 };
 
+// Approx. native stack-header height (status-bar excluded — accounted for via inset)
+const HEADER_HEIGHT = 44;
+
 /**
- * Themed bottom action-sheet. Uses a native Modal with a Pressable backdrop so
- * tapping outside always dismisses. Safe-area aware — insets pushed to the
- * panel so content sits above the home indicator on notched devices.
+ * Themed dropdown anchored to the top-right of the screen, just below the
+ * native stack header. Used for header overflow menus (e.g., the Backup tab's
+ * `⋮` trigger). Tap-outside dismisses via a transparent backdrop.
  */
 export function ActionSheet({ visible, onClose, items }: ActionSheetProps) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -32,21 +35,19 @@ export function ActionSheet({ visible, onClose, items }: ActionSheetProps) {
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       statusBarTranslucent
       navigationBarTranslucent
       onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        style={[
+          styles.backdrop,
+          { paddingTop: insets.top + HEADER_HEIGHT + Spacing.xs },
+        ]}
+        onPress={onClose}>
         {/* Stop touches from the panel propagating to the backdrop */}
         <Pressable onPress={() => {}}>
-          <ThemedView
-            style={[
-              styles.panel,
-              {
-                borderColor: colors.border,
-                paddingBottom: Math.max(insets.bottom, Spacing.lg),
-              },
-            ]}>
+          <ThemedView style={[styles.panel, { borderColor: colors.border }]}>
             {items.map((item, idx) => (
               <View key={item.label}>
                 {idx > 0 && (
@@ -78,16 +79,15 @@ export function ActionSheet({ visible, onClose, items }: ActionSheetProps) {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    alignItems: 'flex-end',
+    paddingRight: Spacing.sm,
   },
   panel: {
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    paddingTop: Spacing.lg,
+    minWidth: 180,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.xs,
     paddingHorizontal: Spacing.lg,
     ...Shadow.cardElevated,
   },
