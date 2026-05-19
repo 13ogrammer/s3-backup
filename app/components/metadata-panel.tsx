@@ -32,9 +32,10 @@ type Props = {
   fileKey: string;
   entry: HeadEntry | undefined;
   bottomInset: number;
+  onClose?: () => void;
 };
 
-export function MetadataPanel({ fileKey, entry, bottomInset }: Props) {
+export function MetadataPanel({ fileKey, entry, bottomInset, onClose }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -61,9 +62,7 @@ export function MetadataPanel({ fileKey, entry, bottomInset }: Props) {
     showCopyToast();
   }
 
-  const panelBg = colorScheme === 'dark'
-    ? 'rgba(13,17,27,0.92)'
-    : 'rgba(248,250,252,0.94)';
+  const panelBg = colors.surfaceElevated;
 
   return (
     <View
@@ -71,10 +70,15 @@ export function MetadataPanel({ fileKey, entry, bottomInset }: Props) {
         styles.container,
         { backgroundColor: panelBg, paddingBottom: bottomInset + Spacing.lg },
       ]}>
-      {/* Drag handle */}
-      <View style={styles.handleRow}>
+      {/* Drag handle — tap to close when an onClose handler is provided */}
+      <Pressable
+        onPress={onClose}
+        accessibilityRole={onClose ? 'button' : undefined}
+        accessibilityLabel={onClose ? 'Hide details' : undefined}
+        hitSlop={8}
+        style={styles.handleRow}>
         <View style={[styles.handle, { backgroundColor: colors.border }]} />
-      </View>
+      </Pressable>
 
       {entry === undefined || entry.status === 'loading' ? (
         <View style={styles.loadingRow}>
@@ -273,8 +277,7 @@ function GpsRow({
 
 const styles = StyleSheet.create({
   container: {
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
+    flex: 1,
     overflow: 'hidden',
     ...Platform.select({
       ios: {

@@ -26,6 +26,7 @@ import {
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -37,7 +38,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ZoomableImage } from '@/components/zoomable-image';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, type GetDerivedUrlResponse, type HeadResponse } from '@/lib/api';
 import { basename } from '@/lib/format';
@@ -54,8 +55,8 @@ type Props = {
   onClose: () => void;
 };
 
-// The panel occupies roughly 60% of the slide height when open.
-const PANEL_OPEN_FRACTION = 0.60;
+// Details panel is a fixed fraction of the screen height when open.
+const PANEL_OPEN_FRACTION = 0.5;
 // Swipe threshold to trigger open/close (px).
 const SWIPE_THRESHOLD = 50;
 
@@ -65,6 +66,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const insets = useSafeAreaInsets();
 
   const { width: pageWidth, height: windowHeight } = useWindowDimensions();
+  const panelHeight = Math.round(windowHeight * PANEL_OPEN_FRACTION);
 
   const [index, setIndex] = useState<number>(initialIndex ?? 0);
   const [downloading, setDownloading] = useState(false);
@@ -73,22 +75,30 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   // playback and the Download button.
   const [urls, setUrls] = useState<Map<string, { previewUrl?: string; originalUrl?: string }>>(new Map());
   const [isZoomed, setIsZoomed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const flatListRef = useRef<FlatList<PreviewFile> | null>(null);
 
   // Session-scoped cache for /head responses. Cleared alongside urls on reopen.
   const [headCache, setHeadCache] = useState<Map<string, HeadEntry>>(new Map());
+
+  // 0 = closed (panel below screen, slides at natural position), 1 = open.
+  const panelProgress = useSharedValue(0);
 
   const current = visible && index >= 0 && index < files.length ? files[index] : null;
   const filename = current ? basename(current.key) : '';
   const currentEntry = current ? urls.get(current.key) : undefined;
   // Download always uses the original signed URL.
   const currentDownloadUrl = currentEntry?.originalUrl;
-  // Display URL: for images prefer the preview tier; fall back to original if
-  // preview isn't ready yet (should not happen normally).
-  const currentDisplayUrl =
-    current?.kind === 'image'
-      ? currentEntry?.previewUrl ?? currentEntry?.originalUrl
-      : currentEntry?.originalUrl;
+
+  function openPanel() {
+    panelProgress.value = withTiming(1, { duration: 300 });
+    setPanelOpen(true);
+  }
+  function closePanel() {
+    panelProgress.value = withTiming(0, { duration: 250 });
+    setPanelOpen(false);
+  }
 
   useEffect(() => {
     if (visible && initialIndex != null) {
@@ -97,8 +107,11 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       setUrls(new Map<string, { previewUrl?: string; originalUrl?: string }>());
       setHeadCache(new Map<string, HeadEntry>());
       setIsZoomed(false);
+      setMenuOpen(false);
+      setPanelOpen(false);
+      panelProgress.value = 0;
     }
-  }, [visible, initialIndex]);
+  }, [visible, initialIndex, panelProgress]);
 
   // Fetch URLs for the current page and immediate neighbours; prefetch images.
   //
@@ -176,9 +189,11 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
     };
   }, [visible, index, files, urls]);
 
-  // Lazy-fetch /head for the active image slide. One fetch per key per session.
+  // Lazy-fetch /head for the active slide (any kind). One fetch per key per session.
+  // For non-images, /head still returns size + lastModified — useful in the details
+  // panel even when no EXIF metadata is present.
   useEffect(() => {
-    if (!visible || !current || current.kind !== 'image') return;
+    if (!visible || !current) return;
     const key = current.key;
     if (headCache.has(key)) return;
 
@@ -247,7 +262,29 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
 
   function onMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const newIndex = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
-    if (newIndex !== index) setIndex(newIndex);
+    if (newIndex !== index) {
+      setIndex(newIndex);
+      // Panel intentionally stays open — its content updates for the new file.
+      if (menuOpen) setMenuOpen(false);
+    }
+  }
+
+  // Panel slides up from below by exactly its fixed height. translateY-only ⇒
+  // no layout per frame ⇒ no expo-image flicker.
+  const panelOuterStyle = useAnimatedStyle(
+    () => ({
+      transform: [{ translateY: panelHeight * (1 - panelProgress.value) }],
+    }),
+    [panelHeight],
+  );
+
+  function handleMenuDetails() {
+    setMenuOpen(false);
+    if (!panelOpen) openPanel();
+  }
+  function handleMenuDownload() {
+    setMenuOpen(false);
+    onDownload();
   }
 
   return (
@@ -260,95 +297,169 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       navigationBarTranslucent>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.backdrop}>
-          <FlatList
-            ref={flatListRef}
-            style={StyleSheet.absoluteFill}
-            data={files}
-            keyExtractor={(f) => f.key}
-            horizontal
-            pagingEnabled
-            scrollEnabled={!isZoomed}
-            showsHorizontalScrollIndicator={false}
-            initialScrollIndex={initialIndex ?? 0}
-            getItemLayout={(_, i) => ({
-              length: pageWidth,
-              offset: pageWidth * i,
-              index: i,
-            })}
-            onMomentumScrollEnd={onMomentumScrollEnd}
-            renderItem={({ item, index: i }) => {
-              const entry = urls.get(item.key);
-              const displayUrl =
-                item.kind === 'image'
-                  ? entry?.previewUrl ?? entry?.originalUrl
-                  : entry?.originalUrl;
-              return (
-                <PreviewSlide
-                  file={item}
-                  displayUrl={displayUrl}
-                  originalUrl={entry?.originalUrl}
-                  isActive={i === index}
-                  isZoomed={i === index ? isZoomed : false}
-                  width={pageWidth}
-                  height={windowHeight}
-                  bottomInset={Platform.OS === 'android' ? insets.bottom : 0}
-                  safeBottomInset={insets.bottom}
-                  onZoomChange={i === index ? setIsZoomed : undefined}
-                  headEntry={headCache.get(item.key)}
-                />
-              );
-            }}
-          />
+          {/* Content area: image / video pager. Slides translate per-kind so the
+              visible media stays above the open details panel. */}
+          <View style={styles.contentArea}>
+            <FlatList
+              ref={flatListRef}
+              style={StyleSheet.absoluteFill}
+              data={files}
+              keyExtractor={(f) => f.key}
+              horizontal
+              pagingEnabled
+              scrollEnabled={!isZoomed}
+              showsHorizontalScrollIndicator={false}
+              initialScrollIndex={initialIndex ?? 0}
+              getItemLayout={(_, i) => ({
+                length: pageWidth,
+                offset: pageWidth * i,
+                index: i,
+              })}
+              onMomentumScrollEnd={onMomentumScrollEnd}
+              renderItem={({ item, index: i }) => {
+                const entry = urls.get(item.key);
+                const displayUrl =
+                  item.kind === 'image'
+                    ? entry?.previewUrl ?? entry?.originalUrl
+                    : entry?.originalUrl;
+                return (
+                  <PreviewSlide
+                    file={item}
+                    displayUrl={displayUrl}
+                    originalUrl={entry?.originalUrl}
+                    isActive={i === index}
+                    isZoomed={i === index ? isZoomed : false}
+                    width={pageWidth}
+                    bottomInset={Platform.OS === 'android' ? insets.bottom : 0}
+                    onZoomChange={i === index ? setIsZoomed : undefined}
+                    onSwipeOpenPanel={openPanel}
+                    onSwipeClosePanel={closePanel}
+                    panelOpen={panelOpen}
+                    panelProgress={panelProgress}
+                    panelHeight={panelHeight}
+                  />
+                );
+              }}
+            />
+          </View>
+
+          {/* Bottom-anchored details panel. Fixed height = 50% of screen, fully
+              opaque, slides up from below by exactly that height on open. */}
+          <Animated.View
+            style={[
+              styles.panelOuter,
+              { height: panelHeight, backgroundColor: colors.surfaceElevated },
+              panelOuterStyle,
+            ]}>
+            {current && (
+              <MetadataPanel
+                fileKey={current.key}
+                entry={headCache.get(current.key)}
+                bottomInset={insets.bottom}
+                onClose={closePanel}
+              />
+            )}
+          </Animated.View>
+
+          {/* Header — back button (left), ellipsis menu trigger (right). */}
           <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <Pressable
               onPress={onClose}
-              hitSlop={8}
+              hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Close preview"
+              accessibilityLabel="Back"
               style={({ pressed }) => [
                 styles.headerIconButton,
-                styles.headerChipMuted,
                 { opacity: pressed ? 0.6 : 1 },
               ]}>
-              <IconSymbol name="xmark" size={20} color="#fff" />
+              <IconSymbol name="chevron.left" size={26} color="#fff" />
             </Pressable>
-            <View style={styles.headerCenter}>
-              <ThemedText
-                style={styles.filename}
-                lightColor="#fff"
-                darkColor="#fff"
-                numberOfLines={1}>
-                {filename}
-              </ThemedText>
-              {files.length > 1 && (
-                <ThemedText style={styles.counter} lightColor="#fff" darkColor="#fff">
-                  {index + 1} of {files.length}
-                </ThemedText>
-              )}
-            </View>
             <Pressable
-              onPress={onDownload}
-              disabled={!currentDownloadUrl || downloading}
-              hitSlop={8}
+              onPress={() => setMenuOpen((v) => !v)}
+              hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Download"
+              accessibilityLabel="More options"
               style={({ pressed }) => [
                 styles.headerIconButton,
-                {
-                  backgroundColor: colors.tint,
-                  opacity: !currentDownloadUrl || downloading ? 0.5 : pressed ? 0.7 : 1,
-                },
+                { opacity: pressed ? 0.6 : 1 },
               ]}>
-              {downloading ? (
-                <ActivityIndicator size="small" color={colors.onAccent} />
-              ) : (
-                <IconSymbol name="arrow.down.to.line" size={20} color={colors.onAccent} />
-              )}
+              <IconSymbol name="ellipsis" size={24} color="#fff" />
             </Pressable>
           </View>
+
+          {/* Menu overlay — popover with Details + Download. */}
+          {menuOpen && (
+            <>
+              <Pressable
+                style={styles.menuBackdrop}
+                onPress={() => setMenuOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close menu"
+              />
+              <View
+                style={[
+                  styles.menu,
+                  {
+                    top: insets.top + 12 + 38 + 8,
+                    backgroundColor: colors.surfaceElevated,
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <MenuItem
+                  icon="line.3.horizontal.decrease.circle"
+                  label="Details"
+                  onPress={handleMenuDetails}
+                  colors={colors}
+                />
+                <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
+                <MenuItem
+                  icon="arrow.down.to.line"
+                  label="Download"
+                  onPress={handleMenuDownload}
+                  disabled={!currentDownloadUrl || downloading}
+                  trailing={downloading ? <ActivityIndicator size="small" color={colors.tint} /> : null}
+                  colors={colors}
+                />
+              </View>
+            </>
+          )}
         </View>
       </GestureHandlerRootView>
     </Modal>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  onPress,
+  disabled = false,
+  trailing,
+  colors,
+}: {
+  icon: Parameters<typeof IconSymbol>[0]['name'];
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  trailing?: React.ReactNode;
+  colors: (typeof Colors)['light'];
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.menuItem,
+        { opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
+      ]}>
+      <IconSymbol name={icon} size={20} color={colors.text} />
+      <ThemedText style={[Type.label, styles.menuLabel, { color: colors.text }]}>
+        {label}
+      </ThemedText>
+      {trailing}
+    </Pressable>
   );
 }
 
@@ -356,18 +467,19 @@ type SlideProps = {
   file: PreviewFile;
   /** URL for display: preview-tier JPEG for images, original for video/other. */
   displayUrl: string | undefined;
-  /** Original signed URL — used for video player and (externally) for download. */
+  /** Original signed URL — used for video player. */
   originalUrl: string | undefined;
   isActive: boolean;
   isZoomed: boolean;
   width: number;
-  height: number;
   /** Android bottom inset for the video player bar. */
   bottomInset: number;
-  /** Safe-area bottom inset passed into the metadata panel. */
-  safeBottomInset: number;
   onZoomChange?: (zoomed: boolean) => void;
-  headEntry: HeadEntry | undefined;
+  onSwipeOpenPanel: () => void;
+  onSwipeClosePanel: () => void;
+  panelOpen: boolean;
+  panelProgress: SharedValue<number>;
+  panelHeight: number;
 };
 
 function PreviewSlide({
@@ -377,61 +489,49 @@ function PreviewSlide({
   isActive,
   isZoomed,
   width,
-  height,
   bottomInset,
-  safeBottomInset,
   onZoomChange,
-  headEntry,
+  onSwipeOpenPanel,
+  onSwipeClosePanel,
+  panelOpen,
+  panelProgress,
+  panelHeight,
 }: SlideProps) {
   const filename = basename(file.key);
-  const panelHeight = height * PANEL_OPEN_FRACTION;
 
-  // translateY: 0 = hidden (fully off-screen at bottom), -panelHeight = fully shown.
-  const translateY = useSharedValue(0);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // Per-slide vertical translation when the panel is open:
+  // - video: shift up by the full panel height so native controls clear the panel.
+  // - image / other: shift up by half the panel height so the visible media
+  //   re-centres in the upper portion of the screen (push, not overlay).
+  const slideAnimStyle = useAnimatedStyle(
+    () => {
+      'worklet';
+      const offset = file.kind === 'video' ? panelHeight : panelHeight / 2;
+      return { transform: [{ translateY: -offset * panelProgress.value }] };
+    },
+    [panelHeight, file.kind],
+  );
 
-  // Reset panel to hidden whenever this slide loses focus.
-  useEffect(() => {
-    if (!isActive) {
-      translateY.value = withTiming(0, { duration: 250 });
-      runOnJS(setPanelOpen)(false);
-    }
-  }, [isActive, translateY]);
-
-  function openPanel() {
-    translateY.value = withTiming(-panelHeight, { duration: 300 });
-    setPanelOpen(true);
-  }
-
-  function closePanel() {
-    translateY.value = withTiming(0, { duration: 250 });
-    setPanelOpen(false);
-  }
-
-  // Vertical pan gesture: enabled only on active, non-zoomed image slides.
+  // Vertical pan gesture: only active on the focused slide. Disabled while zoomed
+  // (so the image pan gesture wins) and skipped for video (native controls handle it).
   const panGesture = Gesture.Pan()
-    .enabled(isActive && !isZoomed && file.kind === 'image')
-    // Only activate on clearly vertical drags, so horizontal paging is unaffected.
+    .enabled(isActive && !isZoomed && file.kind !== 'video')
     .activeOffsetY([-15, 15])
     .failOffsetX([-20, 20])
     .onEnd((e) => {
       'worklet';
       if (e.translationY < -SWIPE_THRESHOLD) {
-        // Swipe up — open panel.
-        runOnJS(openPanel)();
-      } else if (e.translationY > SWIPE_THRESHOLD) {
-        // Swipe down — close panel.
-        runOnJS(closePanel)();
+        runOnJS(onSwipeOpenPanel)();
+      } else if (e.translationY > SWIPE_THRESHOLD && panelOpen) {
+        runOnJS(onSwipeClosePanel)();
       }
     });
 
-  const panelStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
   return (
     <GestureDetector gesture={panGesture}>
-      <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
+      <Animated.View
+        style={[{ width, height: '100%' }, slideAnimStyle]}
+        pointerEvents={isActive ? 'auto' : 'none'}>
         <View style={styles.slide}>
           {!displayUrl && <ActivityIndicator color="#fff" />}
           {displayUrl && file.kind === 'image' && (
@@ -449,24 +549,7 @@ function PreviewSlide({
             </ThemedView>
           )}
         </View>
-
-        {/* Metadata panel — image slides only, bottom-anchored */}
-        {file.kind === 'image' && (
-          <Animated.View
-            style={[
-              styles.panelContainer,
-              { height: panelHeight },
-              panelStyle,
-            ]}
-            pointerEvents={panelOpen ? 'auto' : 'none'}>
-            <MetadataPanel
-              fileKey={file.key}
-              entry={headEntry}
-              bottomInset={safeBottomInset}
-            />
-          </Animated.View>
-        )}
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 }
@@ -499,7 +582,10 @@ function VideoSlide({ uri, isActive, bottomInset }: { uri: string; isActive: boo
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
+    backgroundColor: '#000',
+  },
+  contentArea: {
+    flex: 1,
   },
   header: {
     position: 'absolute',
@@ -513,20 +599,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     gap: Spacing.md,
     zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  filename: { fontWeight: '600', fontSize: 15 },
-  counter: { fontSize: 12, opacity: 0.7, marginTop: 2 },
   headerIconButton: {
     width: 38,
     height: 38,
-    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerChipMuted: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   slide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
@@ -537,12 +615,42 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     alignItems: 'center',
   },
-  panelContainer: {
+  panelOuter: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    // Panel starts off-screen below its container; translateY animates it up.
-    transform: [{ translateY: 0 }],
+    bottom: 0,
+  },
+  menuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
+  menu: {
+    position: 'absolute',
+    right: Spacing.md,
+    minWidth: 180,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.xs,
+    zIndex: 21,
+    ...Shadow.cardElevated,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    gap: Spacing.md,
+  },
+  menuLabel: {
+    flex: 1,
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.sm,
   },
 });
