@@ -7,7 +7,8 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const TAB_BAR_BASE_HEIGHT = 56;
+const TAB_BAR_BASE_HEIGHT = 52;
+const TAB_ICON_SIZE = 24;
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -24,14 +25,14 @@ export default function TabLayout() {
           height: TAB_BAR_BASE_HEIGHT + insets.bottom,
           paddingBottom: insets.bottom,
         },
-        tabBarItemStyle: { paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
+        tabBarItemStyle: { paddingTop: Spacing.xs, paddingBottom: 0 },
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Dashboard',
           headerShown: false,
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="house" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -39,7 +40,7 @@ export default function TabLayout() {
         options={{
           title: 'Gallery',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="photo.on.rectangle" color={color} />
+            <IconSymbol size={TAB_ICON_SIZE} name="photo.on.rectangle" color={color} />
           ),
         }}
       />
@@ -47,21 +48,21 @@ export default function TabLayout() {
         name="backup"
         options={{
           title: 'Backup',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="icloud" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="icloud" color={color} />,
         }}
       />
       <Tabs.Screen
         name="assistant"
         options={{
           title: 'Assistant',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="sparkles" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="sparkles" color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="gearshape" color={color} />,
         }}
       />
     </Tabs>
