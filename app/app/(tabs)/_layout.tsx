@@ -38,7 +38,7 @@ export default function TabLayout() {
         name="backup"
         options={{
           title: 'Backup',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="icloud.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="icloud" color={color} />,
         }}
       />
       <Tabs.Screen

@@ -23,6 +23,7 @@ const MAPPING = {
   'photo.on.rectangle': 'photo-library',
   'folder': 'folder',
   'icloud.fill': 'cloud',
+  'icloud': 'cloud-queue',
   'gearshape': 'settings',
   'list.bullet': 'view-list',
   'square.grid.2x2': 'view-module',
