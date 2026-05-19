@@ -32,7 +32,7 @@
     "@aws-sdk/client-cloudformation": "^3.700.0",
     "@aws-sdk/client-lambda": "^3.700.0",
     "@types/aws-lambda": "^8.10.145",
-    "@types/node": "^20.14.0",
+    "@types/node": "^24.0.0",
     "@types/qrcode-terminal": "^0.12.2",
     "esbuild": "^0.28.0",
     "qrcode-terminal": "^0.12.0",
@@ -40,6 +40,6 @@
     "typescript": "^5.6.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   }
 }

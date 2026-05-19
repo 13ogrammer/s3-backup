@@ -39,7 +39,7 @@ Conditions:
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Timeout: 29
     MemorySize: 1024
     Architectures: [arm64]
