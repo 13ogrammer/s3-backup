@@ -1,5 +1,7 @@
-import { Tabs } from 'expo-router';
+import Constants from 'expo-constants';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
+import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -9,18 +11,24 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const TAB_BAR_CONTENT_HEIGHT = 48;
 const TAB_ICON_SIZE = 22;
+const APP_NAME = Constants.expoConfig?.name ?? 'S3 Backup';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const bottomPadding = Math.max(insets.bottom, Spacing.md);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.tint,
         headerShown: true,
+        headerStyle: { backgroundColor: colors.background },
+        headerTintColor: colors.text,
+        headerShadowVisible: false,
         tabBarButton: HapticTab,
         tabBarLabelStyle: { fontSize: 10, marginTop: -Spacing.xs },
         tabBarIconStyle: { marginTop: 0 },
@@ -33,7 +41,19 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          headerShown: false,
+          headerTitle: APP_NAME,
+          headerTitleAlign: 'left',
+          headerTitleStyle: { fontWeight: '700', fontSize: 22 },
+          headerLeftContainerStyle: { paddingLeft: Spacing.lg },
+          headerRightContainerStyle: { paddingRight: Spacing.lg },
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push('/settings')}
+              hitSlop={8}
+              accessibilityLabel="Settings">
+              <IconSymbol size={22} name="gearshape" color={colors.icon} />
+            </Pressable>
+          ),
           tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="house" color={color} />,
         }}
       />
@@ -64,7 +84,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="gearshape" color={color} />,
+          href: null,
         }}
       />
     </Tabs>

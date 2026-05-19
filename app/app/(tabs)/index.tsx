@@ -1,4 +1,3 @@
-import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -9,11 +8,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, type StorageStats } from '@/lib/api';
@@ -22,13 +19,10 @@ import { formatBytes, detectMediaType } from '@/lib/format';
 import { loadPendingUploads } from '@/lib/uploadState';
 import { useUploadSessionActive } from '@/lib/uploadSession';
 
-const APP_NAME = Constants.expoConfig?.name ?? 'S3 Backup';
-
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   const sessionActive = useUploadSessionActive();
   const [syncItemCount, setSyncItemCount] = useState(0);
@@ -113,7 +107,7 @@ export default function DashboardScreen() {
     <>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Spacing.lg }]}
+        contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -121,11 +115,6 @@ export default function DashboardScreen() {
             tintColor={colors.tint}
           />
         }>
-
-        {/* App name header */}
-        <ThemedText style={[Type.title, styles.appName, { color: colors.text }]}>
-          {APP_NAME}
-        </ThemedText>
 
         {/* Sync card — only when there's something to act on */}
         {showSyncCard && (
@@ -416,9 +405,6 @@ function LargeFileRow({ item, colors, onPress }: LargeFileRowProps) {
 
 const styles = StyleSheet.create({
   scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxl },
-  appName: {
-    marginBottom: Spacing.xs,
-  },
   syncCard: {
     borderRadius: Radius.lg,
     borderWidth: 1,
