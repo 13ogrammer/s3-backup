@@ -1,5 +1,5 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { ActionSheet } from '@/components/action-sheet';
 import { FolderThumb } from '@/components/FolderThumb';
 import { FolderPicker } from '@/components/folder-picker';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
@@ -95,6 +96,10 @@ export default function BrowseScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { showAlert } = useAlert();
+  const navigation = useNavigation();
+  const router = useRouter();
+
+  const [overflowVisible, setOverflowVisible] = useState(false);
 
   const [path, setPath] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -110,6 +115,20 @@ export default function BrowseScreen() {
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => setOverflowVisible(true)}
+          style={{ paddingRight: Spacing.md }}
+          hitSlop={8}
+          accessibilityLabel="More options">
+          <IconSymbol name="ellipsis" size={22} color={colors.icon} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, colors.icon]);
   const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
   type Filter = 'all' | 'image' | 'video';
   const FILTER_LABELS: Record<Filter, string> = {
@@ -940,6 +959,15 @@ export default function BrowseScreen() {
           </Pressable>
         </View>
       )}
+
+      <ActionSheet
+        visible={overflowVisible}
+        onClose={() => setOverflowVisible(false)}
+        items={[
+          { label: 'Sync', onPress: () => router.push('/sync') },
+          { label: 'Find duplicates', onPress: () => router.push('/duplicates') },
+        ]}
+      />
     </ThemedView>
   );
 }
