@@ -287,14 +287,6 @@ export default function SettingsScreen() {
             <View style={[styles.navDivider, { backgroundColor: colors.divider }]} />
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push('/storage')}
-              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
-              <ThemedText style={[Type.body, { color: colors.text }]}>Storage</ThemedText>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Pressable>
-            <View style={[styles.navDivider, { backgroundColor: colors.divider }]} />
-            <Pressable
-              accessibilityRole="button"
               onPress={() => router.push('/about')}
               style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.7 : 1 }]}>
               <ThemedText style={[Type.body, { color: colors.text }]}>About</ThemedText>
