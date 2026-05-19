@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -27,6 +28,7 @@ export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const sessionActive = useUploadSessionActive();
   const [syncItemCount, setSyncItemCount] = useState(0);
@@ -111,7 +113,7 @@ export default function DashboardScreen() {
     <>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Spacing.lg }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
