@@ -579,7 +579,14 @@ export default function GalleryScreen() {
           const info = await MediaLibrary.getAssetInfoAsync(id);
           // `fileSize` exists at runtime on both platforms but is absent from
           // the published TypeScript types — cast to reach it safely.
-          const size = (info as AssetInfo & { fileSize?: number }).fileSize;
+          let size: number | undefined = (info as AssetInfo & { fileSize?: number }).fileSize;
+          // Android's MediaLibrary often omits fileSize; fall back to a
+          // filesystem stat on the local URI so the selection bar shows bytes.
+          if (size == null && info.localUri) {
+            const stat = await getInfoAsync(info.localUri);
+            if (stat.exists && typeof stat.size === 'number') size = stat.size;
+          }
+          if (cancelled) return;
           cache.set(id, size ?? 0);
         } catch {
           cache.set(id, 0);
