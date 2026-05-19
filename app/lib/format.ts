@@ -39,3 +39,46 @@ export function splitPathSegments(prefix: string): string[] {
   if (!prefix) return [];
   return prefix.replace(/\/+$/, '').split('/').filter(Boolean);
 }
+
+/** Format decimal-degree lat/lng pair for display. e.g. "37.774929°N, 122.419416°W" */
+export function formatGps(lat: string, lng: string): string {
+  const latN = parseFloat(lat);
+  const lngN = parseFloat(lng);
+  if (!Number.isFinite(latN) || !Number.isFinite(lngN)) return `${lat}, ${lng}`;
+  const latDir = latN >= 0 ? 'N' : 'S';
+  const lngDir = lngN >= 0 ? 'E' : 'W';
+  return `${Math.abs(latN).toFixed(6)}°${latDir}, ${Math.abs(lngN).toFixed(6)}°${lngDir}`;
+}
+
+/** Format an ISO 8601 date-time string into a locale-friendly short form. */
+export function formatDateTaken(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/**
+ * Format a stored aperture string. S3B-34 stores the raw rational as a decimal
+ * string (e.g. "1.8"). Renders as "ƒ/1.8".
+ */
+export function formatAperture(s: string): string {
+  return `ƒ/${s}`;
+}
+
+/**
+ * Format a stored shutter-speed string. S3B-34 stores it as a decimal seconds
+ * value (e.g. "0.001"). Renders as a fraction when < 1s (e.g. "1/1000 s"),
+ * otherwise as-is with unit.
+ */
+export function formatShutter(s: string): string {
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n <= 0) return s;
+  if (n < 1) {
+    const denom = Math.round(1 / n);
+    return `1/${denom} s`;
+  }
+  return `${n} s`;
+}

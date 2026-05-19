@@ -76,6 +76,12 @@ export type FolderPreviewResponse = {
   hasContent: boolean;
 };
 
+export type HeadResponse = {
+  sizeBytes: number;
+  lastModified: string; // ISO 8601
+  metadata?: MetadataBag;
+};
+
 export type StorageStats = {
   totalBytes: number;
   totalCount: number;
@@ -163,4 +169,10 @@ export const api = {
     call<FolderPreviewResponse>('/folder-preview', { prefix }),
   stats: (params: { refresh?: boolean } = {}) =>
     call<StorageStats>('/stats', params),
+  head: (key: string): Promise<HeadResponse> => {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new ApiError(0, 'timeout')), 5000),
+    );
+    return Promise.race([call<HeadResponse>('/head', { key }), timeout]);
+  },
 };
