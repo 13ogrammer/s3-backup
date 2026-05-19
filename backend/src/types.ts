@@ -99,6 +99,13 @@ export type FolderPreviewResponse = {
   hasContent: boolean;
 };
 
+export type HeadRequest = { key: string };
+export type HeadResponse = {
+  sizeBytes: number;
+  lastModified: string; // ISO 8601
+  metadata?: MetadataBag;
+};
+
 export type StorageStatsRequest = { refresh?: boolean };
 
 export type StorageStats = {

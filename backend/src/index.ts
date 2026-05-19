@@ -20,6 +20,7 @@ import { restore } from './handlers/restore.js';
 import { getDerivedUrl } from './handlers/getDerivedUrl.js';
 import { folderPreview } from './handlers/folderPreview.js';
 import { stats } from './handlers/stats.js';
+import { head } from './handlers/head.js';
 
 export type RequestContext = {
   requestId: string;
@@ -44,6 +45,7 @@ const routes: Record<string, Route> = {
   'POST /multipart/complete': completeMultipart,
   'POST /multipart/abort': abortMultipart,
   'POST /stats': stats,
+  'POST /head': head,
 };
 
 export const handler = async (
