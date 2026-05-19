@@ -23,16 +23,23 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MetadataPanel, type HeadEntry } from '@/components/metadata-panel';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ZoomableImage } from '@/components/zoomable-image';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, type GetDerivedUrlResponse } from '@/lib/api';
+import { api, type GetDerivedUrlResponse, type HeadResponse } from '@/lib/api';
 import { basename } from '@/lib/format';
 
 export type PreviewFile = {
@@ -46,6 +53,11 @@ type Props = {
   initialIndex: number | null;
   onClose: () => void;
 };
+
+// The panel occupies roughly 60% of the slide height when open.
+const PANEL_OPEN_FRACTION = 0.60;
+// Swipe threshold to trigger open/close (px).
+const SWIPE_THRESHOLD = 50;
 
 export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -63,6 +75,9 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const [isZoomed, setIsZoomed] = useState(false);
   const flatListRef = useRef<FlatList<PreviewFile> | null>(null);
 
+  // Session-scoped cache for /head responses. Cleared alongside urls on reopen.
+  const [headCache, setHeadCache] = useState<Map<string, HeadEntry>>(new Map());
+
   const current = visible && index >= 0 && index < files.length ? files[index] : null;
   const filename = current ? basename(current.key) : '';
   const currentEntry = current ? urls.get(current.key) : undefined;
@@ -78,8 +93,9 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   useEffect(() => {
     if (visible && initialIndex != null) {
       setIndex(initialIndex);
-      // Reset URL cache when reopening for a different list/index.
+      // Reset URL cache and head cache when reopening for a different list/index.
       setUrls(new Map<string, { previewUrl?: string; originalUrl?: string }>());
+      setHeadCache(new Map<string, HeadEntry>());
       setIsZoomed(false);
     }
   }, [visible, initialIndex]);
@@ -160,6 +176,48 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
     };
   }, [visible, index, files, urls]);
 
+  // Lazy-fetch /head for the active image slide. One fetch per key per session.
+  useEffect(() => {
+    if (!visible || !current || current.kind !== 'image') return;
+    const key = current.key;
+    if (headCache.has(key)) return;
+
+    // Mark loading immediately so the panel shows a spinner on first open.
+    setHeadCache((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.set(key, { status: 'loading' });
+      return next;
+    });
+
+    let cancelled = false;
+    api
+      .head(key)
+      .then((data: HeadResponse) => {
+        if (cancelled) return;
+        setHeadCache((prev) => {
+          const next = new Map(prev);
+          next.set(key, { status: 'ok', data });
+          return next;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHeadCache((prev) => {
+          const next = new Map(prev);
+          next.set(key, { status: 'unavailable' });
+          return next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // headCache intentionally omitted — we want to re-run only when key changes,
+    // not whenever the cache map reference changes after a set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, current?.key]);
+
   async function onDownload() {
     if (!current || !currentDownloadUrl) return;
     const currentUrl = currentDownloadUrl;
@@ -230,10 +288,13 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                   displayUrl={displayUrl}
                   originalUrl={entry?.originalUrl}
                   isActive={i === index}
+                  isZoomed={i === index ? isZoomed : false}
                   width={pageWidth}
                   height={windowHeight}
                   bottomInset={Platform.OS === 'android' ? insets.bottom : 0}
+                  safeBottomInset={insets.bottom}
                   onZoomChange={i === index ? setIsZoomed : undefined}
+                  headEntry={headCache.get(item.key)}
                 />
               );
             }}
@@ -298,35 +359,115 @@ type SlideProps = {
   /** Original signed URL — used for video player and (externally) for download. */
   originalUrl: string | undefined;
   isActive: boolean;
+  isZoomed: boolean;
   width: number;
   height: number;
+  /** Android bottom inset for the video player bar. */
   bottomInset: number;
+  /** Safe-area bottom inset passed into the metadata panel. */
+  safeBottomInset: number;
   onZoomChange?: (zoomed: boolean) => void;
+  headEntry: HeadEntry | undefined;
 };
 
-function PreviewSlide({ file, displayUrl, originalUrl, isActive, width, height, bottomInset, onZoomChange }: SlideProps) {
+function PreviewSlide({
+  file,
+  displayUrl,
+  originalUrl,
+  isActive,
+  isZoomed,
+  width,
+  height,
+  bottomInset,
+  safeBottomInset,
+  onZoomChange,
+  headEntry,
+}: SlideProps) {
   const filename = basename(file.key);
+  const panelHeight = height * PANEL_OPEN_FRACTION;
+
+  // translateY: 0 = hidden (fully off-screen at bottom), -panelHeight = fully shown.
+  const translateY = useSharedValue(0);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  // Reset panel to hidden whenever this slide loses focus.
+  useEffect(() => {
+    if (!isActive) {
+      translateY.value = withTiming(0, { duration: 250 });
+      runOnJS(setPanelOpen)(false);
+    }
+  }, [isActive, translateY]);
+
+  function openPanel() {
+    translateY.value = withTiming(-panelHeight, { duration: 300 });
+    setPanelOpen(true);
+  }
+
+  function closePanel() {
+    translateY.value = withTiming(0, { duration: 250 });
+    setPanelOpen(false);
+  }
+
+  // Vertical pan gesture: enabled only on active, non-zoomed image slides.
+  const panGesture = Gesture.Pan()
+    .enabled(isActive && !isZoomed && file.kind === 'image')
+    // Only activate on clearly vertical drags, so horizontal paging is unaffected.
+    .activeOffsetY([-15, 15])
+    .failOffsetX([-20, 20])
+    .onEnd((e) => {
+      'worklet';
+      if (e.translationY < -SWIPE_THRESHOLD) {
+        // Swipe up — open panel.
+        runOnJS(openPanel)();
+      } else if (e.translationY > SWIPE_THRESHOLD) {
+        // Swipe down — close panel.
+        runOnJS(closePanel)();
+      }
+    });
+
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
 
   return (
-    <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
-      <View style={styles.slide}>
-        {!displayUrl && <ActivityIndicator color="#fff" />}
-        {displayUrl && file.kind === 'image' && (
-          <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
-        )}
-        {file.kind === 'video' && originalUrl && (
-          <VideoSlide uri={originalUrl} isActive={isActive} bottomInset={bottomInset} />
-        )}
-        {displayUrl && file.kind === 'other' && (
-          <ThemedView style={styles.noPreview}>
-            <ThemedText type="defaultSemiBold">No preview available</ThemedText>
-            <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
-              {filename} can't be previewed in the app. Use Download to save it.
-            </ThemedText>
-          </ThemedView>
+    <GestureDetector gesture={panGesture}>
+      <View style={{ width, height }} pointerEvents={isActive ? 'auto' : 'none'}>
+        <View style={styles.slide}>
+          {!displayUrl && <ActivityIndicator color="#fff" />}
+          {displayUrl && file.kind === 'image' && (
+            <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
+          )}
+          {file.kind === 'video' && originalUrl && (
+            <VideoSlide uri={originalUrl} isActive={isActive} bottomInset={bottomInset} />
+          )}
+          {displayUrl && file.kind === 'other' && (
+            <ThemedView style={styles.noPreview}>
+              <ThemedText type="defaultSemiBold">No preview available</ThemedText>
+              <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
+                {filename} can't be previewed in the app. Use Download to save it.
+              </ThemedText>
+            </ThemedView>
+          )}
+        </View>
+
+        {/* Metadata panel — image slides only, bottom-anchored */}
+        {file.kind === 'image' && (
+          <Animated.View
+            style={[
+              styles.panelContainer,
+              { height: panelHeight },
+              panelStyle,
+            ]}
+            pointerEvents={panelOpen ? 'auto' : 'none'}>
+            <MetadataPanel
+              fileKey={file.key}
+              entry={headEntry}
+              bottomInset={safeBottomInset}
+            />
+          </Animated.View>
         )}
       </View>
-    </View>
+    </GestureDetector>
   );
 }
 
@@ -395,5 +536,13 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     gap: Spacing.sm,
     alignItems: 'center',
+  },
+  panelContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    // Panel starts off-screen below its container; translateY animates it up.
+    transform: [{ translateY: 0 }],
   },
 });
