@@ -404,7 +404,12 @@ function LargeFileRow({ item, colors, onPress }: LargeFileRowProps) {
 // ---- Styles ----------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxl },
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xxl,
+    gap: Spacing.md,
+  },
   syncCard: {
     borderRadius: Radius.lg,
     borderWidth: 1,
