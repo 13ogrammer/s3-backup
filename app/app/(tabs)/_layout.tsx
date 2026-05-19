@@ -7,12 +7,14 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const TAB_BAR_BASE_HEIGHT = 52;
-const TAB_ICON_SIZE = 24;
+const TAB_BAR_CONTENT_HEIGHT = 48;
+const TAB_ICON_SIZE = 22;
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
+
+  const bottomPadding = Math.max(insets.bottom, Spacing.md);
 
   return (
     <Tabs
@@ -20,12 +22,12 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: true,
         tabBarButton: HapticTab,
-        tabBarLabelStyle: { fontSize: 10 },
+        tabBarLabelStyle: { fontSize: 10, marginTop: -Spacing.xs },
+        tabBarIconStyle: { marginTop: 0 },
         tabBarStyle: {
-          height: TAB_BAR_BASE_HEIGHT + insets.bottom,
-          paddingBottom: insets.bottom,
+          height: TAB_BAR_CONTENT_HEIGHT + bottomPadding,
+          paddingBottom: bottomPadding,
         },
-        tabBarItemStyle: { paddingTop: Spacing.xs, paddingBottom: 0 },
       }}>
       <Tabs.Screen
         name="index"
