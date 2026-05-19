@@ -128,7 +128,7 @@ export default function SettingsScreen() {
       const messages: Record<typeof result.reason, string> = {
         'invalid-json': 'The scanned code did not contain valid JSON. Make sure you scanned the QR code printed by npm run qr.',
         'missing-fields': 'The scanned QR code is missing the apiUrl or bootstrapToken field.',
-        'bad-url': 'The API URL in the QR code must start with https://. Re-generate the QR with npm run qr.',
+        'bad-url': 'The API URL in the QR code is not allowed. Must be https:// (production) or http:// to a local-network address (dev).',
       };
       showAlert('Invalid QR code', messages[result.reason]);
       return;

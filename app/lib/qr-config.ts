@@ -36,9 +36,35 @@ export function parseQrPayload(raw: string): ParseResult {
 
   const { apiUrl, bootstrapToken } = parsed as QrPayload;
 
-  if (!apiUrl.startsWith('https://')) {
+  if (!isAllowedApiUrl(apiUrl)) {
     return { ok: false, reason: 'bad-url' };
   }
 
   return { ok: true, config: { backendUrl: apiUrl, bootstrapToken } };
+}
+
+// https://anywhere, or http://<private-lan-or-loopback>. http:// to public
+// hosts is rejected because the bootstrap token must not travel in clear text
+// across the open internet.
+function isAllowedApiUrl(apiUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  if (url.protocol === 'http:' && isPrivateHost(url.hostname)) return true;
+  return false;
+}
+
+function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === 'localhost') return true;
+  if (/^127\./.test(h)) return true;
+  if (/^10\./.test(h)) return true;
+  if (/^192\.168\./.test(h)) return true;
+  const m = h.match(/^172\.(\d+)\./);
+  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
+  return false;
 }
