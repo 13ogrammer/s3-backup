@@ -10,6 +10,8 @@ export type ActionSheetItem = {
   label: string;
   onPress: () => void;
   destructive?: boolean;
+  /** Optional trailing text on the right (e.g. current selection hint). */
+  trailing?: string;
 };
 
 export type ActionSheetProps = {
@@ -59,13 +61,22 @@ export function ActionSheet({ visible, onClose, items }: ActionSheetProps) {
                     item.onPress();
                   }}
                   style={({ pressed }) => [styles.item, { opacity: pressed ? 0.6 : 1 }]}>
-                  <ThemedText
-                    style={[
-                      Type.body,
-                      { color: item.destructive ? colors.danger : colors.text },
-                    ]}>
-                    {item.label}
-                  </ThemedText>
+                  <View style={styles.itemRow}>
+                    <ThemedText
+                      style={[
+                        Type.body,
+                        styles.itemLabel,
+                        { color: item.destructive ? colors.danger : colors.text },
+                      ]}>
+                      {item.label}
+                    </ThemedText>
+                    {item.trailing && (
+                      <ThemedText
+                        style={[Type.body, { color: colors.muted, marginLeft: Spacing.md }]}>
+                        {item.trailing}
+                      </ThemedText>
+                    )}
+                  </View>
                 </Pressable>
               </View>
             ))}
@@ -93,6 +104,13 @@ const styles = StyleSheet.create({
   },
   item: {
     paddingVertical: Spacing.md,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  itemLabel: {
+    flex: 1,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

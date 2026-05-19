@@ -9,15 +9,16 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 
 import { ActionSheet } from '@/components/action-sheet';
+import { BottomSheet } from '@/components/bottom-sheet';
 import { FolderThumb } from '@/components/FolderThumb';
 import { FolderPicker } from '@/components/folder-picker';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { RenameModal } from '@/components/rename-modal';
+import { SearchModal } from '@/components/search-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
@@ -100,6 +101,9 @@ export default function BrowseScreen() {
   const router = useRouter();
 
   const [overflowVisible, setOverflowVisible] = useState(false);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [sortSheetVisible, setSortSheetVisible] = useState(false);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
 
   const [path, setPath] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -116,19 +120,6 @@ export default function BrowseScreen() {
   const [renameVisible, setRenameVisible] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable
-          onPress={() => setOverflowVisible(true)}
-          style={{ paddingRight: Spacing.md }}
-          hitSlop={8}
-          accessibilityLabel="More options">
-          <IconSymbol name="ellipsis" size={22} color={colors.icon} />
-        </Pressable>
-      ),
-    });
-  }, [navigation, colors.icon]);
   const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
   type Filter = 'all' | 'image' | 'video';
   const FILTER_LABELS: Record<Filter, string> = {
@@ -142,6 +133,37 @@ export default function BrowseScreen() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => setViewMode((m) => (m === 'list' ? 'grid' : 'list'))}
+            hitSlop={8}
+            accessibilityLabel={`Switch to ${viewMode === 'list' ? 'grid' : 'list'} view`}>
+            <IconSymbol
+              name={viewMode === 'list' ? 'square.grid.2x2' : 'list.bullet'}
+              size={22}
+              color={colors.icon}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => setSearchModalVisible(true)}
+            hitSlop={8}
+            accessibilityLabel="Search">
+            <IconSymbol name="magnifyingglass" size={22} color={colors.icon} />
+          </Pressable>
+          <Pressable
+            onPress={() => setOverflowVisible(true)}
+            hitSlop={8}
+            accessibilityLabel="More options">
+            <IconSymbol name="ellipsis" size={22} color={colors.icon} />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation, colors.icon, viewMode]);
 
   // Lazy-fetched thumbnail URLs for image rows that the server returned
   // without a previewUrl (i.e. the thumb hasn't been backfilled yet).
@@ -169,18 +191,6 @@ export default function BrowseScreen() {
       return true;
     })
     .sort((a, b) => compareRows(a, b, sortField, sortDir));
-
-  function cycleFilter() {
-    setFilter((f) => (f === 'all' ? 'image' : f === 'image' ? 'video' : 'all'));
-  }
-
-  function cycleSortField() {
-    setSortField((f) => (f === 'name' ? 'date' : f === 'date' ? 'size' : 'name'));
-  }
-
-  function toggleSortDir() {
-    setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-  }
 
   function selectAll() {
     const files = new Set<string>();
@@ -698,90 +708,51 @@ export default function BrowseScreen() {
             muted={colors.muted}
             background={colors.surface}
           />
-          {rows.length > 0 && (
-            <View
-              style={[
-                styles.searchBar,
-                { backgroundColor: colors.surfaceMuted },
-              ]}>
-              <IconSymbol name="magnifyingglass" size={16} color={colors.muted} />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search in this folder"
-                placeholderTextColor={colors.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                style={[styles.searchInput, { color: colors.text }]}
-              />
-              {searchQuery.length > 0 && (
+          {rows.length > 0 && (filter !== 'all' || searchQuery !== '') && (
+            <View style={[styles.toolbar, { backgroundColor: colors.background }]}>
+              {filter !== 'all' && (
                 <Pressable
-                  onPress={() => setSearchQuery('')}
-                  hitSlop={8}
-                  accessibilityLabel="Clear search">
-                  <IconSymbol name="xmark.circle.fill" size={18} color={colors.muted} />
+                  onPress={() => setFilterSheetVisible(true)}
+                  hitSlop={6}
+                  accessibilityLabel={`Filter: ${FILTER_LABELS[filter]} (tap to change)`}
+                  style={({ pressed }) => [
+                    styles.searchChip,
+                    { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 },
+                  ]}>
+                  <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
+                    {FILTER_LABELS[filter]}
+                  </ThemedText>
+                  <Pressable
+                    onPress={() => setFilter('all')}
+                    hitSlop={8}
+                    accessibilityLabel="Clear filter">
+                    <IconSymbol name="xmark.circle.fill" size={16} color={colors.tint} />
+                  </Pressable>
                 </Pressable>
               )}
-            </View>
-          )}
-          {rows.length > 0 && (
-            <View style={[styles.toolbar, { backgroundColor: colors.background }]}>
-              <Pressable
-                onPress={cycleFilter}
-                hitSlop={6}
-                style={({ pressed }) => [
-                  styles.sortChip,
-                  {
-                    backgroundColor:
-                      filter === 'all' ? colors.surfaceMuted : colors.accentSoft,
-                    opacity: pressed ? 0.6 : 1,
-                  },
-                ]}
-                accessibilityLabel={`Filter: ${FILTER_LABELS[filter]} (tap to cycle)`}>
-                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
-                  {FILTER_LABELS[filter]}
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={cycleSortField}
-                hitSlop={6}
-                style={({ pressed }) => [
-                  styles.sortChip,
-                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-                ]}
-                accessibilityLabel={`Sort by ${SORT_LABELS[sortField]} (tap to cycle)`}>
-                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
-                  {SORT_LABELS[sortField]}
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={toggleSortDir}
-                hitSlop={6}
-                style={({ pressed }) => [
-                  styles.sortChip,
-                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-                ]}
-                accessibilityLabel={`Sort direction: ${sortDir === 'asc' ? 'ascending' : 'descending'}`}>
-                <ThemedText style={[styles.sortChipText, { color: colors.tint }]}>
-                  {sortDir === 'asc' ? '↑' : '↓'}
-                </ThemedText>
-              </Pressable>
-              <View style={{ flex: 1 }} />
-              <Pressable
-                onPress={() => setViewMode((m) => (m === 'list' ? 'grid' : 'list'))}
-                hitSlop={6}
-                accessibilityLabel={`Switch to ${viewMode === 'list' ? 'grid' : 'list'} view`}
-                style={({ pressed }) => [
-                  styles.viewToggle,
-                  { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-                ]}>
-                <IconSymbol
-                  name={viewMode === 'list' ? 'square.grid.2x2' : 'list.bullet'}
-                  size={20}
-                  color={colors.tint}
-                />
-              </Pressable>
+              {searchQuery !== '' && (
+                <Pressable
+                  onPress={() => setSearchModalVisible(true)}
+                  hitSlop={6}
+                  accessibilityLabel={`Search: "${searchQuery}" (tap to edit)`}
+                  style={({ pressed }) => [
+                    styles.searchChip,
+                    { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 },
+                  ]}>
+                  <IconSymbol name="magnifyingglass" size={14} color={colors.tint} />
+                  <ThemedText
+                    style={[styles.sortChipText, { color: colors.tint }]}
+                    numberOfLines={1}>
+                    {searchQuery}
+                  </ThemedText>
+                  <Pressable
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={8}
+                    accessibilityLabel="Clear search">
+                    <IconSymbol name="xmark.circle.fill" size={16} color={colors.tint} />
+                  </Pressable>
+                </Pressable>
+              )}
             </View>
           )}
         </>
@@ -964,9 +935,56 @@ export default function BrowseScreen() {
         visible={overflowVisible}
         onClose={() => setOverflowVisible(false)}
         items={[
+          {
+            label: 'Sort',
+            trailing: `${SORT_LABELS[sortField]} ${sortDir === 'asc' ? '↑' : '↓'}`,
+            onPress: () => setSortSheetVisible(true),
+          },
+          {
+            label: 'Filter',
+            trailing: FILTER_LABELS[filter],
+            onPress: () => setFilterSheetVisible(true),
+          },
           { label: 'Sync', onPress: () => router.push('/sync') },
           { label: 'Find duplicates', onPress: () => router.push('/duplicates') },
         ]}
+      />
+
+      <BottomSheet
+        visible={sortSheetVisible}
+        onClose={() => setSortSheetVisible(false)}
+        title="Sort by"
+        items={(['name', 'date', 'size'] as SortField[]).flatMap((f) =>
+          (['asc', 'desc'] as SortDir[]).map((d) => ({
+            label: `${SORT_LABELS[f]} (${d === 'asc' ? 'ascending' : 'descending'})`,
+            active: sortField === f && sortDir === d,
+            onPress: () => {
+              setSortField(f);
+              setSortDir(d);
+            },
+          })),
+        )}
+      />
+
+      <BottomSheet
+        visible={filterSheetVisible}
+        onClose={() => setFilterSheetVisible(false)}
+        title="Filter"
+        items={(['all', 'image', 'video'] as Filter[]).map((value) => ({
+          label: FILTER_LABELS[value],
+          active: filter === value,
+          onPress: () => setFilter(value),
+        }))}
+      />
+
+      <SearchModal
+        visible={searchModalVisible}
+        initialValue={searchQuery}
+        onCancel={() => setSearchModalVisible(false)}
+        onSubmit={(q) => {
+          setSearchQuery(q);
+          setSearchModalVisible(false);
+        }}
       />
     </ThemedView>
   );
@@ -1301,27 +1319,20 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   sortChipText: { fontSize: 13, fontWeight: '600' },
-  searchBar: {
+  searchChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
+    gap: Spacing.xs,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: Radius.md,
+    maxWidth: 220,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 2,
-  },
-  viewToggle: {
-    width: 36,
-    height: 32,
-    borderRadius: Radius.md,
+  headerActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: Spacing.lg,
+    paddingRight: Spacing.md,
   },
   gridTile: {
     width: GRID_TILE,
