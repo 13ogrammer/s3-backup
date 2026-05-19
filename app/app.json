@@ -70,7 +70,14 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "@sentry/react-native"
+      [
+        "@sentry/react-native",
+        {
+          "organization": "13ogrammer",
+          "project": "s3backup",
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
