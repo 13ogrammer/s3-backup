@@ -74,6 +74,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<JobsState>({ records: new Map(), activeJobIds: [] });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Returns true for statuses that should stop the polling loop.
   function isTerminal(status: JobRecord['status']): boolean {
     return (
       status === 'completed' ||
@@ -81,6 +82,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       status === 'cancelled' ||
       status === 'failed'
     );
+  }
+
+  // Returns true for statuses where the job should also be evicted from
+  // activeJobIds immediately. completed-with-errors is excluded: we keep
+  // polling stopped (isTerminal returns true) but leave the row visible in
+  // the strip until the user explicitly dismisses it.
+  function shouldEvictFromActive(status: JobRecord['status']): boolean {
+    return status === 'completed' || status === 'cancelled' || status === 'failed';
   }
 
   const activeJobs = state.activeJobIds
@@ -110,7 +119,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
           setState((prev) => {
             const records = new Map(prev.records);
             records.set(jobId, record);
-            const activeJobIds = isTerminal(record.status)
+            // Stop polling terminal jobs, but only evict from activeJobIds
+            // if the status is auto-dismissible. completed-with-errors stays
+            // in activeJobIds so the strip row remains visible until the
+            // user explicitly taps Dismiss.
+            const activeJobIds = shouldEvictFromActive(record.status)
               ? prev.activeJobIds.filter((id) => id !== jobId)
               : prev.activeJobIds;
             return { records, activeJobIds };
@@ -153,21 +166,35 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       stopPolling();
       return;
     }
+    // Only poll jobs that aren't yet in a terminal state. completed-with-errors
+    // jobs stay in activeJobIds for strip visibility but don't need more polls.
+    const pollable = state.activeJobIds.filter((id) => {
+      const r = state.records.get(id);
+      return !r || !isTerminal(r.status);
+    });
+    if (pollable.length === 0) {
+      stopPolling();
+      return;
+    }
     stopPolling();
     pollingRef.current = setInterval(() => {
-      pollOnce(state.activeJobIds);
+      pollOnce(pollable);
     }, POLL_INTERVAL_MS);
     return stopPolling;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.activeJobIds, pollOnce]);
+  }, [state.activeJobIds, state.records, pollOnce]);
 
   // Pause polling when app goes to background; resume on active.
   useEffect(() => {
     function handleAppState(nextState: AppStateStatus) {
       if (nextState === 'active') {
-        if (state.activeJobIds.length > 0 && !pollingRef.current) {
+        const pollable = state.activeJobIds.filter((id) => {
+          const r = state.records.get(id);
+          return !r || !isTerminal(r.status);
+        });
+        if (pollable.length > 0 && !pollingRef.current) {
           pollingRef.current = setInterval(() => {
-            pollOnce(state.activeJobIds);
+            pollOnce(pollable);
           }, POLL_INTERVAL_MS);
         }
       } else {
@@ -177,7 +204,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const sub = AppState.addEventListener('change', handleAppState);
     return () => sub.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.activeJobIds, pollOnce]);
+  }, [state.activeJobIds, state.records, pollOnce]);
 
   // On mount: restore persisted job ids and poll them immediately.
   useEffect(() => {
