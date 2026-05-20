@@ -49,6 +49,8 @@ const MAPPING = {
   'line.3.horizontal.decrease.circle.fill': 'filter-list',
   'sparkles': { mci: 'star-four-points-outline' },
   'ellipsis': 'more-vert',
+  'video.fill': { mci: 'video' },
+  'doc': { mci: 'file-outline' },
 } as IconMapping;
 
 /**

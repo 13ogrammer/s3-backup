@@ -1204,6 +1204,63 @@ type RowRenderProps = {
   folderPreview?: FolderPreviewState;
 };
 
+/**
+ * Shows recursive file counts beneath a folder's name in list view only.
+ * Loading state shows a muted ellipsis placeholder. Hides entirely when
+ * total===0 (empty folder) or when counts are not yet available.
+ * Zero-count type groups are omitted so the strip stays compact.
+ */
+function FolderCountStrip({
+  fp,
+  colors,
+}: {
+  fp: FolderPreviewState | undefined;
+  colors: (typeof Colors)['light'];
+}) {
+  if (fp?.status === 'loading' || fp === undefined) {
+    return (
+      <ThemedText style={[styles.rowMeta, { color: colors.muted }]}>···</ThemedText>
+    );
+  }
+  if (fp.status !== 'ready' || !fp.counts) return null;
+  const { counts } = fp;
+  if (counts.total === 0) return null;
+
+  const totalLabel = counts.truncated ? `${counts.total}+` : String(counts.total);
+
+  return (
+    <View style={styles.countStrip}>
+      <ThemedText style={[styles.countTotal, { color: colors.muted }]}>
+        {totalLabel}
+      </ThemedText>
+      {counts.images > 0 && (
+        <View style={styles.countGroup}>
+          <IconSymbol name="photo.on.rectangle" size={11} color={colors.muted} />
+          <ThemedText style={[styles.countGroupLabel, { color: colors.muted }]}>
+            {counts.images}
+          </ThemedText>
+        </View>
+      )}
+      {counts.videos > 0 && (
+        <View style={styles.countGroup}>
+          <IconSymbol name="video.fill" size={11} color={colors.muted} />
+          <ThemedText style={[styles.countGroupLabel, { color: colors.muted }]}>
+            {counts.videos}
+          </ThemedText>
+        </View>
+      )}
+      {counts.other > 0 && (
+        <View style={styles.countGroup}>
+          <IconSymbol name="doc" size={11} color={colors.muted} />
+          <ThemedText style={[styles.countGroupLabel, { color: colors.muted }]}>
+            {counts.other}
+          </ThemedText>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function renderListRow({
   item,
   selected,
@@ -1284,6 +1341,7 @@ function renderListRow({
             {formatBytes(item.size)} · {formatDate(item.lastModified)}
           </ThemedText>
         )}
+        {isFolder && <FolderCountStrip fp={fp} colors={colors} />}
       </View>
       {!selectionActive && isFolder && (
         <IconSymbol name="chevron.right" size={18} color={colors.icon} />
@@ -1421,6 +1479,24 @@ const styles = StyleSheet.create({
   checkboxMark: { fontWeight: '700', fontSize: 13 },
   rowLabel: { fontSize: 16, fontWeight: '500' },
   rowMeta: { fontSize: 12, opacity: 0.7, marginTop: 2 },
+  countStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  countTotal: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  countGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  countGroupLabel: {
+    fontSize: 11,
+  },
   thumb: {
     width: THUMB_SIZE,
     height: THUMB_SIZE,
