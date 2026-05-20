@@ -27,7 +27,7 @@ import { ModalCard } from '@/components/ui/modal-card';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
-import { loadBackedUpMap, recordBackedUp, type BackedUpMap } from '@/lib/backedUpState';
+import { loadBackedUpMap, recordBackedUp, removeBackedUp, type BackedUpMap } from '@/lib/backedUpState';
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
 import { formatBytes } from '@/lib/format';
 import { buildGallerySections, type GalleryRow, type GallerySection } from '@/lib/gallerySections';
@@ -271,6 +271,55 @@ export default function GalleryScreen() {
       return;
     }
     setPickerVisible(true);
+  }
+
+  async function doDeleteFromDevice(eligibleIds: string[]): Promise<void> {
+    const deletedSet = new Set(eligibleIds);
+    let success: boolean;
+    try {
+      success = await MediaLibrary.deleteAssetsAsync(eligibleIds);
+    } catch (err) {
+      showAlert('Could not delete', describeError(err));
+      return;
+    }
+    if (!success) {
+      showAlert('Could not delete', 'The system reported that deletion failed. No items were removed.');
+      return;
+    }
+    setAssets((prev) => prev.filter((a) => !deletedSet.has(a.id)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      eligibleIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    setBackedUpMap((prev) => {
+      const next = { ...prev };
+      eligibleIds.forEach((id) => delete next[id]);
+      return next;
+    });
+    await removeBackedUp(eligibleIds).catch((err) =>
+      console.warn('removeBackedUp failed after device delete', err),
+    );
+  }
+
+  function onTapDeleteFromDevice(): void {
+    const eligibleIds = eligibleForDeviceDelete(selectedIds, backedUpMap);
+    const n = eligibleIds.length;
+    if (n === 0) return;
+    const label = n === 1 ? '1 item' : `${n} items`;
+    showAlert(
+      `Delete ${label} from this device?`,
+      'These items are backed up to S3 and will be removed from this device\'s photo library. This cannot be undone — the originals will only exist in your bucket.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => doDeleteFromDevice(eligibleIds),
+        },
+      ],
+      { cancelable: true },
+    );
   }
 
   async function onPickFolder(prefix: string) {
@@ -843,6 +892,34 @@ export default function GalleryScreen() {
               <ThemedText style={{ color: colors.tint, fontSize: 13 }}>Clear</ThemedText>
             </Pressable>
           </View>
+          {(() => {
+            const eligible = eligibleForDeviceDelete(selectedIds, backedUpMap);
+            const eligibleCount = eligible.length;
+            const deleteDisabled = uploading || eligibleCount === 0;
+            const deleteLabel =
+              eligibleCount > 0 && eligibleCount < selectedCount
+                ? `Delete ${eligibleCount} from device`
+                : 'Delete from device';
+            return (
+              <Pressable
+                onPress={onTapDeleteFromDevice}
+                disabled={deleteDisabled}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  deleteDisabled
+                    ? { backgroundColor: colors.surfaceMuted, opacity: 0.4 }
+                    : { backgroundColor: colors.danger, opacity: pressed ? 0.7 : 1 },
+                ]}>
+                <ThemedText
+                  style={[
+                    styles.primaryButtonText,
+                    { color: deleteDisabled ? colors.danger : colors.onAccent },
+                  ]}>
+                  {deleteLabel}
+                </ThemedText>
+              </Pressable>
+            );
+          })()}
           <Pressable
             onPress={onTapUpload}
             style={({ pressed }) => [
@@ -915,6 +992,17 @@ export default function GalleryScreen() {
       </ModalCard>
     </ThemedView>
   );
+}
+
+function eligibleForDeviceDelete(
+  selectedIds: Set<string>,
+  backedUpMap: BackedUpMap,
+): string[] {
+  const ids: string[] = [];
+  for (const id of selectedIds) {
+    if (backedUpMap[id] != null) ids.push(id);
+  }
+  return ids;
 }
 
 function formatFilterLabel(filter: DateFilter): string {
