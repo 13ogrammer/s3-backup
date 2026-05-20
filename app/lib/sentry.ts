@@ -1,12 +1,24 @@
 import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 
 import { ApiError } from './api';
+
+// __DEV__ catches Metro / dev-client (local dev server). For installed
+// builds, Updates.channel reflects the EAS channel baked in at build
+// time ('development' | 'preview' | 'production'); null on Expo Go.
+function resolveEnvironment(): string {
+  if (__DEV__) return 'dev';
+  return Updates.channel ?? 'unknown';
+}
 
 export function initSentry(): void {
   const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
   if (!dsn) return;
   Sentry.init({
     dsn,
+    environment: resolveEnvironment(),
+    release: Constants.expoConfig?.version,
     enableAutoSessionTracking: true,
     tracesSampleRate: 0,
   });
