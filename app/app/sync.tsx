@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { getInfoAsync } from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -11,6 +12,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -50,6 +52,7 @@ export default function ActivityScreen() {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   // Map of remoteKey → file exists on device
   const [liveLocalUriStatus, setLiveLocalUriStatus] = useState<Map<string, boolean>>(new Map());
   // PendingUploads looked up by remoteKey
@@ -350,8 +353,28 @@ export default function ActivityScreen() {
                   busy={busy === item.remoteKey}
                   sessionActive={sessionActive}
                   colors={colors}
+                  expanded={expandedId === item.id}
+                  onToggleExpand={() =>
+                    setExpandedId((prev) => (prev === item.id ? null : item.id))
+                  }
                   onResume={() => onResumeUpload(item)}
                   onRemove={() => onRemoveUpload(item)}
+                  onCopyDetails={() => {
+                    const lines = [
+                      'Failure details',
+                      '---------------',
+                      'Type: upload',
+                      `Reason: ${item.reason ?? '(no reason)'}`,
+                      ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
+                      ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
+                      `Attempts: ${item.attempts}`,
+                      `Last attempt: ${new Date(item.lastAt).toISOString()}`,
+                      `Remote key: ${item.remoteKey}`,
+                    ];
+                    Clipboard.setStringAsync(lines.join('\n')).then(() => {
+                      showAlert('Copied', 'Failure details copied to clipboard.');
+                    }).catch(() => undefined);
+                  }}
                 />
               );
             }
@@ -361,8 +384,29 @@ export default function ActivityScreen() {
                 busy={busy === item.id}
                 sessionActive={sessionActive}
                 colors={colors}
+                expanded={expandedId === item.id}
+                onToggleExpand={() =>
+                  setExpandedId((prev) => (prev === item.id ? null : item.id))
+                }
                 onRetry={() => onRetryMove(item)}
                 onRemove={() => onRemoveEntry(item.id)}
+                onCopyDetails={() => {
+                  const lines = [
+                    'Failure details',
+                    '---------------',
+                    'Type: move',
+                    `Reason: ${item.reason ?? '(no reason)'}`,
+                    ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
+                    ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
+                    `Attempts: ${item.attempts}`,
+                    `Last attempt: ${new Date(item.lastAt).toISOString()}`,
+                    `From: ${item.from}`,
+                    `To: ${item.to}`,
+                  ];
+                  Clipboard.setStringAsync(lines.join('\n')).then(() => {
+                    showAlert('Copied', 'Failure details copied to clipboard.');
+                  }).catch(() => undefined);
+                }}
               />
             );
           }}
@@ -379,8 +423,11 @@ type UploadRowProps = {
   busy: boolean;
   sessionActive: boolean;
   colors: (typeof Colors)['light'];
+  expanded: boolean;
+  onToggleExpand: () => void;
   onResume: () => void;
   onRemove: () => void;
+  onCopyDetails: () => void;
 };
 
 function UploadRow({
@@ -390,8 +437,11 @@ function UploadRow({
   busy,
   sessionActive,
   colors,
+  expanded,
+  onToggleExpand,
   onResume,
   onRemove,
+  onCopyDetails,
 }: UploadRowProps) {
   const filename = entry.remoteKey.includes('/')
     ? entry.remoteKey.slice(entry.remoteKey.lastIndexOf('/') + 1)
@@ -413,16 +463,56 @@ function UploadRow({
             No resume state — re-upload from Gallery
           </ThemedText>
         ) : null}
-        {entry.reason != null && (
+        {!expanded && entry.reason != null && (
           <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={2}>
             {entry.reason}
           </ThemedText>
         )}
-        <ThemedText style={[Type.meta, { color: colors.muted }]}>
-          {entry.attempts} attempt{entry.attempts !== 1 ? 's' : ''}
-          {' · '}
-          {new Date(entry.lastAt).toLocaleString()}
-        </ThemedText>
+        {!expanded && (
+          <ThemedText style={[Type.meta, { color: colors.muted }]}>
+            {entry.attempts} attempt{entry.attempts !== 1 ? 's' : ''}
+            {' · '}
+            {new Date(entry.lastAt).toLocaleString()}
+          </ThemedText>
+        )}
+        {expanded && (
+          <View
+            style={[
+              styles.detailPanel,
+              { borderTopColor: colors.border },
+            ]}>
+            {entry.reason != null && (
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                {entry.reason}
+              </ThemedText>
+            )}
+            {entry.failureStatus != null && (
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                Status: {entry.failureStatus}
+              </ThemedText>
+            )}
+            {entry.failureRequestId != null && (
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                Request ID: {entry.failureRequestId}
+              </ThemedText>
+            )}
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              Attempts: {entry.attempts}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              Last attempt: {new Date(entry.lastAt).toISOString()}
+            </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onCopyDetails}
+              style={({ pressed }) => [
+                styles.actionChip,
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1, alignSelf: 'flex-start' },
+              ]}>
+              <ThemedText style={[Type.label, { color: colors.tint }]}>Copy details</ThemedText>
+            </Pressable>
+          </View>
+        )}
       </View>
       <View style={styles.rowActions}>
         {canResume && (
@@ -451,6 +541,23 @@ function UploadRow({
           ]}>
           <ThemedText style={[Type.label, { color: colors.danger }]}>Remove</ThemedText>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Hide details' : 'Show details'}
+          accessibilityState={{ expanded }}
+          hitSlop={8}
+          onPress={onToggleExpand}
+          style={({ pressed }) => [
+            styles.actionChip,
+            { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
+          ]}>
+          <IconSymbol
+            name="chevron.right"
+            size={14}
+            color={colors.muted}
+            style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}
+          />
+        </Pressable>
       </View>
     </View>
   );
@@ -461,11 +568,24 @@ type MoveRowProps = {
   busy: boolean;
   sessionActive: boolean;
   colors: (typeof Colors)['light'];
+  expanded: boolean;
+  onToggleExpand: () => void;
   onRetry: () => void;
   onRemove: () => void;
+  onCopyDetails: () => void;
 };
 
-function MoveRow({ entry, busy, sessionActive, colors, onRetry, onRemove }: MoveRowProps) {
+function MoveRow({
+  entry,
+  busy,
+  sessionActive,
+  colors,
+  expanded,
+  onToggleExpand,
+  onRetry,
+  onRemove,
+  onCopyDetails,
+}: MoveRowProps) {
   const disabled = busy || sessionActive;
   return (
     <View style={[styles.row, { backgroundColor: colors.surface }]}>
@@ -475,17 +595,60 @@ function MoveRow({ entry, busy, sessionActive, colors, onRetry, onRemove }: Move
             ? entry.from.slice(entry.from.lastIndexOf('/') + 1) || entry.from
             : entry.from}
         </ThemedText>
-        <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={1}>
-          → {entry.to}
-        </ThemedText>
-        <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={2}>
-          {entry.reason}
-        </ThemedText>
-        <ThemedText style={[Type.meta, { color: colors.muted }]}>
-          {entry.attempts} attempt{entry.attempts !== 1 ? 's' : ''}
-          {' · '}
-          {new Date(entry.lastAt).toLocaleString()}
-        </ThemedText>
+        {!expanded && (
+          <>
+            <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={1}>
+              → {entry.to}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={2}>
+              {entry.reason}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              {entry.attempts} attempt{entry.attempts !== 1 ? 's' : ''}
+              {' · '}
+              {new Date(entry.lastAt).toLocaleString()}
+            </ThemedText>
+          </>
+        )}
+        {expanded && (
+          <View
+            style={[
+              styles.detailPanel,
+              { borderTopColor: colors.border },
+            ]}>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              {entry.reason}
+            </ThemedText>
+            {entry.failureStatus != null && (
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                Status: {entry.failureStatus}
+              </ThemedText>
+            )}
+            {entry.failureRequestId != null && (
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                Request ID: {entry.failureRequestId}
+              </ThemedText>
+            )}
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              Attempts: {entry.attempts}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              Last attempt: {new Date(entry.lastAt).toISOString()}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              {entry.from} → {entry.to}
+            </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onCopyDetails}
+              style={({ pressed }) => [
+                styles.actionChip,
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1, alignSelf: 'flex-start' },
+              ]}>
+              <ThemedText style={[Type.label, { color: colors.tint }]}>Copy details</ThemedText>
+            </Pressable>
+          </View>
+        )}
       </View>
       <View style={styles.rowActions}>
         <Pressable
@@ -511,6 +674,23 @@ function MoveRow({ entry, busy, sessionActive, colors, onRetry, onRemove }: Move
             { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
           ]}>
           <ThemedText style={[Type.label, { color: colors.danger }]}>Remove</ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Hide details' : 'Show details'}
+          accessibilityState={{ expanded }}
+          hitSlop={8}
+          onPress={onToggleExpand}
+          style={({ pressed }) => [
+            styles.actionChip,
+            { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
+          ]}>
+          <IconSymbol
+            name="chevron.right"
+            size={14}
+            color={colors.muted}
+            style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}
+          />
         </Pressable>
       </View>
     </View>
@@ -561,5 +741,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: Radius.md,
+  },
+  detailPanel: {
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.xs,
   },
 });
