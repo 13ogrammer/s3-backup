@@ -3,6 +3,7 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { isAuthorized } from './auth.js';
+import { ConflictError } from './errors.js';
 import { createLogger, type Logger } from './logger.js';
 import { list } from './handlers/list.js';
 import { signUpload } from './handlers/signUpload.js';
@@ -83,6 +84,9 @@ export const handler = async (
     const result = await withTiming(ctx, () => routeHandler(body, ctx));
     return json(200, result, requestId);
   } catch (err) {
+    if (err instanceof ConflictError) {
+      return json(409, { error: err.message }, requestId);
+    }
     const message = err instanceof Error ? err.message : 'internal error';
     const status = isClientError(message) ? 400 : 500;
     return json(status, { error: message }, requestId);
