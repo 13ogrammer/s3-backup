@@ -44,7 +44,7 @@ import {
   removePendingUpload,
   type PendingUpload,
 } from '@/lib/uploadState';
-import { recordUploadFailure, toReason } from '@/lib/activityLog';
+import { fromErr, recordUploadFailure, toReason } from '@/lib/activityLog';
 import { captureApiError } from '@/lib/sentry';
 import { setUploadSessionActive } from '@/lib/uploadSession';
 
@@ -317,7 +317,7 @@ export default function GalleryScreen() {
               remoteKey: entry.remoteKey,
               localUri: entry.localUri,
               sizeBytes: entry.totalBytes,
-              reason: toReason(err),
+              ...fromErr(err),
             }).catch(() => undefined);
             setUploadState((s) =>
               s
@@ -452,7 +452,7 @@ export default function GalleryScreen() {
               remoteKey: key,
               localUri,
               sizeBytes: fileSizeCacheRef.current.get(asset.id) ?? 0,
-              reason: toReason(err),
+              ...fromErr(err),
             }).catch(() => undefined);
             setUploadState((s) =>
               s

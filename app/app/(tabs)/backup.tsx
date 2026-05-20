@@ -29,7 +29,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
-import { recordMoveFailure, toReason } from '@/lib/activityLog';
+import { fromErr, recordMoveFailure, toReason } from '@/lib/activityLog';
 import { captureApiError } from '@/lib/sentry';
 
 const THUMB_SIZE = 56;
@@ -682,7 +682,7 @@ export default function BrowseScreen() {
         if (total === 1 && err instanceof ApiError && err.status === 409) {
           // Destination exists — record in Sync log but don't surface as a
           // partial-failure count. Show a targeted alert with a Rename shortcut.
-          await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
+          await recordMoveFailure({ from: key, to: dest, itemKind: 'file', ...fromErr(err) }).catch(() => undefined);
           setBusy(null);
           const suggestion = suggestRenameForCollision(basename(key));
           showAlert('Destination already exists', err.message, [
@@ -702,7 +702,7 @@ export default function BrowseScreen() {
           return;
         }
         captureApiError(err);
-        await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
+        await recordMoveFailure({ from: key, to: dest, itemKind: 'file', ...fromErr(err) }).catch(() => undefined);
         failed.push({ src: key, message: err instanceof Error ? err.message : 'failed' });
       }
       done += 1;
@@ -730,7 +730,7 @@ export default function BrowseScreen() {
       } catch (err) {
         if (total === 1 && err instanceof ApiError && err.status === 409) {
           // Destination folder exists — record in Sync log and offer Rename shortcut.
-          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
+          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
           setBusy(null);
           const suggestion = suggestRenameForCollision(folderName);
           showAlert('Destination already exists', err.message, [
@@ -750,7 +750,7 @@ export default function BrowseScreen() {
           return;
         }
         captureApiError(err);
-        await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
+        await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
         failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
       }
       done += 1;

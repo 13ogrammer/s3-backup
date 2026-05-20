@@ -17,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
 import {
   clearActivity,
+  fromErr,
   loadActivity,
   recordMoveFailure,
   recordUploadFailure,
@@ -127,7 +128,7 @@ export default function ActivityScreen() {
         remoteKey: entry.remoteKey,
         localUri: entry.localUri,
         sizeBytes: entry.sizeBytes,
-        reason: toReason(err),
+        ...fromErr(err),
       }).catch(() => undefined);
       await refresh();
       showAlert('Resume failed', toReason(err));
@@ -159,7 +160,7 @@ export default function ActivityScreen() {
         from: entry.from,
         to: entry.to,
         itemKind: entry.itemKind,
-        reason: toReason(err),
+        ...fromErr(err),
       }).catch(() => undefined);
       await refresh();
       showAlert('Retry failed', toReason(err));
@@ -190,7 +191,7 @@ export default function ActivityScreen() {
             from: entry.from,
             to: entry.to,
             itemKind: entry.itemKind,
-            reason: toReason(err),
+            ...fromErr(err),
           }).catch(() => undefined);
         }
       }
@@ -223,7 +224,7 @@ export default function ActivityScreen() {
               remoteKey: entry.remoteKey,
               localUri: entry.localUri,
               sizeBytes: entry.sizeBytes,
-              reason: toReason(err),
+              ...fromErr(err),
             }).catch(() => undefined);
             throw err;
           }
