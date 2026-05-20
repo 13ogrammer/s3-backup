@@ -115,6 +115,7 @@ export default function BrowseScreen() {
   const [nextToken, setNextToken] = useState<string | undefined>(undefined);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
@@ -133,6 +134,11 @@ export default function BrowseScreen() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // Derived selection state — needs to live above useLayoutEffect so the
+  // header closure can reference selectionActive without a temporal dead zone.
+  const selectionCount = selection.files.size + selection.folders.size;
+  const selectionActive = selectionMode || selectionCount > 0;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -154,6 +160,14 @@ export default function BrowseScreen() {
             accessibilityLabel="Search">
             <IconSymbol name="magnifyingglass" size={22} color={colors.icon} />
           </Pressable>
+          {!selectionActive && (
+            <Pressable
+              onPress={() => setSelectionMode(true)}
+              hitSlop={8}
+              accessibilityLabel="Select items">
+              <IconSymbol name="checkmark.circle" size={22} color={colors.icon} />
+            </Pressable>
+          )}
           <Pressable
             onPress={() => setOverflowVisible(true)}
             hitSlop={8}
@@ -163,7 +177,7 @@ export default function BrowseScreen() {
         </View>
       ),
     });
-  }, [navigation, colors.icon, viewMode]);
+  }, [navigation, colors.icon, viewMode, selectionActive]);
 
   // Lazy-fetched thumbnail URLs for image rows that the server returned
   // without a previewUrl (i.e. the thumb hasn't been backfilled yet).
@@ -175,9 +189,6 @@ export default function BrowseScreen() {
   // Tracks in-flight folder-preview requests so the viewability handler doesn't
   // fire duplicates for the same prefix before the first resolves.
   const folderPreviewInflight = useRef<Set<string>>(new Set());
-
-  const selectionCount = selection.files.size + selection.folders.size;
-  const selectionActive = selectionCount > 0;
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const sortedRows = [...rows]
@@ -241,6 +252,7 @@ export default function BrowseScreen() {
         await api.moveFolder(singleSelected.prefix, dest);
       }
       setSelection(emptySelection());
+      setSelectionMode(false);
       await load(path, 'refresh');
     } catch (err) {
       showAlert(
@@ -309,6 +321,7 @@ export default function BrowseScreen() {
       setNextToken(undefined);
       load(path);
       setSelection(emptySelection());
+      setSelectionMode(false);
     }, [path, load]),
   );
 
@@ -461,6 +474,7 @@ export default function BrowseScreen() {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
         if (selectionActive) {
           setSelection(emptySelection());
+          setSelectionMode(false);
           return true;
         }
         if (path !== '') {
@@ -552,6 +566,7 @@ export default function BrowseScreen() {
         );
       }
       setSelection(emptySelection());
+      setSelectionMode(false);
       await load(path, 'refresh');
       if (res.deleted.length > 0) {
         const deleted = res.deleted;
@@ -635,6 +650,7 @@ export default function BrowseScreen() {
 
     setBusy(null);
     setSelection(emptySelection());
+    setSelectionMode(false);
     await load(path, 'refresh');
 
     if (failed.length > 0) {
@@ -686,7 +702,7 @@ export default function BrowseScreen() {
     <ThemedView style={styles.container}>
       {selectionActive ? (
         <View style={[styles.selectionHeader, { backgroundColor: colors.surface }]}>
-          <Pressable onPress={() => setSelection(emptySelection())} hitSlop={8}>
+          <Pressable onPress={() => { setSelection(emptySelection()); setSelectionMode(false); }} hitSlop={8}>
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
           </Pressable>
           <ThemedText type="defaultSemiBold">{selectionCount} selected</ThemedText>
