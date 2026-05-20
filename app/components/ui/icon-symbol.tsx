@@ -49,7 +49,6 @@ const MAPPING = {
   'line.3.horizontal.decrease.circle.fill': 'filter-list',
   'sparkles': { mci: 'star-four-points-outline' },
   'ellipsis': 'more-vert',
-  'checkmark.circle': { mci: 'check-circle-outline' },
 } as IconMapping;
 
 /**

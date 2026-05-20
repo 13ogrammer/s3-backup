@@ -160,14 +160,6 @@ export default function BrowseScreen() {
             accessibilityLabel="Search">
             <IconSymbol name="magnifyingglass" size={22} color={colors.icon} />
           </Pressable>
-          {!selectionActive && (
-            <Pressable
-              onPress={() => setSelectionMode(true)}
-              hitSlop={8}
-              accessibilityLabel="Select items">
-              <IconSymbol name="checkmark.circle" size={22} color={colors.icon} />
-            </Pressable>
-          )}
           <Pressable
             onPress={() => setOverflowVisible(true)}
             hitSlop={8}
@@ -177,7 +169,7 @@ export default function BrowseScreen() {
         </View>
       ),
     });
-  }, [navigation, colors.icon, viewMode, selectionActive]);
+  }, [navigation, colors.icon, viewMode]);
 
   // Lazy-fetched thumbnail URLs for image rows that the server returned
   // without a previewUrl (i.e. the thumb hasn't been backfilled yet).
@@ -951,6 +943,9 @@ export default function BrowseScreen() {
         visible={overflowVisible}
         onClose={() => setOverflowVisible(false)}
         items={[
+          ...(selectionActive
+            ? []
+            : [{ label: 'Select', onPress: () => setSelectionMode(true) }]),
           {
             label: 'Sort',
             trailing: `${SORT_LABELS[sortField]} ${sortDir === 'asc' ? '↑' : '↓'}`,
