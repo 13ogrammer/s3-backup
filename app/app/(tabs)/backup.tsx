@@ -689,7 +689,7 @@ export default function BrowseScreen() {
           // Destination exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
           setBusy(null);
           const suggestion = suggestRenameForCollision(basename(key));
-          showAlert('Destination already exists', (err as ApiError).message, [
+          showAlert('Destination already exists', err.message, [
             {
               text: 'Cancel',
               style: 'cancel',
@@ -736,7 +736,7 @@ export default function BrowseScreen() {
           // Destination folder exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
           setBusy(null);
           const suggestion = suggestRenameForCollision(folderName);
-          showAlert('Destination already exists', (err as ApiError).message, [
+          showAlert('Destination already exists', err.message, [
             {
               text: 'Cancel',
               style: 'cancel',

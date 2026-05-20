@@ -123,7 +123,7 @@ export class ApiError extends Error {
 }
 
 export const USER_ACTIONABLE_STATUSES: ReadonlySet<number> = new Set([409]);
-export function isUserActionableError(err: unknown): boolean {
+export function isUserActionableError(err: unknown): err is ApiError {
   return err instanceof ApiError && USER_ACTIONABLE_STATUSES.has(err.status);
 }
 
