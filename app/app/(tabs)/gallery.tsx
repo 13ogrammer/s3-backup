@@ -2,7 +2,7 @@ import { getInfoAsync } from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import type { AssetInfo } from 'expo-media-library';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -66,6 +66,7 @@ export default function GalleryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const navigation = useNavigation();
+  const router = useRouter();
   const { showAlert } = useAlert();
 
   const [permission, requestPermission] = MediaLibrary.usePermissions({
@@ -343,7 +344,11 @@ export default function GalleryScreen() {
       }
       showAlert(
         'Some resumes failed',
-        `${items.length - failed.length}/${items.length} finished. The rest stay queued — try again later.`,
+        `${items.length - failed.length}/${items.length} finished. The rest stay queued. View details to retry.`,
+        [
+          { text: 'View details', onPress: () => router.push('/sync') },
+          { text: 'OK', style: 'cancel' },
+        ],
       );
       return;
     } finally {
@@ -487,6 +492,10 @@ export default function GalleryScreen() {
     showAlert(
       'Some uploads failed',
       `${succeeded}/${toUpload.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
+      [
+        { text: 'View details', onPress: () => router.push('/sync') },
+        { text: 'OK', style: 'cancel' },
+      ],
     );
   }
 
