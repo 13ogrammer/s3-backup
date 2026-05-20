@@ -66,3 +66,16 @@ export function clearBackedUpMap(): Promise<void> {
     await writeMap({});
   });
 }
+
+// Batch-remove entries from the persisted map. No-ops for ids not present.
+// Single mutex turn — one read-modify-write — to match recordBackedUp's
+// concurrency posture with in-flight uploaders.
+export function removeBackedUp(assetIds: readonly string[]): Promise<void> {
+  return serialize(async () => {
+    const map = await readMap();
+    for (const id of assetIds) {
+      delete map[id];
+    }
+    await writeMap(map);
+  });
+}
