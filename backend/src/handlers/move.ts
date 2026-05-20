@@ -4,6 +4,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { ConflictError } from '../errors.js';
 import { classifyKey } from '../mediaType.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey } from '../thumbs.js';
@@ -31,6 +32,23 @@ async function exists(key: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function assertFolderDestinationFree(toPrefix: string): Promise<void> {
+  const res = await s3.send(
+    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: toPrefix, MaxKeys: 1 }),
+  );
+  if (res.Contents && res.Contents.length > 0) {
+    throw new ConflictError(
+      `Destination folder ${toPrefix} already exists. Rename one of the folders or move into a different parent.`,
+    );
+  }
+}
+
+async function assertFileDestinationFree(toKey: string): Promise<void> {
+  if (await exists(toKey)) {
+    throw new ConflictError(`Destination ${toKey} already exists.`);
   }
 }
 
@@ -114,6 +132,7 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
     const from = sanitizeKey(body.from);
     const to = sanitizeKey(body.to);
     if (from === to) return { moved: 0 };
+    await assertFileDestinationFree(to);
 
     try {
       await moveOneObject(from, to);
@@ -135,6 +154,7 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
   if (toPrefix.startsWith(fromPrefix)) {
     throw new Error('cannot move a folder into itself');
   }
+  await assertFolderDestinationFree(toPrefix);
 
   const { moved, failed } = await moveTree(fromPrefix, toPrefix, ctx);
   ctx.log.info('move', { kind: 'folder', fromPrefix, toPrefix, moved, failedCount: failed.length });
