@@ -22,7 +22,7 @@ import { getDerivedUrl } from './handlers/getDerivedUrl.js';
 import { folderPreview } from './handlers/folderPreview.js';
 import { stats } from './handlers/stats.js';
 import { head } from './handlers/head.js';
-import { getMoveJob, cancelMoveJob, JobNotFoundError } from './handlers/moveJob.js';
+import { getMoveJob, cancelMoveJob, JobNotFoundError, InvalidJobIdError } from './handlers/moveJob.js';
 
 export type RequestContext = {
   requestId: string;
@@ -101,6 +101,9 @@ export const handler = async (
         limit: err.limit,
         truncated: err.truncated,
       }, requestId);
+    }
+    if (err instanceof InvalidJobIdError) {
+      return json(400, { error: err.message }, requestId);
     }
     if (err instanceof JobNotFoundError) {
       return json(404, { error: 'job not found' }, requestId);
