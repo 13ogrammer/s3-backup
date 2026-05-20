@@ -6,7 +6,7 @@ export type UncomparableFile = {
   size: number;
   lastModified: string;
   kind: 'image' | 'video' | 'other';
-  reason: 'no-etag' | 'multipart';
+  reason: 'no-etag' | 'multipart' | 'intra-folder-duplicate';
 };
 
 export type ComparePair = {
@@ -110,16 +110,28 @@ export function diffFolders(
   a: { files: ScannedFile[]; uncomparable: UncomparableFile[] },
   b: { files: ScannedFile[]; uncomparable: UncomparableFile[] },
 ): FolderCompareResult {
-  // Index side-A by etag, taking only the first representative per etag
-  // (intra-folder duplicates are out of scope for this tool).
+  // Index each side by etag. When a folder contains two files with the same
+  // ETag (intra-folder duplicates), only the first is kept as the
+  // representative; subsequent files with that etag are routed into
+  // uncomparable so that aFetched === onlyInA + shared + uncomparable.a exactly.
   const aByEtag = new Map<string, ScannedFile>();
+  const aIntraDups: UncomparableFile[] = [];
   for (const f of a.files) {
-    if (!aByEtag.has(f.etag)) aByEtag.set(f.etag, f);
+    if (!aByEtag.has(f.etag)) {
+      aByEtag.set(f.etag, f);
+    } else {
+      aIntraDups.push({ key: f.key, size: f.size, lastModified: f.lastModified, kind: f.kind, reason: 'intra-folder-duplicate' });
+    }
   }
 
   const bByEtag = new Map<string, ScannedFile>();
+  const bIntraDups: UncomparableFile[] = [];
   for (const f of b.files) {
-    if (!bByEtag.has(f.etag)) bByEtag.set(f.etag, f);
+    if (!bByEtag.has(f.etag)) {
+      bByEtag.set(f.etag, f);
+    } else {
+      bIntraDups.push({ key: f.key, size: f.size, lastModified: f.lastModified, kind: f.kind, reason: 'intra-folder-duplicate' });
+    }
   }
 
   const onlyInA: ScannedFile[] = [];
@@ -141,12 +153,15 @@ export function diffFolders(
     }
   }
 
+  const uncomparableA = [...a.uncomparable, ...aIntraDups];
+  const uncomparableB = [...b.uncomparable, ...bIntraDups];
+
   const aBytes = a.files.reduce((acc, f) => acc + f.size, 0);
   const bBytes = b.files.reduce((acc, f) => acc + f.size, 0);
   const sharedBytes = shared.reduce((acc, p) => acc + p.size, 0);
   const uncomparableBytes =
-    a.uncomparable.reduce((acc, f) => acc + f.size, 0) +
-    b.uncomparable.reduce((acc, f) => acc + f.size, 0);
+    uncomparableA.reduce((acc, f) => acc + f.size, 0) +
+    uncomparableB.reduce((acc, f) => acc + f.size, 0);
 
   return {
     prefixA,
@@ -154,7 +169,7 @@ export function diffFolders(
     onlyInA,
     onlyInB,
     shared,
-    uncomparable: { a: a.uncomparable, b: b.uncomparable },
+    uncomparable: { a: uncomparableA, b: uncomparableB },
     totals: {
       aFetched: a.files.length,
       bFetched: b.files.length,

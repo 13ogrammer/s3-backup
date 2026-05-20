@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -31,6 +31,7 @@ export default function CompareScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { showAlert } = useAlert();
+  const navigation = useNavigation();
 
   // Router params: a and b are folder prefixes, pre-sorted lexicographically.
   const { a: rawA, b: rawB } = useLocalSearchParams<{ a: string; b: string }>();
@@ -38,6 +39,12 @@ export default function CompareScreen() {
   const prefixB = rawB ?? '';
   const nameA = basename(prefixA.replace(/\/$/, '')) || prefixA;
   const nameB = basename(prefixB.replace(/\/$/, '')) || prefixB;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: nameA && nameB ? `${nameA} vs ${nameB}` : 'Compare folders',
+    });
+  }, [navigation, nameA, nameB]);
 
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [scanError, setScanError] = useState<string | null>(null);
@@ -297,7 +304,6 @@ export default function CompareScreen() {
     setApplying(true);
     try {
       const keys = files.map((f) => f.key);
-      const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
       const res = await api.delete({ keys });
 
       if (res.errors.length > 0) {
@@ -312,32 +318,38 @@ export default function CompareScreen() {
       }
 
       if (res.deleted.length > 0) {
+        const deletedSetForBytes = new Set(res.deleted);
+        // Only count bytes for keys that were actually deleted — avoids
+        // over-reporting when the API returns partial failures.
+        const recoveredBytes = files
+          .filter((f) => deletedSetForBytes.has(f.key))
+          .reduce((acc, f) => acc + f.size, 0);
+
         // Bulk audit entry for the section.
         await appendAudit({
           action: 'delete-folder-compare',
           strategy: 'manual',
           keptKey: side === 'a' ? prefixB : prefixA,
           discardedKeys: res.deleted,
-          recoveredBytes: totalBytes,
+          recoveredBytes,
         });
 
-        const deletedSet = new Set(res.deleted);
         if (side === 'a') {
           setResult((prev) =>
-            prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !deletedSet.has(f.key)) } : prev,
+            prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !deletedSetForBytes.has(f.key)) } : prev,
           );
           setOnlyADecisions((prev) => {
             const next = new Map(prev);
-            for (const k of deletedSet) next.delete(k);
+            for (const k of deletedSetForBytes) next.delete(k);
             return next;
           });
         } else {
           setResult((prev) =>
-            prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !deletedSet.has(f.key)) } : prev,
+            prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !deletedSetForBytes.has(f.key)) } : prev,
           );
           setOnlyBDecisions((prev) => {
             const next = new Map(prev);
-            for (const k of deletedSet) next.delete(k);
+            for (const k of deletedSetForBytes) next.delete(k);
             return next;
           });
         }
@@ -657,7 +669,12 @@ export default function CompareScreen() {
               </ThemedText>
             </View>
             <ThemedText style={[Type.meta, { color: colors.muted }]}>
-              Reason: {f.reason === 'no-etag' ? 'No ETag returned by server' : 'Multipart ETag'}
+              Reason:{' '}
+              {f.reason === 'no-etag'
+                ? 'No ETag returned by server'
+                : f.reason === 'multipart'
+                  ? 'Multipart ETag'
+                  : 'Duplicate within folder'}
             </ThemedText>
           </View>
         ))}
