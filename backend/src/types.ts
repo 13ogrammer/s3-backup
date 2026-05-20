@@ -97,10 +97,18 @@ export type FolderPreviewThumb = {
   url: string;
   kind: 'image' | 'video';
 };
+export type FolderCounts = {
+  total: number;
+  images: number;
+  videos: number;
+  other: number;
+  truncated: boolean;
+};
 export type FolderPreviewResponse = {
   prefix: string;
   thumbs: FolderPreviewThumb[];
   hasContent: boolean;
+  counts?: FolderCounts;
 };
 
 export type HeadRequest = { key: string };
