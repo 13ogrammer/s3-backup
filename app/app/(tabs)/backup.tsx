@@ -684,11 +684,13 @@ export default function BrowseScreen() {
           // partial-failure count. Show a targeted alert with a Rename shortcut.
           await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
           setBusy(null);
-          setSelection(emptySelection());
-          setSelectionMode(false);
           const suggestion = suggestRenameForCollision(basename(key));
           showAlert('Destination already exists', err.message, [
-            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
+            },
             {
               text: 'Rename',
               onPress: () => {
@@ -730,11 +732,13 @@ export default function BrowseScreen() {
           // Destination folder exists — record in Sync log and offer Rename shortcut.
           await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
           setBusy(null);
-          setSelection(emptySelection());
-          setSelectionMode(false);
           const suggestion = suggestRenameForCollision(folderName);
           showAlert('Destination already exists', err.message, [
-            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
+            },
             {
               text: 'Rename',
               onPress: () => {
