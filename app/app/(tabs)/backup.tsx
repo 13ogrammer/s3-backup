@@ -1040,6 +1040,7 @@ export default function BrowseScreen() {
           singleSelected?.kind === 'folder' ? 'Rename folder' : 'Rename file'
         }
         initialValue={renameInitialOverride ?? renameInitial}
+        originalValue={renameInitial}
         onCancel={() => { setRenameVisible(false); setRenameInitialOverride(null); }}
         onSubmit={runRename}
       />

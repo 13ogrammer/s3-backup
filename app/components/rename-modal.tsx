@@ -17,15 +17,21 @@ type Props = {
   visible: boolean;
   title: string;
   initialValue: string;
+  /** Value to compare against to detect "unchanged". Defaults to initialValue.
+   *  Pass the original name when initialValue is a suggested new name (e.g.
+   *  collision rename), so submitting the pre-filled suggestion isn't treated
+   *  as a no-op. */
+  originalValue?: string;
   onCancel: () => void;
   onSubmit: (newName: string) => void;
 };
 
-export function RenameModal({ visible, title, initialValue, onCancel, onSubmit }: Props) {
+export function RenameModal({ visible, title, initialValue, originalValue, onCancel, onSubmit }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
   const [value, setValue] = useState(initialValue);
+  const baseline = originalValue ?? initialValue;
 
   useEffect(() => {
     if (visible) setValue(initialValue);
@@ -33,7 +39,7 @@ export function RenameModal({ visible, title, initialValue, onCancel, onSubmit }
 
   function submit() {
     const trimmed = value.trim();
-    if (!trimmed || trimmed === initialValue) {
+    if (!trimmed || trimmed === baseline) {
       onCancel();
       return;
     }
@@ -68,12 +74,12 @@ export function RenameModal({ visible, title, initialValue, onCancel, onSubmit }
           </Pressable>
           <Pressable
             onPress={submit}
-            disabled={!value.trim() || value.trim() === initialValue}
+            disabled={!value.trim() || value.trim() === baseline}
             style={({ pressed }) => [
               styles.button,
               {
                 opacity:
-                  pressed || !value.trim() || value.trim() === initialValue ? 0.6 : 1,
+                  pressed || !value.trim() || value.trim() === baseline ? 0.6 : 1,
               },
             ]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
