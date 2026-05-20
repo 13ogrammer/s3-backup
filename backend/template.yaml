@@ -38,6 +38,13 @@ Parameters:
     Description: >
       Maximum number of files allowed in a single folder-move job.
       Folders larger than this are rejected with HTTP 422.
+  WorkerParallelism:
+    Type: Number
+    Default: 16
+    Description: >
+      Number of concurrent S3 copy/delete operations the MoveWorker runs per
+      batch. Higher values finish large jobs faster but increase S3 request
+      rates. Default 16 is a safe starting point for most buckets.
 
 Conditions:
   CreateBucket: !Equals [!Ref BucketName, '']
@@ -180,6 +187,9 @@ Resources:
       MemorySize: 1024
       # Limit concurrency to avoid saturating S3 request rates on large buckets.
       ReservedConcurrentExecutions: 4
+      Environment:
+        Variables:
+          WORKER_PARALLELISM: !Ref WorkerParallelism
       Events:
         SqsTrigger:
           Type: SQS

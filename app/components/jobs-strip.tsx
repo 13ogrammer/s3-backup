@@ -167,7 +167,7 @@ function JobRow({
       {(isWithErrors) && (
         <View
           style={[styles.badge, { backgroundColor: colors.danger }]}>
-          <ThemedText style={[Type.meta, { color: '#fff', fontSize: 10 }]}>
+          <ThemedText style={[Type.meta, { color: colors.onAccent, fontSize: 10 }]}>
             !
           </ThemedText>
         </View>

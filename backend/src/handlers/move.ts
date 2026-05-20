@@ -69,11 +69,12 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
     if (!Array.isArray(keys) || keys.length === 0) throw new Error('keys must be a non-empty array');
 
     const jobId = crypto.randomUUID();
-    const record = createJobRecord(jobId, fromPrefix, toPrefix, keys.length);
+    const retryOf = typeof body.retryOfJobId === 'string' ? body.retryOfJobId : undefined;
+    const record = createJobRecord(jobId, fromPrefix, toPrefix, keys.length, retryOf);
     await writeJob(record);
 
     await enqueueMoveJob({ jobId, fromPrefix, toPrefix, keys });
-    ctx.log.info('move job queued (folder-keys)', { jobId, fromPrefix, toPrefix, total: keys.length });
+    ctx.log.info('move job queued (folder-keys)', { jobId, fromPrefix, toPrefix, total: keys.length, retryOf });
 
     throw new Accepted202({ jobId, status: 'queued' });
   }
