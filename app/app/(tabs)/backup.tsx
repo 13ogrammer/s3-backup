@@ -26,7 +26,7 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb } from '@/lib/api';
+import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 import { fromErr, recordMoveFailure, toReason } from '@/lib/activityLog';
@@ -470,7 +470,12 @@ export default function BrowseScreen() {
           .then((res) => {
             setFolderPreviewCache((prev) => {
               const next = new Map(prev);
-              next.set(prefix, { status: 'ready', thumbs: res.thumbs, hasContent: res.hasContent });
+              next.set(prefix, {
+                status: 'ready',
+                thumbs: res.thumbs,
+                hasContent: res.hasContent,
+                counts: res.counts,
+              });
               return next;
             });
           })
@@ -1186,7 +1191,7 @@ function formatDate(iso: string): string {
 type FolderPreviewState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; thumbs: FolderPreviewThumb[]; hasContent: boolean }
+  | { status: 'ready'; thumbs: FolderPreviewThumb[]; hasContent: boolean; counts?: FolderCounts }
   | { status: 'error' };
 
 type RowRenderProps = {
