@@ -1,5 +1,6 @@
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { classifyKey } from '../mediaType.js';
+import { invalidateAncestors } from '../folderCountsCache.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
 import { previewKey, previewPrefix } from '../previews.js';
@@ -77,5 +78,25 @@ export async function del(body: DeleteRequest, ctx: RequestContext): Promise<Del
   }
 
   ctx.log.info('delete', { deletedCount: deleted.length, errorCount: errors.length });
+
+  // Best-effort: evict folder-count cache entries for every affected prefix
+  // and each of their ancestors so the next folder-preview reflects the
+  // deletion. Failure here never surfaces to the caller.
+  try {
+    const affectedPrefixes = new Set<string>();
+    for (const k of keys) {
+      const dir = k.includes('/') ? k.slice(0, k.lastIndexOf('/') + 1) : '';
+      if (dir) affectedPrefixes.add(dir);
+    }
+    for (const p of prefixes) {
+      affectedPrefixes.add(p);
+    }
+    await Promise.allSettled(
+      Array.from(affectedPrefixes).map((p) => invalidateAncestors(p)),
+    );
+  } catch {
+    // Swallow — cache invalidation is always best-effort.
+  }
+
   return { deleted, errors };
 }

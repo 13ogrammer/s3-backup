@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { ConflictError } from '../errors.js';
 import { classifyKey } from '../mediaType.js';
+import { invalidateAncestors } from '../folderCountsCache.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey } from '../thumbs.js';
 import { previewKey } from '../previews.js';
@@ -137,6 +138,14 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
     try {
       await moveOneObject(from, to);
       ctx.log.info('move', { kind: 'file', from, to });
+      // Best-effort invalidation of folder-count cache for source and
+      // destination parent directories and their ancestors.
+      try {
+        const fromDir = from.includes('/') ? from.slice(0, from.lastIndexOf('/') + 1) : '';
+        const toDir   = to.includes('/')   ? to.slice(0, to.lastIndexOf('/') + 1)   : '';
+        const dirs = new Set([fromDir, toDir].filter(Boolean));
+        await Promise.allSettled(Array.from(dirs).map((d) => invalidateAncestors(d)));
+      } catch { /* best-effort */ }
       return { moved: 1 };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -158,6 +167,15 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
 
   const { moved, failed } = await moveTree(fromPrefix, toPrefix, ctx);
   ctx.log.info('move', { kind: 'folder', fromPrefix, toPrefix, moved, failedCount: failed.length });
+
+  // Best-effort invalidation of folder-count cache for both sides of the move
+  // and all their ancestors, so counts stay consistent after a folder rename.
+  try {
+    await Promise.allSettled([
+      invalidateAncestors(fromPrefix),
+      invalidateAncestors(toPrefix),
+    ]);
+  } catch { /* best-effort */ }
 
   const response: MoveResponse = { moved };
   if (failed.length > 0) response.failed = failed;
