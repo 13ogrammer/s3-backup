@@ -237,11 +237,40 @@ export default function BrowseScreen() {
     try {
       if (singleSelected.kind === 'file') {
         const dest = dirname(singleSelected.key) + trimmed;
-        await api.moveFile(singleSelected.key, dest);
+        const res = await api.moveFile(singleSelected.key, dest);
+        if (res.failed?.length) {
+          for (const entry of res.failed) {
+            await recordMoveFailure({ from: entry.key, to: dest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
+          }
+          showAlert(
+            'Rename partially completed',
+            `${res.failed.length} item(s) could not be renamed:\n` +
+              res.failed
+                .slice(0, 5)
+                .map((e) => `• ${e.key}: ${e.reason}`)
+                .join('\n'),
+          );
+        }
       } else {
         const parent = dirname(singleSelected.prefix.replace(/\/$/, ''));
         const dest = parent + trimmed + '/';
-        await api.moveFolder(singleSelected.prefix, dest);
+        const fromPrefix = singleSelected.prefix;
+        const res = await api.moveFolder(fromPrefix, dest);
+        if (res.failed?.length) {
+          for (const entry of res.failed) {
+            // Reconstruct where each failed item would have ended up by applying the same prefix delta
+            const entryDest = dest + entry.key.slice(fromPrefix.length);
+            await recordMoveFailure({ from: entry.key, to: entryDest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
+          }
+          showAlert(
+            'Rename partially completed',
+            `${res.failed.length} item(s) could not be renamed:\n` +
+              res.failed
+                .slice(0, 5)
+                .map((e) => `• ${e.key}: ${e.reason}`)
+                .join('\n'),
+          );
+        }
       }
       setSelection(emptySelection());
       setSelectionMode(false);
@@ -607,6 +636,8 @@ export default function BrowseScreen() {
 
     setBusy(`Moving 0 of ${total}…`);
     let done = 0;
+    let totalMoved = 0;
+    // Accumulates per-item failures for the summary alert and Sync log.
     let failed: Array<{ src: string; message: string }> = [];
     const movedFiles: Array<{ from: string; to: string }> = [];
     const movedFolders: Array<{ from: string; to: string }> = [];
@@ -614,8 +645,18 @@ export default function BrowseScreen() {
     for (const key of files) {
       const dest = destPrefix + basename(key);
       try {
-        await api.moveFile(key, dest);
-        movedFiles.push({ from: key, to: dest });
+        const res = await api.moveFile(key, dest);
+        // Per-item failures inside a file move (the file itself failed to copy).
+        if (res.failed?.length) {
+          for (const entry of res.failed) {
+            captureApiError(new Error(entry.reason));
+            await recordMoveFailure({ from: entry.key, to: dest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
+            failed.push({ src: entry.key, message: entry.reason });
+          }
+        } else {
+          totalMoved += res.moved;
+          movedFiles.push({ from: key, to: dest });
+        }
       } catch (err) {
         captureApiError(err);
         await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
@@ -629,8 +670,20 @@ export default function BrowseScreen() {
       const folderName = basename(prefix.replace(/\/$/, ''));
       const dest = destPrefix + folderName + '/';
       try {
-        await api.moveFolder(prefix, dest);
-        movedFolders.push({ from: prefix, to: dest });
+        const res = await api.moveFolder(prefix, dest);
+        totalMoved += res.moved;
+        // Per-item failures: the folder call partially succeeded. Record each
+        // failed item individually. to key = dest + suffix past the source prefix.
+        if (res.failed?.length) {
+          for (const entry of res.failed) {
+            const entryDest = dest + entry.key.slice(prefix.length);
+            captureApiError(new Error(entry.reason));
+            await recordMoveFailure({ from: entry.key, to: entryDest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
+            failed.push({ src: entry.key, message: entry.reason });
+          }
+        }
+        // Folder is counted as moved if at least some items moved (partial success).
+        if (res.moved > 0) movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
         captureApiError(err);
         await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
@@ -648,7 +701,7 @@ export default function BrowseScreen() {
     if (failed.length > 0) {
       showAlert(
         'Partial move',
-        `${total - failed.length} succeeded, ${failed.length} failed:\n` +
+        `${totalMoved} file(s) moved, ${failed.length} failed:\n` +
           failed
             .slice(0, 5)
             .map((f) => `• ${f.src}: ${f.message}`)

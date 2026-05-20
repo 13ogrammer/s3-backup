@@ -46,7 +46,11 @@ export type DeleteResponse = {
   errors: Array<{ key: string; message: string }>;
 };
 
-export type MoveResponse = { moved: number };
+export type MoveFailure = { key: string; reason: string };
+export type MoveResponse = {
+  moved: number;
+  failed?: MoveFailure[]; // omitted when empty; key is always an original key
+};
 
 export type ExistsResponse = { existing: string[] };
 
