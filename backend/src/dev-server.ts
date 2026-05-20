@@ -3,6 +3,12 @@ import { networkInterfaces } from 'node:os';
 
 import qrcode from 'qrcode-terminal';
 
+// When FOLDER_MOVE_QUEUE_URL is not set, default to local:// emulation so
+// folder-move jobs run in-process during development without an SQS queue.
+if (!process.env.FOLDER_MOVE_QUEUE_URL) {
+  process.env.FOLDER_MOVE_QUEUE_URL = 'local://dev';
+}
+
 import { handler } from './index.js';
 
 let requestCounter = 0;

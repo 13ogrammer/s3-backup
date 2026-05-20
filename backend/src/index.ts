@@ -3,7 +3,7 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { isAuthorized } from './auth.js';
-import { ConflictError } from './errors.js';
+import { Accepted202, ConflictError, TooLargeError } from './errors.js';
 import { createLogger, type Logger } from './logger.js';
 import { list } from './handlers/list.js';
 import { signUpload } from './handlers/signUpload.js';
@@ -22,6 +22,7 @@ import { getDerivedUrl } from './handlers/getDerivedUrl.js';
 import { folderPreview } from './handlers/folderPreview.js';
 import { stats } from './handlers/stats.js';
 import { head } from './handlers/head.js';
+import { getMoveJob, cancelMoveJob, JobNotFoundError } from './handlers/moveJob.js';
 
 export type RequestContext = {
   requestId: string;
@@ -47,6 +48,8 @@ const routes: Record<string, Route> = {
   'POST /multipart/abort': abortMultipart,
   'POST /stats': stats,
   'POST /head': head,
+  'POST /move-job': getMoveJob,
+  'POST /move-job-cancel': cancelMoveJob,
 };
 
 export const handler = async (
@@ -84,8 +87,23 @@ export const handler = async (
     const result = await withTiming(ctx, () => routeHandler(body, ctx));
     return json(200, result, requestId);
   } catch (err) {
+    if (err instanceof Accepted202) {
+      return json(202, err.body, requestId);
+    }
     if (err instanceof ConflictError) {
       return json(409, { error: err.message }, requestId);
+    }
+    if (err instanceof TooLargeError) {
+      return json(422, {
+        error: 'folder-too-large',
+        code: 'folder-too-large',
+        fileCount: err.fileCount,
+        limit: err.limit,
+        truncated: err.truncated,
+      }, requestId);
+    }
+    if (err instanceof JobNotFoundError) {
+      return json(404, { error: 'job not found' }, requestId);
     }
     const message = err instanceof Error ? err.message : 'internal error';
     const status = isClientError(message) ? 400 : 500;

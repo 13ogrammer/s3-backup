@@ -49,12 +49,59 @@ export type DeleteResponse = { deleted: string[]; errors: Array<{ key: string; m
 
 export type MoveRequest =
   | { kind: 'file'; from: string; to: string }
-  | { kind: 'folder'; fromPrefix: string; toPrefix: string };
+  | { kind: 'folder'; fromPrefix: string; toPrefix: string }
+  | { kind: 'folder-keys'; fromPrefix: string; toPrefix: string; keys: string[] };
 export type MoveFailure = { key: string; reason: string };
 export type MoveResponse = {
   moved: number;
   failed?: MoveFailure[]; // omitted when empty; key is always an original key
 };
+
+export type MoveJobAcceptedResponse = { jobId: string; status: 'queued' };
+
+export type FolderTooLargeError = {
+  error: 'folder-too-large';
+  code: 'folder-too-large';
+  fileCount: number;
+  limit: number;
+  truncated: boolean;
+};
+
+export type JobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed-with-errors'
+  | 'cancelled'
+  | 'failed';
+
+export type JobRecord = {
+  jobId: string;
+  kind: 'folder-move';
+  fromPrefix: string;
+  toPrefix: string;
+  status: JobStatus;
+  total: number;
+  moved: number;
+  failed: MoveFailure[];
+  cancelRequested?: boolean;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;
+  retryOf?: string;
+};
+
+export type MoveJobMessage = {
+  jobId: string;
+  fromPrefix: string;
+  toPrefix: string;
+  keys?: string[];
+};
+
+export type MoveJobGetRequest = { jobId: string };
+export type MoveJobCancelRequest = { jobId: string };
+export type MoveJobCancelResponse = { ok: true; cancelRequested: true };
 
 export type ExistsRequest = { keys: string[] };
 export type ExistsResponse = { existing: string[] };

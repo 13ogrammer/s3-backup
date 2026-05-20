@@ -138,7 +138,7 @@ async function computeRecursiveCounts(prefix: string): Promise<FolderCounts> {
   return { total: images + videos + other, images, videos, other, truncated };
 }
 
-async function getCounts(prefix: string): Promise<FolderCounts> {
+export async function getCounts(prefix: string): Promise<FolderCounts> {
   const cached = await readFolderCounts(prefix);
   if (cached) return cached;
   const counts = await computeRecursiveCounts(prefix);
