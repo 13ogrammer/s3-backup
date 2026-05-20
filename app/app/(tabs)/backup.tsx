@@ -853,7 +853,7 @@ export default function BrowseScreen() {
         />
       )}
 
-      {selectionActive && (
+      {selectionCount > 0 && (
         <View
           style={[
             styles.actionBar,
