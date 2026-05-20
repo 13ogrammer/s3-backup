@@ -50,7 +50,11 @@ export type DeleteResponse = { deleted: string[]; errors: Array<{ key: string; m
 export type MoveRequest =
   | { kind: 'file'; from: string; to: string }
   | { kind: 'folder'; fromPrefix: string; toPrefix: string };
-export type MoveResponse = { moved: number };
+export type MoveFailure = { key: string; reason: string };
+export type MoveResponse = {
+  moved: number;
+  failed?: MoveFailure[]; // omitted when empty; key is always an original key
+};
 
 export type ExistsRequest = { keys: string[] };
 export type ExistsResponse = { existing: string[] };
