@@ -26,7 +26,7 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts } from '@/lib/api';
+import { api, ApiError, isUserActionableError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts } from '@/lib/api';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 import { fromErr, recordMoveFailure, toReason } from '@/lib/activityLog';
@@ -685,13 +685,11 @@ export default function BrowseScreen() {
           movedFiles.push({ from: key, to: dest });
         }
       } catch (err) {
-        if (total === 1 && err instanceof ApiError && err.status === 409) {
-          // Destination exists — record in Sync log but don't surface as a
-          // partial-failure count. Show a targeted alert with a Rename shortcut.
-          await recordMoveFailure({ from: key, to: dest, itemKind: 'file', ...fromErr(err) }).catch(() => undefined);
+        if (total === 1 && isUserActionableError(err)) {
+          // Destination exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
           setBusy(null);
           const suggestion = suggestRenameForCollision(basename(key));
-          showAlert('Destination already exists', err.message, [
+          showAlert('Destination already exists', (err as ApiError).message, [
             {
               text: 'Cancel',
               style: 'cancel',
@@ -734,12 +732,11 @@ export default function BrowseScreen() {
         // Folder is counted as moved if at least some items moved (partial success).
         if (res.moved > 0) movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
-        if (total === 1 && err instanceof ApiError && err.status === 409) {
-          // Destination folder exists — record in Sync log and offer Rename shortcut.
-          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
+        if (total === 1 && isUserActionableError(err)) {
+          // Destination folder exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
           setBusy(null);
           const suggestion = suggestRenameForCollision(folderName);
-          showAlert('Destination already exists', err.message, [
+          showAlert('Destination already exists', (err as ApiError).message, [
             {
               text: 'Cancel',
               style: 'cancel',

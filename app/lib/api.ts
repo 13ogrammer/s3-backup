@@ -122,6 +122,11 @@ export class ApiError extends Error {
   }
 }
 
+export const USER_ACTIONABLE_STATUSES: ReadonlySet<number> = new Set([409]);
+export function isUserActionableError(err: unknown): boolean {
+  return err instanceof ApiError && USER_ACTIONABLE_STATUSES.has(err.status);
+}
+
 async function call<T>(path: string, body: unknown, configOverride?: AppConfig): Promise<T> {
   const config = configOverride ?? (await loadConfig());
   if (!config) throw new ApiError(0, 'Backend URL + token not configured. Open Settings.');
