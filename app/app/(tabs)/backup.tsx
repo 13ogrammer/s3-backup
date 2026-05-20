@@ -119,6 +119,7 @@ export default function BrowseScreen() {
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
+  const [renameInitialOverride, setRenameInitialOverride] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
@@ -224,6 +225,22 @@ export default function BrowseScreen() {
       ? basename(singleSelected.key)
       : basename(singleSelected.prefix.replace(/\/$/, ''))
     : '';
+
+  function suggestRenameForCollision(name: string): string {
+    // Split on last '.' to preserve extension, handling names like "photo.thumb.jpg"
+    const dotIdx = name.lastIndexOf('.');
+    const base = dotIdx > 0 ? name.slice(0, dotIdx) : name;
+    const ext = dotIdx > 0 ? name.slice(dotIdx) : '';
+
+    // If the base already ends with "(N)", increment the counter.
+    const counterMatch = base.match(/^(.*)\((\d+)\)$/);
+    if (counterMatch) {
+      const prefix = counterMatch[1] ?? '';
+      const n = parseInt(counterMatch[2] ?? '1', 10);
+      return `${prefix}(${n + 1})${ext}`;
+    }
+    return `${base} (1)${ext}`;
+  }
 
   async function runRename(newName: string) {
     setRenameVisible(false);
@@ -347,6 +364,10 @@ export default function BrowseScreen() {
   );
 
   useEffect(() => { setSearchQuery(''); }, [path]);
+
+  // Clear any rename override when the user navigates or changes selection
+  // so the modal doesn't open with a stale collision-derived suggestion.
+  useEffect(() => { setRenameInitialOverride(null); }, [path, selection]);
 
   // Clear per-folder caches when the path changes so stale entries from the
   // previous directory don't linger. A new load() call will populate fresh rows.
@@ -658,6 +679,26 @@ export default function BrowseScreen() {
           movedFiles.push({ from: key, to: dest });
         }
       } catch (err) {
+        if (total === 1 && err instanceof ApiError && err.status === 409) {
+          // Destination exists — record in Sync log but don't surface as a
+          // partial-failure count. Show a targeted alert with a Rename shortcut.
+          await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
+          setBusy(null);
+          setSelection(emptySelection());
+          setSelectionMode(false);
+          const suggestion = suggestRenameForCollision(basename(key));
+          showAlert('Destination already exists', err.message, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Rename',
+              onPress: () => {
+                setRenameInitialOverride(suggestion);
+                setRenameVisible(true);
+              },
+            },
+          ]);
+          return;
+        }
         captureApiError(err);
         await recordMoveFailure({ from: key, to: dest, itemKind: 'file', reason: toReason(err) }).catch(() => undefined);
         failed.push({ src: key, message: err instanceof Error ? err.message : 'failed' });
@@ -685,6 +726,25 @@ export default function BrowseScreen() {
         // Folder is counted as moved if at least some items moved (partial success).
         if (res.moved > 0) movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
+        if (total === 1 && err instanceof ApiError && err.status === 409) {
+          // Destination folder exists — record in Sync log and offer Rename shortcut.
+          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
+          setBusy(null);
+          setSelection(emptySelection());
+          setSelectionMode(false);
+          const suggestion = suggestRenameForCollision(folderName);
+          showAlert('Destination already exists', err.message, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Rename',
+              onPress: () => {
+                setRenameInitialOverride(suggestion);
+                setRenameVisible(true);
+              },
+            },
+          ]);
+          return;
+        }
         captureApiError(err);
         await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', reason: toReason(err) }).catch(() => undefined);
         failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
@@ -959,8 +1019,8 @@ export default function BrowseScreen() {
         title={
           singleSelected?.kind === 'folder' ? 'Rename folder' : 'Rename file'
         }
-        initialValue={renameInitial}
-        onCancel={() => setRenameVisible(false)}
+        initialValue={renameInitialOverride ?? renameInitial}
+        onCancel={() => { setRenameVisible(false); setRenameInitialOverride(null); }}
         onSubmit={runRename}
       />
 
