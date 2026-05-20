@@ -5,6 +5,9 @@ import {
   writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
+import { ApiError } from './api';
+import { UploadError } from './upload';
+
 export type ActivityUploadEntry = {
   id: string; // `${firstAt}-${slug(remoteKey)}`
   kind: 'upload';
@@ -13,6 +16,8 @@ export type ActivityUploadEntry = {
   sizeBytes: number;
   status: 'pending' | 'failed';
   reason?: string;
+  failureStatus?: number;
+  failureRequestId?: string;
   firstAt: number;
   lastAt: number;
   attempts: number;
@@ -26,17 +31,19 @@ export type ActivityMoveEntry = {
   itemKind: 'file' | 'folder';
   status: 'failed';
   reason: string;
+  failureStatus?: number;
+  failureRequestId?: string;
   firstAt: number;
   lastAt: number;
   attempts: number;
 };
 
 export type ActivityEntry = ActivityUploadEntry | ActivityMoveEntry;
-export type ActivityFile = { schemaVersion: 1; entries: ActivityEntry[] };
+export type ActivityFile = { schemaVersion: 1 | 2; entries: ActivityEntry[] };
 
 const ACTIVITY_FILE = `${documentDirectory ?? ''}activity-log.json`;
 const MAX_ENTRIES = 200;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let writeChain: Promise<unknown> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -49,6 +56,27 @@ function toReason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export function fromErr(err: unknown): {
+  reason: string;
+  failureStatus?: number;
+  failureRequestId?: string;
+} {
+  if (err instanceof ApiError) {
+    return {
+      reason: err.message,
+      failureStatus: err.status,
+      failureRequestId: err.requestId,
+    };
+  }
+  if (err instanceof UploadError) {
+    return { reason: err.message, failureStatus: err.status };
+  }
+  if (err instanceof Error) {
+    return { reason: err.message };
+  }
+  return { reason: String(err) };
+}
+
 function slug(s: string): string {
   return s.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24);
 }
@@ -59,15 +87,20 @@ async function readEntries(): Promise<ActivityEntry[]> {
     if (!info.exists) return [];
     const raw = await readAsStringAsync(ACTIVITY_FILE);
     const parsed = JSON.parse(raw) as unknown;
-    // Schema-mismatch policy: load empty, overwrite on next write.
+    // Accept v1 and v2 — v1 entries lack failureStatus/failureRequestId (read as undefined).
+    // Any other version: load empty, overwrite on next write.
     if (
       !parsed ||
       typeof parsed !== 'object' ||
       !('entries' in parsed) ||
-      !('schemaVersion' in parsed) ||
-      (parsed as ActivityFile).schemaVersion !== SCHEMA_VERSION
+      !('schemaVersion' in parsed)
     ) {
       console.warn('activity-log: schema mismatch or invalid, starting fresh');
+      return [];
+    }
+    const sv = (parsed as { schemaVersion: unknown }).schemaVersion;
+    if (sv !== 1 && sv !== 2) {
+      console.warn('activity-log: unknown schemaVersion', sv, '— starting fresh');
       return [];
     }
     const file = parsed as ActivityFile;
@@ -103,6 +136,8 @@ export function recordUploadFailure(input: {
   localUri: string;
   sizeBytes: number;
   reason: string;
+  failureStatus?: number;
+  failureRequestId?: string;
 }): Promise<void> {
   return serialize(async () => {
     const entries = await readEntries();
@@ -115,6 +150,8 @@ export function recordUploadFailure(input: {
       existing.lastAt = now;
       existing.reason = input.reason;
       existing.status = 'failed';
+      existing.failureStatus = input.failureStatus;
+      existing.failureRequestId = input.failureRequestId;
     } else {
       const firstAt = now;
       const entry: ActivityUploadEntry = {
@@ -125,6 +162,8 @@ export function recordUploadFailure(input: {
         sizeBytes: input.sizeBytes,
         status: 'failed',
         reason: input.reason,
+        failureStatus: input.failureStatus,
+        failureRequestId: input.failureRequestId,
         firstAt,
         lastAt: firstAt,
         attempts: 1,
@@ -141,6 +180,8 @@ export function recordMoveFailure(input: {
   to: string;
   itemKind: 'file' | 'folder';
   reason: string;
+  failureStatus?: number;
+  failureRequestId?: string;
 }): Promise<void> {
   return serialize(async () => {
     const entries = await readEntries();
@@ -153,6 +194,8 @@ export function recordMoveFailure(input: {
       existing.attempts += 1;
       existing.lastAt = now;
       existing.reason = input.reason;
+      existing.failureStatus = input.failureStatus;
+      existing.failureRequestId = input.failureRequestId;
     } else {
       const firstAt = now;
       const entry: ActivityMoveEntry = {
@@ -163,6 +206,8 @@ export function recordMoveFailure(input: {
         itemKind: input.itemKind,
         status: 'failed',
         reason: input.reason,
+        failureStatus: input.failureStatus,
+        failureRequestId: input.failureRequestId,
         firstAt,
         lastAt: firstAt,
         attempts: 1,
