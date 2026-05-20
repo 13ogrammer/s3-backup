@@ -140,6 +140,7 @@ export default function BrowseScreen() {
   // header closure can reference selectionActive without a temporal dead zone.
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionMode || selectionCount > 0;
+  const canCompare = selection.folders.size === 2 && selection.files.size === 0;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -999,6 +1000,19 @@ export default function BrowseScreen() {
             ]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Move…</ThemedText>
           </Pressable>
+          {canCompare && (
+            <Pressable
+              onPress={() => {
+                const [folderA, folderB] = [...selection.folders].sort();
+                router.push({ pathname: '/compare', params: { a: folderA, b: folderB } });
+              }}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
+              ]}>
+              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Compare…</ThemedText>
+            </Pressable>
+          )}
           <Pressable
             onPress={confirmDelete}
             style={({ pressed }) => [
