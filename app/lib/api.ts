@@ -52,6 +52,41 @@ export type MoveResponse = {
   failed?: MoveFailure[]; // omitted when empty; key is always an original key
 };
 
+export type JobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed-with-errors'
+  | 'cancelled'
+  | 'failed';
+
+export type JobRecord = {
+  jobId: string;
+  kind: 'folder-move';
+  fromPrefix: string;
+  toPrefix: string;
+  status: JobStatus;
+  total: number;
+  moved: number;
+  failed: MoveFailure[];
+  cancelRequested?: boolean;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;
+  retryOf?: string;
+};
+
+export type MoveJobAcceptedResponse = { jobId: string; status: 'queued' };
+
+export type FolderTooLargeErrorBody = {
+  error: 'folder-too-large';
+  code: 'folder-too-large';
+  fileCount: number;
+  limit: number;
+  truncated: boolean;
+};
+
 export type ExistsResponse = { existing: string[] };
 
 export type CreateMultipartResponse = { uploadId: string };
@@ -116,6 +151,7 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public requestId?: string,
+    public body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -125,6 +161,16 @@ export class ApiError extends Error {
 export const USER_ACTIONABLE_STATUSES: ReadonlySet<number> = new Set([409]);
 export function isUserActionableError(err: unknown): err is ApiError {
   return err instanceof ApiError && USER_ACTIONABLE_STATUSES.has(err.status);
+}
+
+export function isFolderTooLargeError(err: unknown): err is ApiError & { body: FolderTooLargeErrorBody } {
+  return (
+    err instanceof ApiError &&
+    err.status === 422 &&
+    typeof err.body === 'object' &&
+    err.body !== null &&
+    (err.body as { code?: string }).code === 'folder-too-large'
+  );
 }
 
 async function call<T>(path: string, body: unknown, configOverride?: AppConfig): Promise<T> {
@@ -143,11 +189,13 @@ async function call<T>(path: string, body: unknown, configOverride?: AppConfig):
   if (!res.ok) {
     const requestId = res.headers.get('x-request-id') ?? undefined;
     let message = `HTTP ${res.status}`;
+    let parsedBody: unknown;
     try {
-      const data = (await res.json()) as { error?: string };
+      parsedBody = await res.json();
+      const data = parsedBody as { error?: string };
       if (data.error) message = data.error;
     } catch {}
-    throw new ApiError(res.status, message, requestId);
+    throw new ApiError(res.status, message, requestId, parsedBody);
   }
 
   return (await res.json()) as T;
@@ -179,7 +227,13 @@ export const api = {
   moveFile: (from: string, to: string) =>
     call<MoveResponse>('/move', { kind: 'file', from, to }),
   moveFolder: (fromPrefix: string, toPrefix: string) =>
-    call<MoveResponse>('/move', { kind: 'folder', fromPrefix, toPrefix }),
+    call<MoveJobAcceptedResponse>('/move', { kind: 'folder', fromPrefix, toPrefix }),
+  getMoveJob: (jobId: string) =>
+    call<JobRecord>('/move-job', { jobId }),
+  cancelMoveJob: (jobId: string) =>
+    call<{ ok: true; cancelRequested: true }>('/move-job-cancel', { jobId }),
+  retryFailedMove: (jobId: string, fromPrefix: string, toPrefix: string, keys: string[]) =>
+    call<MoveJobAcceptedResponse>('/move', { kind: 'folder-keys', fromPrefix, toPrefix, keys }),
   getDerivedUrl: (key: string, tier: DerivedTier) =>
     call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
   folderPreview: (prefix: string) =>

@@ -22,11 +22,13 @@ type Props = {
    *  collision rename), so submitting the pre-filled suggestion isn't treated
    *  as a no-op. */
   originalValue?: string;
+  /** Inline error message shown below the text input (e.g. folder-too-large). */
+  errorMessage?: string;
   onCancel: () => void;
   onSubmit: (newName: string) => void;
 };
 
-export function RenameModal({ visible, title, initialValue, originalValue, onCancel, onSubmit }: Props) {
+export function RenameModal({ visible, title, initialValue, originalValue, errorMessage, onCancel, onSubmit }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -66,6 +68,13 @@ export function RenameModal({ visible, title, initialValue, originalValue, onCan
             { color: colors.text, backgroundColor: colors.surfaceMuted },
           ]}
         />
+        {errorMessage && (
+          <View style={styles.errorRow}>
+            <ThemedText style={[styles.errorText, { color: colors.danger }]}>
+              {errorMessage}
+            </ThemedText>
+          </View>
+        )}
         <View style={styles.actions}>
           <Pressable
             onPress={onCancel}
@@ -104,4 +113,10 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   button: { paddingVertical: 8, paddingHorizontal: Spacing.md },
+  errorRow: {
+    marginTop: Spacing.xs,
+  },
+  errorText: {
+    fontSize: 13,
+  },
 });

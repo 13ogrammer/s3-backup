@@ -8,6 +8,7 @@ import { UpdateBanner } from '@/components/update-banner';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initSentry } from '@/lib/sentry';
+import { JobsProvider } from '@/lib/jobs';
 
 // Run once at bundle load — not inside RootLayout to avoid re-running on remount.
 initSentry();
@@ -41,17 +42,19 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkAppTheme : LightAppTheme}>
-      <AlertProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
-          <Stack.Screen name="sync" options={{ title: 'Sync', headerBackTitle: 'Dashboard' }} />
-          <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
-          <Stack.Screen name="compare" options={{ title: 'Compare folders', headerBackTitle: 'Browse' }} />
-        </Stack>
-      </AlertProvider>
-      <StatusBar style="auto" />
-      <UpdateBanner />
+      <JobsProvider>
+        <AlertProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
+            <Stack.Screen name="sync" options={{ title: 'Sync', headerBackTitle: 'Dashboard' }} />
+            <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
+            <Stack.Screen name="compare" options={{ title: 'Compare folders', headerBackTitle: 'Browse' }} />
+          </Stack>
+        </AlertProvider>
+        <StatusBar style="auto" />
+        <UpdateBanner />
+      </JobsProvider>
     </ThemeProvider>
   );
 }

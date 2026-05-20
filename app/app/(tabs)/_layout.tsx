@@ -5,6 +5,7 @@ import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { JobsStrip } from '@/components/jobs-strip';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -22,7 +23,10 @@ export default function TabLayout() {
   const bottomPadding = Math.max(insets.bottom, Spacing.md);
 
   return (
-    <Tabs
+    <>
+      {/* JobsStrip is an absolute overlay positioned above the tab bar */}
+      <JobsStrip />
+      <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
         headerShown: true,
@@ -85,5 +89,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }

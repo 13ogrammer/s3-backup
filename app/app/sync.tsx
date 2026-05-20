@@ -17,6 +17,7 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
+import { useJobs } from '@/lib/jobs';
 import {
   clearActivity,
   fromErr,
@@ -49,6 +50,7 @@ export default function ActivityScreen() {
   const colors = Colors[colorScheme];
   const { showAlert } = useAlert();
 
+  const { addJob } = useJobs();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -154,7 +156,9 @@ export default function ActivityScreen() {
       if (entry.itemKind === 'file') {
         await api.moveFile(entry.from, entry.to);
       } else {
-        await api.moveFolder(entry.from, entry.to);
+        // Folder moves are now async; register with JobsContext.
+        const res = await api.moveFolder(entry.from, entry.to);
+        await addJob(res.jobId, { fromPrefix: entry.from, toPrefix: entry.to });
       }
       await removeActivityEntry(entry.id);
       await refresh();
@@ -186,7 +190,9 @@ export default function ActivityScreen() {
           if (entry.itemKind === 'file') {
             await api.moveFile(entry.from, entry.to);
           } else {
-            await api.moveFolder(entry.from, entry.to);
+            // Folder moves are now async; register with JobsContext.
+            const res = await api.moveFolder(entry.from, entry.to);
+            await addJob(res.jobId, { fromPrefix: entry.from, toPrefix: entry.to });
           }
           await removeActivityEntry(entry.id).catch(() => undefined);
         } catch (err) {

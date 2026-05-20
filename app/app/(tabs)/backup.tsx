@@ -26,7 +26,8 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, isUserActionableError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts } from '@/lib/api';
+import { api, ApiError, isUserActionableError, isFolderTooLargeError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts, type FolderTooLargeErrorBody } from '@/lib/api';
+import { useJobs } from '@/lib/jobs';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
 import { fromErr, recordMoveFailure, toReason } from '@/lib/activityLog';
@@ -100,10 +101,12 @@ export default function BrowseScreen() {
   const navigation = useNavigation();
   const router = useRouter();
 
+  const { addJob } = useJobs();
   const [overflowVisible, setOverflowVisible] = useState(false);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   const [path, setPath] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -245,6 +248,7 @@ export default function BrowseScreen() {
 
   async function runRename(newName: string) {
     setRenameVisible(false);
+    setRenameError(null);
     if (!singleSelected) return;
     const trimmed = newName.trim();
     if (!trimmed || trimmed.includes('/')) {
@@ -265,7 +269,7 @@ export default function BrowseScreen() {
             `${res.failed.length} item(s) could not be renamed:\n` +
               res.failed
                 .slice(0, 5)
-                .map((e) => `• ${e.key}: ${e.reason}`)
+                .map((e: { key: string; reason: string }) => `• ${e.key}: ${e.reason}`)
                 .join('\n'),
           );
         }
@@ -273,27 +277,23 @@ export default function BrowseScreen() {
         const parent = dirname(singleSelected.prefix.replace(/\/$/, ''));
         const dest = parent + trimmed + '/';
         const fromPrefix = singleSelected.prefix;
+        // moveFolder now returns 202 { jobId } for async processing.
         const res = await api.moveFolder(fromPrefix, dest);
-        if (res.failed?.length) {
-          for (const entry of res.failed) {
-            // Reconstruct where each failed item would have ended up by applying the same prefix delta
-            const entryDest = dest + entry.key.slice(fromPrefix.length);
-            await recordMoveFailure({ from: entry.key, to: entryDest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
-          }
-          showAlert(
-            'Rename partially completed',
-            `${res.failed.length} item(s) could not be renamed:\n` +
-              res.failed
-                .slice(0, 5)
-                .map((e) => `• ${e.key}: ${e.reason}`)
-                .join('\n'),
-          );
-        }
+        await addJob(res.jobId, { fromPrefix, toPrefix: dest });
       }
       setSelection(emptySelection());
       setSelectionMode(false);
       await load(path, 'refresh');
     } catch (err) {
+      if (isFolderTooLargeError(err)) {
+        const body = err.body as FolderTooLargeErrorBody;
+        const countStr = body.truncated ? `${body.fileCount}+` : String(body.fileCount);
+        // Re-open the modal with an inline error rather than an alert.
+        setRenameError(`Folder too large (${countStr} files; limit ${body.limit})`);
+        setRenameVisible(true);
+        setBusy(null);
+        return;
+      }
       showAlert(
         'Rename failed',
         err instanceof Error ? err.message : 'Unknown error',
@@ -366,9 +366,12 @@ export default function BrowseScreen() {
 
   useEffect(() => { setSearchQuery(''); }, [path]);
 
-  // Clear any rename override when the user navigates or changes selection
-  // so the modal doesn't open with a stale collision-derived suggestion.
-  useEffect(() => { setRenameInitialOverride(null); }, [path, selection]);
+  // Clear any rename override and inline error when user navigates or changes
+  // selection so the modal doesn't open with stale state.
+  useEffect(() => {
+    setRenameInitialOverride(null);
+    setRenameError(null);
+  }, [path, selection]);
 
   // Clear per-folder caches when the path changes so stale entries from the
   // previous directory don't linger. A new load() call will populate fresh rows.
@@ -717,20 +720,10 @@ export default function BrowseScreen() {
       const folderName = basename(prefix.replace(/\/$/, ''));
       const dest = destPrefix + folderName + '/';
       try {
+        // moveFolder returns 202 { jobId } — register in JobsContext; no sync result.
         const res = await api.moveFolder(prefix, dest);
-        totalMoved += res.moved;
-        // Per-item failures: the folder call partially succeeded. Record each
-        // failed item individually. to key = dest + suffix past the source prefix.
-        if (res.failed?.length) {
-          for (const entry of res.failed) {
-            const entryDest = dest + entry.key.slice(prefix.length);
-            captureApiError(new Error(entry.reason));
-            await recordMoveFailure({ from: entry.key, to: entryDest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
-            failed.push({ src: entry.key, message: entry.reason });
-          }
-        }
-        // Folder is counted as moved if at least some items moved (partial success).
-        if (res.moved > 0) movedFolders.push({ from: prefix, to: dest });
+        await addJob(res.jobId, { fromPrefix: prefix, toPrefix: dest });
+        movedFolders.push({ from: prefix, to: dest });
       } catch (err) {
         if (total === 1 && isUserActionableError(err)) {
           // Destination folder exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
@@ -1041,7 +1034,8 @@ export default function BrowseScreen() {
         }
         initialValue={renameInitialOverride ?? renameInitial}
         originalValue={renameInitial}
-        onCancel={() => { setRenameVisible(false); setRenameInitialOverride(null); }}
+        errorMessage={renameError ?? undefined}
+        onCancel={() => { setRenameVisible(false); setRenameInitialOverride(null); setRenameError(null); }}
         onSubmit={runRename}
       />
 
