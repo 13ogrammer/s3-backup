@@ -32,6 +32,12 @@ Parameters:
       "false". DANGER: everything in this bucket is world-readable; only
       put release artifacts there (manifest.json, signed APKs), never
       anything else.
+  MaxFilesPerJob:
+    Type: Number
+    Default: 10000
+    Description: >
+      Maximum number of files allowed in a single folder-move job.
+      Folders larger than this are rejected with HTTP 422.
 
 Conditions:
   CreateBucket: !Equals [!Ref BucketName, '']
@@ -47,6 +53,7 @@ Globals:
       Variables:
         BOOTSTRAP_TOKEN: !Ref BootstrapToken
         BUCKET_NAME: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+        MAX_FILES_PER_JOB: !Ref MaxFilesPerJob
 
 Resources:
   BackupBucket:
@@ -103,6 +110,20 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub 'arn:aws:s3:::${ReleaseBucket}/*'
 
+  FolderMoveQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      # VisibilityTimeout must exceed MoveWorker timeout (900 s) + buffer.
+      VisibilityTimeout: 950
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt FolderMoveDLQ.Arn
+        maxReceiveCount: 1
+
+  FolderMoveDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600  # 14 days
+
   ApiFn:
     Type: AWS::Serverless::Function
     Metadata:
@@ -110,6 +131,9 @@ Resources:
     Properties:
       CodeUri: src/
       Handler: index.handler
+      Environment:
+        Variables:
+          FOLDER_MOVE_QUEUE_URL: !Ref FolderMoveQueue
       Policies:
         - Statement:
             - Sid: BucketAccess
@@ -131,6 +155,11 @@ Resources:
               Action:
                 - cloudwatch:GetMetricStatistics
               Resource: '*'
+            - Sid: SqsSendMessage
+              Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource: !GetAtt FolderMoveQueue.Arn
       Events:
         ApiRoute:
           Type: HttpApi
@@ -138,6 +167,51 @@ Resources:
             ApiId: !Ref Api
             Method: ANY
             Path: /{proxy+}
+
+  MoveWorker:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: src/
+      Handler: worker.handler
+      # Worker can run up to 15 minutes per job. Each SQS message is one job.
+      Timeout: 900
+      MemorySize: 1024
+      # Limit concurrency to avoid saturating S3 request rates on large buckets.
+      ReservedConcurrentExecutions: 4
+      Events:
+        SqsTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FolderMoveQueue.Arn
+            BatchSize: 1
+      Policies:
+        - Statement:
+            # s3:CopyObject is not a separate IAM action — it requires
+            # s3:GetObject on the source and s3:PutObject on the destination.
+            - Sid: BucketAccess
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+                - s3:ListBucket
+              Resource:
+                - !Sub
+                  - 'arn:aws:s3:::${B}'
+                  - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+                - !Sub
+                  - 'arn:aws:s3:::${B}/*'
+                  - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+            - Sid: SqsWorkerAccess
+              Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+                - sqs:ChangeMessageVisibility
+              Resource: !GetAtt FolderMoveQueue.Arn
 
   Api:
     Type: AWS::Serverless::HttpApi

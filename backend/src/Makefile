@@ -44,3 +44,26 @@ build-ApiFn:
 		--omit=dev \
 		--foreground-scripts \
 		sharp
+
+# MoveWorker bundles worker.ts as the entrypoint. Sharp is not used by the
+# worker (no image resizing), but is installed to keep the artifact consistent
+# and avoid missing-module errors if any transitive import reaches it.
+build-MoveWorker:
+	$(ESBUILD) worker.ts \
+		--bundle \
+		--platform=node \
+		--target=node20 \
+		--format=esm \
+		--minify \
+		--external:@aws-sdk/* \
+		--external:sharp \
+		--outfile=$(ARTIFACTS_DIR)/worker.mjs
+
+	npm install --prefix $(ARTIFACTS_DIR) \
+		--cpu=arm64 \
+		--os=linux \
+		--libc=glibc \
+		--include=optional \
+		--omit=dev \
+		--foreground-scripts \
+		sharp
