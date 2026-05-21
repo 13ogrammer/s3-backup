@@ -3,16 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Keyboard,
-  LayoutAnimation,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
-  UIManager,
   View,
 } from 'react-native';
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -21,10 +18,6 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type Props = {
   visible: boolean;
@@ -48,32 +41,11 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
   const [folders, setFolders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const animate = (duration: number | undefined) => {
-      LayoutAnimation.configureNext({
-        duration: duration && duration > 0 ? duration : 250,
-        create: { type: 'keyboard', property: 'opacity' },
-        update: { type: 'keyboard' },
-        delete: { type: 'keyboard', property: 'opacity' },
-      });
-    };
-    const show = Keyboard.addListener(showEvent, (e) => {
-      animate(e.duration);
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hide = Keyboard.addListener(hideEvent, (e) => {
-      animate(e.duration);
-      setKeyboardHeight(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  const keyboard = useAnimatedKeyboard();
+  const keyboardPadding = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value + insets.bottom,
+  }), [insets.bottom]);
 
   const load = useCallback(async (prefix: string) => {
     setLoading(true);
@@ -146,7 +118,8 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent>
-      <ThemedView style={[styles.container, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + insets.bottom : 0 }]}>
+      <ThemedView style={styles.container}>
+        <Animated.View style={[styles.container, keyboardPadding]}>
         <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
           <Pressable onPress={onClose} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
@@ -223,7 +196,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
               styles.newFolderRow,
               {
                 backgroundColor: colors.surface,
-                paddingBottom: keyboardHeight > 0 ? Spacing.md : Spacing.md + insets.bottom,
+                paddingBottom: Spacing.md,
               },
             ]}>
             <TextInput
@@ -256,6 +229,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
             </Pressable>
           </View>
         )}
+        </Animated.View>
       </ThemedView>
     </Modal>
   );
