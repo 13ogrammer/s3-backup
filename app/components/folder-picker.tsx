@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -42,6 +43,16 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
   const [folders, setFolders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
+  const [keyboardShown, setKeyboardShown] = useState(false);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardShown(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardShown(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const load = useCallback(async (prefix: string) => {
     setLoading(true);
@@ -117,7 +128,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}>
+        keyboardVerticalOffset={0}>
           <ThemedView style={styles.container}>
             <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
               <Pressable onPress={onClose} accessibilityRole="button">
@@ -195,7 +206,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
                   styles.newFolderRow,
                   {
                     backgroundColor: colors.surface,
-                    paddingBottom: Spacing.md + insets.bottom,
+                    paddingBottom: keyboardShown ? Spacing.md : Spacing.md + insets.bottom,
                   },
                 ]}>
                 <TextInput
