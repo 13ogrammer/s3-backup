@@ -24,6 +24,10 @@ infra cost scales with **user count**, not with **data volume**. See
 [`MONETIZATION.md`](./MONETIZATION.md) for the cost model that follows
 from this.
 
+Long-running server-side operations (currently: folder moves > ~600
+files) escape the 29 s API Gateway timeout by going async — see
+"Async folder-move jobs" for the producer / SQS / worker / DLQ flow.
+
 ## Tech stack
 
 | Layer | Choice | Notes |
@@ -32,8 +36,10 @@ from this.
 | Mobile language | TypeScript | strict, `noUncheckedIndexedAccess`. |
 | Backend runtime | Node.js 20, ARM64 Lambda | Bundled with esbuild via SAM `BuildMethod: makefile` (needed to ship sharp's native binary). 1024 MB / 29 s. |
 | API surface | HTTP API Gateway, single Lambda router | All routes go through `backend/src/index.ts`. |
+| Async jobs | **SQS-backed worker Lambda** (`MoveWorker`, 15 min timeout, reserved concurrency 4) | Folder moves >29 s run as jobs; producer returns 202, worker drains the queue. See "Async folder-move jobs" below. |
 | Auth (v1) | Single bootstrap token, `timingSafeEqual` compare | Linear S3B-8 ("Rotatable / per-device auth tokens") tracks the replacement plan. |
 | Local S3 emulator | **MinIO** via docker-compose | LocalStack went paid in v2026.03 — don't reach for it. |
+| Local SQS emulator | **ElasticMQ** via docker-compose | SQS-compatible, Apache 2.0, sibling container to MinIO. Dev-server auto-creates the queue + DLQ on startup. |
 | Local backend dev | Node `http` wrapper around the Lambda handler, `tsx watch` | `backend/src/dev-server.ts`. |
 | Upload UX | `expo-image-picker` (system picker) | Inline gallery grid is blocked in Expo Go on Android — see [`CLAUDE.md`](../CLAUDE.md#gotchas). |
 | Image thumbnails | On-demand via Lambda (`/get-derived-url`), cached in `.thumbnails/` | Backend list returns the thumb URL when present; Browse lazy-fetches via `/get-derived-url` on first view. |
@@ -53,7 +59,9 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 | POST | `/sign-download` | Pre-signed GET for a key |
 | POST | `/delete` | Batch delete by keys, prefixes, or both |
 | POST | `/exists` | Returns the subset of supplied keys that exist (HeadObject) |
-| POST | `/move` | File rename or full-folder move via server-side copy + delete |
+| POST | `/move` | File rename (sync, 200) or folder move (**async, 202 `{ jobId }`** — see "Async folder-move jobs"). Folder-keys variant carries `keys[]` for retry-failed flows. |
+| POST | `/move-job` | Return the current `JobRecord` for a `jobId`. 404 if unknown. |
+| POST | `/move-job-cancel` | Set `cancelRequested: true` on a job record; the worker stops at the next batch boundary. |
 | POST | `/multipart/create` | Initiate multipart upload, returns `uploadId` |
 | POST | `/multipart/sign-part` | Pre-signed PUT URL for one part of an in-flight upload |
 | POST | `/multipart/complete` | Finalise the multipart upload with the part list + ETags |
@@ -154,7 +162,9 @@ Backend handlers that touch image objects must maintain both trees:
   `previewKey(k)`. Folder-prefix deletes expand to include `thumbPrefix(p)`
   and `previewPrefix(p)`.
 - `handlers/move.ts` — single-file renames move the thumb and preview (when
-  they exist) alongside. Folder moves recursively move both derived trees.
+  they exist) alongside. Folder moves enqueue a job; the `MoveWorker` Lambda
+  reuses the same per-item move logic (`handlers/__shared/moveOps.ts`)
+  so the derived-tree contract is identical for sync and async paths.
 
 When extending the backend, any new operation that creates or moves image keys
 must update both parallel derived paths similarly.
@@ -168,6 +178,132 @@ Two optional operator scripts handle pre-existing assets:
   **videos** using local ffmpeg (prerequisite: `brew install ffmpeg` / `apt-get
   install ffmpeg`). Safe to re-run; keys with existing sidecars are skipped.
   Run via `cd backend && npm run backfill:video-thumbs`.
+
+## Async folder-move jobs (S3B-52)
+
+Synchronous folder rename used to walk the prefix and do per-item copy
++ delete inside the `/move` Lambda invocation. Past ~600 files that
+exceeded the 29 s API Gateway timeout — the Lambda was killed mid-walk,
+leaving the destination with the partial copy and the source with the
+remainder. Folder moves are now jobs: API returns 202 immediately and a
+worker Lambda with a 15-minute budget drains the queue.
+
+### Components
+
+```
+┌───────────┐  1. POST /move (folder)              ┌──────────────────┐
+│  Mobile   │ ───────────────────────────────────► │  ApiFn Lambda    │
+│   app     │                                      │  (producer)      │
+│           │ ◄────  2. 202 { jobId }  ─────────── │                  │
+└─────┬─────┘                                      └────────┬─────────┘
+      │                                                     │
+      │                                            3a. write JobRecord
+      │                                            3b. enqueue SQS msg
+      │                                                     │
+      │ 4. POST /move-job (poll, 2 s)                       ▼
+      │ ◄──── { status, moved, total, … } ──────  ┌──────────────────┐
+      │                                            │ FolderMoveQueue  │
+      │ 5. POST /move-job-cancel (optional)        │ (visibility 950s,│
+      │                                            │  redrive to DLQ) │
+      │                                            └────────┬─────────┘
+      ▼                                                     │
+┌───────────┐                                      6. SQS event source
+│ JobsStrip │                                               │
+│  (UI)     │                                               ▼
+└───────────┘                                      ┌──────────────────┐
+                                                   │ MoveWorker       │
+                                                   │ Lambda           │
+                                                   │ (Timeout 900s,   │
+                                                   │  RC 4, BS 1)     │
+                                                   └────────┬─────────┘
+                                                            │
+                                       7. ListObjectsV2 +   │
+                                          Copy/Delete       │
+                                          (parallel 16)     │
+                                                            ▼
+                                                   ┌──────────────────┐
+                                                   │  Private S3      │
+                                                   │  bucket          │
+                                                   │  + JobRecord at  │
+                                                   │  .cache/jobs/    │
+                                                   └──────────────────┘
+```
+
+Failure path: any throw from `MoveWorker` lets the SQS message become
+visible again; with `maxReceiveCount: 1` it is then redriven to
+`FolderMoveDLQ` (14-day retention). Per-item failures are *not*
+exceptions — they accumulate in `JobRecord.failed[]` and end the job
+in `completed-with-errors`. Follow-up cards S3B-56..S3B-59 wire alarms
+and auto-failed-status flips off the DLQ.
+
+### Contract
+
+`JobRecord` lives at `.cache/jobs/<jobId>.json` in the bucket:
+
+```ts
+type JobStatus =
+  | 'queued' | 'running'
+  | 'completed' | 'completed-with-errors' | 'cancelled' | 'failed';
+
+type JobRecord = {
+  jobId: string;             // crypto.randomUUID()
+  kind: 'folder-move';       // future-proof for bulk-delete, ai-tag, …
+  fromPrefix: string;
+  toPrefix: string;
+  status: JobStatus;
+  total: number;             // capped at 50_000 (COUNTS_SCAN_MAX)
+  moved: number;
+  failed: { key: string; reason: string }[];
+  cancelRequested?: boolean;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;            // populated only when status === 'failed'
+  retryOf?: string;          // parent jobId for retry-failed runs
+};
+```
+
+### Gating: too-large folders
+
+Producer reads counts via `getCounts` (cached at `.cache/folder-counts/`).
+If `counts.truncated || counts.total > MAX_FILES_PER_JOB` (default
+10 000, env var on both Lambdas), returns:
+
+```
+HTTP 422 { code: 'folder-too-large', fileCount, limit, truncated }
+```
+
+The app renders this inline in the rename modal. Chunked execution for
+>10 000-file folders is a separate follow-up card.
+
+### App side
+
+`JobsContext` (`app/lib/jobs.tsx`) persists active job IDs in
+`expo-file-system/legacy` `documentDirectory` so they survive an app
+kill. Polling is on-demand:
+
+- Polls `POST /move-job` every 2 s, **only** when `activeJobs.length > 0`.
+- Pauses on `AppState === 'background'`, resumes on `active`.
+- Terminal jobs (`completed`, `cancelled`, `failed`) auto-dismiss from
+  the strip after 4 s. `completed-with-errors` persists until the user
+  taps it → `JobDetailsModal` lists the failed keys with a "Retry
+  failed" CTA that kicks a new `folder-keys` job carrying `retryOf`.
+
+The strip lives in `app/components/jobs-strip.tsx` and renders as an
+absolute overlay above the tab bar; it does not reshape `Tabs`.
+
+### Local dev parity
+
+Local SQS uses **ElasticMQ** via `backend/docker-compose.yml`. The
+dev-server (`backend/src/dev-server.ts`) calls `ensureQueues()` on
+startup to create both queues with the same `VisibilityTimeout=950`
+and `maxReceiveCount=1` as production. A long-polling consumer in
+`backend/src/dev-poller.ts` dispatches each received message to
+`processJob` in the same Node process — same code path as the
+deployed Lambda, just no cold start. The shim does *not* perfectly
+mimic AWS SQS (no real per-message retry semantics outside redrive,
+no separate poller process) but is faithful enough that visibility
+timeouts and DLQ behaviour are exercised on every dev run.
 
 ## Observability
 
