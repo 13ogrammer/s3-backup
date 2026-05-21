@@ -29,9 +29,11 @@ type Props = {
   confirmLabel?: string;
   hideNewFolder?: boolean;
   validatePick?: (prefix: string) => string | null;
+  // S3B-61: prevent tapping into folders that can't be valid targets (e.g. source folder in Compare)
+  isFolderSelectable?: (prefix: string) => boolean;
 };
 
-export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick }: Props) {
+export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick, isFolderSelectable }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -167,18 +169,23 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
                     No subfolders. Use "New folder" below or tap Select to use this folder.
                   </ThemedText>
                 }
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => goInto(item)}
-                    style={({ pressed }) => [
-                      styles.row,
-                      { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
-                    ]}>
-                    <IconSymbol name="folder" size={22} color={colors.icon} />
-                    <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
-                    <IconSymbol name="chevron.right" size={18} color={colors.icon} />
-                  </Pressable>
-                )}
+                renderItem={({ item }) => {
+                  const selectable = isFolderSelectable ? isFolderSelectable(item) : true;
+                  return (
+                    <Pressable
+                      onPress={selectable ? () => goInto(item) : undefined}
+                      disabled={!selectable}
+                      accessibilityState={{ disabled: !selectable }}
+                      style={({ pressed }) => [
+                        styles.row,
+                        { backgroundColor: colors.surface, opacity: !selectable ? 0.4 : pressed ? 0.7 : 1 },
+                      ]}>
+                      <IconSymbol name="folder" size={22} color={colors.icon} />
+                      <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
+                      <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+                    </Pressable>
+                  );
+                }}
               />
             )}
 

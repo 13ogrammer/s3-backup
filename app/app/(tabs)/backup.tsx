@@ -1083,6 +1083,7 @@ export default function BrowseScreen() {
         confirmLabel="Compare"
         hideNewFolder
         validatePick={(b) => folderAForCompare ? validateCompareTarget(folderAForCompare, b) : null}
+        isFolderSelectable={(p) => folderAForCompare ? validateCompareTarget(folderAForCompare, p) === null : true}
         onClose={() => { setComparePickerVisible(false); setFolderAForCompare(null); }}
         onPick={(b) => {
           const a = folderAForCompare!;
