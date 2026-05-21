@@ -4,8 +4,8 @@ import {
   Alert,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -42,11 +42,13 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
   const [folders, setFolders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
-  const [keyboardShown, setKeyboardShown] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardShown(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardShown(false));
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
       show.remove();
       hide.remove();
@@ -124,122 +126,117 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={0}>
-          <ThemedView style={styles.container}>
-            <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
-              <Pressable onPress={onClose} accessibilityRole="button">
-                <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
-              </Pressable>
-              <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
-              <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
-                <ThemedText
-                  style={{
-                    color: colors.tint,
-                    fontWeight: '600',
-                    fontSize: 16,
-                    opacity: validationError ? 0.35 : 1,
-                  }}>
-                  {confirmLabel ?? 'Select'}
-                </ThemedText>
-              </Pressable>
-            </View>
-            {validationError && (
-              <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
-                <ThemedText style={styles.errorText}>{validationError}</ThemedText>
-              </View>
-            )}
+      <ThemedView style={[styles.container, { paddingBottom: keyboardHeight }]}>
+        <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+          <Pressable onPress={onClose} accessibilityRole="button">
+            <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
+          </Pressable>
+          <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
+          <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
+            <ThemedText
+              style={{
+                color: colors.tint,
+                fontWeight: '600',
+                fontSize: 16,
+                opacity: validationError ? 0.35 : 1,
+              }}>
+              {confirmLabel ?? 'Select'}
+            </ThemedText>
+          </Pressable>
+        </View>
+        {validationError && (
+          <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
+            <ThemedText style={styles.errorText}>{validationError}</ThemedText>
+          </View>
+        )}
 
-            <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
-              {path !== '' && (
-                <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
-                  <IconSymbol name="chevron.left" size={20} color={colors.tint} />
-                  <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
-                </Pressable>
-              )}
-              <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
-                /{path || '(root)'}
+        <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
+          {path !== '' && (
+            <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
+              <IconSymbol name="chevron.left" size={20} color={colors.tint} />
+              <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
+            </Pressable>
+          )}
+          <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
+            /{path || '(root)'}
+          </ThemedText>
+        </View>
+
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <FlatList
+            data={folders}
+            keyExtractor={(item) => item}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+            ListEmptyComponent={
+              <ThemedText style={[styles.empty, { color: colors.muted }]}>
+                No subfolders. Use "New folder" below or tap Select to use this folder.
               </ThemedText>
-            </View>
-
-            {loading ? (
-              <View style={styles.center}>
-                <ActivityIndicator />
-              </View>
-            ) : (
-              <FlatList
-                data={folders}
-                keyExtractor={(item) => item}
-                contentContainerStyle={styles.list}
-                ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
-                ListEmptyComponent={
-                  <ThemedText style={[styles.empty, { color: colors.muted }]}>
-                    No subfolders. Use "New folder" below or tap Select to use this folder.
-                  </ThemedText>
-                }
-                renderItem={({ item }) => {
-                  const selectable = isFolderSelectable ? isFolderSelectable(item) : true;
-                  return (
-                    <Pressable
-                      onPress={selectable ? () => goInto(item) : undefined}
-                      disabled={!selectable}
-                      accessibilityState={{ disabled: !selectable }}
-                      style={({ pressed }) => [
-                        styles.row,
-                        { backgroundColor: colors.surface, opacity: !selectable ? 0.4 : pressed ? 0.7 : 1 },
-                      ]}>
-                      <IconSymbol name="folder" size={22} color={colors.icon} />
-                      <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
-                      <IconSymbol name="chevron.right" size={18} color={colors.icon} />
-                    </Pressable>
-                  );
-                }}
-              />
-            )}
-
-            {!hideNewFolder && (
-              <View
-                style={[
-                  styles.newFolderRow,
-                  {
-                    backgroundColor: colors.surface,
-                    paddingBottom: keyboardShown ? Spacing.md : Spacing.md + insets.bottom,
-                  },
-                ]}>
-                <TextInput
-                  value={newName}
-                  onChangeText={setNewName}
-                  placeholder="New folder name"
-                  placeholderTextColor={colors.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[
-                    styles.input,
-                    { color: colors.text, backgroundColor: colors.surfaceMuted },
-                  ]}
-                  onSubmitEditing={createSubfolder}
-                  returnKeyType="done"
-                />
+            }
+            renderItem={({ item }) => {
+              const selectable = isFolderSelectable ? isFolderSelectable(item) : true;
+              return (
                 <Pressable
-                  onPress={createSubfolder}
-                  disabled={!newName.trim()}
+                  onPress={selectable ? () => goInto(item) : undefined}
+                  disabled={!selectable}
+                  accessibilityState={{ disabled: !selectable }}
                   style={({ pressed }) => [
-                    styles.createButton,
-                    {
-                      backgroundColor: colors.tint,
-                      opacity: pressed || !newName.trim() ? 0.5 : 1,
-                    },
+                    styles.row,
+                    { backgroundColor: colors.surface, opacity: !selectable ? 0.4 : pressed ? 0.7 : 1 },
                   ]}>
-                  <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
-                    Add
-                  </ThemedText>
+                  <IconSymbol name="folder" size={22} color={colors.icon} />
+                  <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
+                  <IconSymbol name="chevron.right" size={18} color={colors.icon} />
                 </Pressable>
-              </View>
-            )}
-          </ThemedView>
-      </KeyboardAvoidingView>
+              );
+            }}
+          />
+        )}
+
+        {!hideNewFolder && (
+          <View
+            style={[
+              styles.newFolderRow,
+              {
+                backgroundColor: colors.surface,
+                paddingBottom: keyboardHeight > 0 ? Spacing.md : Spacing.md + insets.bottom,
+              },
+            ]}>
+            <TextInput
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="New folder name"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.input,
+                { color: colors.text, backgroundColor: colors.surfaceMuted },
+              ]}
+              onSubmitEditing={createSubfolder}
+              returnKeyType="done"
+            />
+            <Pressable
+              onPress={createSubfolder}
+              disabled={!newName.trim()}
+              style={({ pressed }) => [
+                styles.createButton,
+                {
+                  backgroundColor: colors.tint,
+                  opacity: pressed || !newName.trim() ? 0.5 : 1,
+                },
+              ]}>
+              <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
+                Add
+              </ThemedText>
+            </Pressable>
+          </View>
+        )}
+      </ThemedView>
     </Modal>
   );
 }
