@@ -94,6 +94,14 @@ function compareRows(a: Row, b: Row, field: SortField, dir: SortDir): number {
   return dir === 'asc' ? cmp : -cmp;
 }
 
+function validateCompareTarget(a: string, b: string): string | null {
+  if (b === a) return 'Pick a different folder';
+  if (b !== '' && (a.startsWith(b) || b.startsWith(a))) {
+    return 'Pick a folder outside the first one (no ancestor/descendant)';
+  }
+  return null;
+}
+
 export default function BrowseScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -121,6 +129,8 @@ export default function BrowseScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [moveDestVisible, setMoveDestVisible] = useState(false);
+  const [comparePickerVisible, setComparePickerVisible] = useState(false);
+  const [folderAForCompare, setFolderAForCompare] = useState<string | null>(null);
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameInitialOverride, setRenameInitialOverride] = useState<string | null>(null);
   // When set, the next runRename treats the new name as the destination filename
@@ -1030,6 +1040,19 @@ export default function BrowseScreen() {
             ]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Move…</ThemedText>
           </Pressable>
+          {selection.folders.size === 1 && selection.files.size === 0 && (
+            <Pressable
+              onPress={() => {
+                setFolderAForCompare(Array.from(selection.folders)[0]!);
+                setComparePickerVisible(true);
+              }}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
+              ]}>
+              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Compare against…</ThemedText>
+            </Pressable>
+          )}
           {canCompare && (
             <Pressable
               onPress={() => {
@@ -1065,6 +1088,22 @@ export default function BrowseScreen() {
         visible={moveDestVisible}
         onClose={() => setMoveDestVisible(false)}
         onPick={runMove}
+      />
+
+      <FolderPicker
+        visible={comparePickerVisible}
+        initialPath={''}
+        confirmLabel="Compare"
+        hideNewFolder
+        validatePick={(b) => folderAForCompare ? validateCompareTarget(folderAForCompare, b) : null}
+        onClose={() => { setComparePickerVisible(false); setFolderAForCompare(null); }}
+        onPick={(b) => {
+          const a = folderAForCompare!;
+          const [first, second] = [a, b].sort();
+          setComparePickerVisible(false);
+          setFolderAForCompare(null);
+          router.push({ pathname: '/compare', params: { a: first, b: second } });
+        }}
       />
 
       <RenameModal

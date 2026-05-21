@@ -23,9 +23,13 @@ type Props = {
   onClose: () => void;
   onPick: (prefix: string) => void;
   initialPath?: string;
+  // S3B-55
+  confirmLabel?: string;
+  hideNewFolder?: boolean;
+  validatePick?: (prefix: string) => string | null;
 };
 
-export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
+export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -74,7 +78,10 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
     load(parent);
   }
 
+  const validationError = validatePick ? validatePick(path) : null;
+
   function pickHere() {
+    if (validationError) return;
     onPick(path);
   }
 
@@ -109,12 +116,23 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
           </Pressable>
           <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
-          <Pressable onPress={pickHere} accessibilityRole="button">
-            <ThemedText style={{ color: colors.tint, fontWeight: '600', fontSize: 16 }}>
-              Select
+          <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
+            <ThemedText
+              style={{
+                color: colors.tint,
+                fontWeight: '600',
+                fontSize: 16,
+                opacity: validationError ? 0.35 : 1,
+              }}>
+              {confirmLabel ?? 'Select'}
             </ThemedText>
           </Pressable>
         </View>
+        {validationError && (
+          <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
+            <ThemedText style={styles.errorText}>{validationError}</ThemedText>
+          </View>
+        )}
 
         <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
           {path !== '' && (
@@ -158,43 +176,45 @@ export function FolderPicker({ visible, onClose, onPick, initialPath }: Props) {
           />
         )}
 
-        <View
-          style={[
-            styles.newFolderRow,
-            {
-              backgroundColor: colors.surface,
-              paddingBottom: Spacing.md + insets.bottom,
-            },
-          ]}>
-          <TextInput
-            value={newName}
-            onChangeText={setNewName}
-            placeholder="New folder name"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
+        {!hideNewFolder && (
+          <View
             style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surfaceMuted },
-            ]}
-            onSubmitEditing={createSubfolder}
-            returnKeyType="done"
-          />
-          <Pressable
-            onPress={createSubfolder}
-            disabled={!newName.trim()}
-            style={({ pressed }) => [
-              styles.createButton,
+              styles.newFolderRow,
               {
-                backgroundColor: colors.tint,
-                opacity: pressed || !newName.trim() ? 0.5 : 1,
+                backgroundColor: colors.surface,
+                paddingBottom: Spacing.md + insets.bottom,
               },
             ]}>
-            <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
-              Add
-            </ThemedText>
-          </Pressable>
-        </View>
+            <TextInput
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="New folder name"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.input,
+                { color: colors.text, backgroundColor: colors.surfaceMuted },
+              ]}
+              onSubmitEditing={createSubfolder}
+              returnKeyType="done"
+            />
+            <Pressable
+              onPress={createSubfolder}
+              disabled={!newName.trim()}
+              style={({ pressed }) => [
+                styles.createButton,
+                {
+                  backgroundColor: colors.tint,
+                  opacity: pressed || !newName.trim() ? 0.5 : 1,
+                },
+              ]}>
+              <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
+                Add
+              </ThemedText>
+            </Pressable>
+          </View>
+        )}
       </ThemedView>
     </Modal>
   );
@@ -251,4 +271,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   createButtonText: { fontWeight: '600' },
+  errorBanner: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  errorText: { color: '#fff', fontSize: 13, fontWeight: '500' },
 });
