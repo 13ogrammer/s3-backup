@@ -1075,6 +1075,7 @@ export default function BrowseScreen() {
         visible={moveDestVisible}
         onClose={() => setMoveDestVisible(false)}
         onPick={runMove}
+        isFolderSelectable={(p) => !Array.from(selection.folders).some((src) => p.startsWith(src))}
       />
 
       <FolderPicker
