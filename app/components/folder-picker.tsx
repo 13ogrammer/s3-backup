@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   FlatList,
+  Keyboard,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -42,10 +45,41 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const keyboard = useAnimatedKeyboard();
-  const keyboardPadding = useAnimatedStyle(() => ({
-    paddingBottom: keyboard.height.value + insets.bottom,
-  }), [insets.bottom]);
+  const padding = useRef(new Animated.Value(insets.bottom)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e) => {
+      const target = e.endCoordinates.height + insets.bottom;
+      if (Platform.OS === 'ios') {
+        Animated.timing(padding, {
+          toValue: target,
+          duration: e.duration ?? 250,
+          easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
+          useNativeDriver: false,
+        }).start();
+      } else {
+        padding.setValue(target);
+      }
+    });
+    const hide = Keyboard.addListener(hideEvent, (e) => {
+      if (Platform.OS === 'ios') {
+        Animated.timing(padding, {
+          toValue: insets.bottom,
+          duration: e.duration ?? 250,
+          easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
+          useNativeDriver: false,
+        }).start();
+      } else {
+        padding.setValue(insets.bottom);
+      }
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [padding, insets.bottom]);
 
   const load = useCallback(async (prefix: string) => {
     setLoading(true);
@@ -119,7 +153,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       statusBarTranslucent
       navigationBarTranslucent>
       <ThemedView style={styles.container}>
-        <Animated.View style={[styles.container, keyboardPadding]}>
+        <Animated.View style={[styles.container, { paddingBottom: padding }]}>
         <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
           <Pressable onPress={onClose} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
