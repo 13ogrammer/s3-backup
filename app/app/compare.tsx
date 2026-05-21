@@ -183,6 +183,18 @@ export default function CompareScreen() {
     });
   }
 
+  function clearPairDecision(etag: string) {
+    setPairDecisions((prev) => { const next = new Map(prev); next.delete(etag); return next; });
+  }
+
+  function clearOnlyADecision(key: string) {
+    setOnlyADecisions((prev) => { const next = new Map(prev); next.delete(key); return next; });
+  }
+
+  function clearOnlyBDecision(key: string) {
+    setOnlyBDecisions((prev) => { const next = new Map(prev); next.delete(key); return next; });
+  }
+
   function setAllPairDecisions(kind: PairDecision['kind']): void {
     if (!result) return;
     const next = new Map<string, PairDecision>();
@@ -772,7 +784,11 @@ export default function CompareScreen() {
             return (
               <Pressable
                 key={kind}
-                onPress={() => setPairDecision(pair.etag, { kind })}
+                onPress={() =>
+                  decision?.kind === kind
+                    ? clearPairDecision(pair.etag)
+                    : setPairDecision(pair.etag, { kind })
+                }
                 style={({ pressed }) => [
                   styles.actionChip,
                   {
@@ -805,6 +821,7 @@ export default function CompareScreen() {
     files: ScannedFile[],
     decisions: Map<string, SingleDecision>,
     setDecision: (key: string, d: SingleDecision) => void,
+    clearDecision: (key: string) => void,
     emptyMsg: string,
     onApply: () => void,
     setAllDecisions: (kind: SingleDecision['kind']) => void,
@@ -904,7 +921,11 @@ export default function CompareScreen() {
               </View>
               <View style={styles.actionRow}>
                 <Pressable
-                  onPress={() => setDecision(f.key, { kind: 'delete' })}
+                  onPress={() =>
+                    d?.kind === 'delete'
+                      ? clearDecision(f.key)
+                      : setDecision(f.key, { kind: 'delete' })
+                  }
                   style={({ pressed }) => [
                     styles.actionChip,
                     {
@@ -918,7 +939,11 @@ export default function CompareScreen() {
                   </ThemedText>
                 </Pressable>
                 <Pressable
-                  onPress={() => setDecision(f.key, { kind: 'move-to-other' })}
+                  onPress={() =>
+                    d?.kind === 'move-to-other'
+                      ? clearDecision(f.key)
+                      : setDecision(f.key, { kind: 'move-to-other' })
+                  }
                   style={({ pressed }) => [
                     styles.actionChip,
                     {
@@ -932,7 +957,11 @@ export default function CompareScreen() {
                   </ThemedText>
                 </Pressable>
                 <Pressable
-                  onPress={() => setDecision(f.key, { kind: 'skip' })}
+                  onPress={() =>
+                    d?.kind === 'skip'
+                      ? clearDecision(f.key)
+                      : setDecision(f.key, { kind: 'skip' })
+                  }
                   style={({ pressed }) => [
                     styles.actionChip,
                     {
@@ -1004,6 +1033,7 @@ export default function CompareScreen() {
             result.onlyInA,
             onlyADecisions,
             setOnlyADecision,
+            clearOnlyADecision,
             `No files found only in "${nameA}".`,
             runApplyOnlyA,
             (kind) => setAllSingleDecisions(result.onlyInA, setOnlyADecisions, kind),
@@ -1015,6 +1045,7 @@ export default function CompareScreen() {
             result.onlyInB,
             onlyBDecisions,
             setOnlyBDecision,
+            clearOnlyBDecision,
             `No files found only in "${nameB}".`,
             runApplyOnlyB,
             (kind) => setAllSingleDecisions(result.onlyInB, setOnlyBDecisions, kind),
