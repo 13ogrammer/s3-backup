@@ -184,6 +184,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     overflow: 'hidden',
     zIndex: 100,
+    // Android: zIndex on siblings is unreliable without elevation. Pair with
+    // render-order (JobsStrip mounted after Tabs in (tabs)/_layout.tsx).
+    elevation: 8,
   },
   row: {
     flexDirection: 'row',

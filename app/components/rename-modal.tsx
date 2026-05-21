@@ -24,11 +24,14 @@ type Props = {
   originalValue?: string;
   /** Inline error message shown below the text input (e.g. folder-too-large). */
   errorMessage?: string;
+  /** Submit button label. Defaults to "Rename"; pass "Rename and Move" or "Move"
+   *  when the modal is re-opened after a collision during a move-to-destination. */
+  submitLabel?: string;
   onCancel: () => void;
   onSubmit: (newName: string) => void;
 };
 
-export function RenameModal({ visible, title, initialValue, originalValue, errorMessage, onCancel, onSubmit }: Props) {
+export function RenameModal({ visible, title, initialValue, originalValue, errorMessage, submitLabel, onCancel, onSubmit }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -91,7 +94,7 @@ export function RenameModal({ visible, title, initialValue, originalValue, error
                   pressed || !value.trim() || value.trim() === baseline ? 0.6 : 1,
               },
             ]}>
-            <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
+            <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>{submitLabel ?? 'Rename'}</ThemedText>
           </Pressable>
         </View>
       </ModalCard>

@@ -24,8 +24,6 @@ export default function TabLayout() {
 
   return (
     <>
-      {/* JobsStrip is an absolute overlay positioned above the tab bar */}
-      <JobsStrip />
       <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
@@ -89,6 +87,9 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+      {/* Rendered AFTER Tabs so it paints on top — sibling z-order beats
+       *  zIndex on Android. JobsStrip carries its own absolute positioning. */}
+      <JobsStrip />
     </>
   );
 }

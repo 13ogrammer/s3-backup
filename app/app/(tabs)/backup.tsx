@@ -123,6 +123,10 @@ export default function BrowseScreen() {
   const [moveDestVisible, setMoveDestVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameInitialOverride, setRenameInitialOverride] = useState<string | null>(null);
+  // When set, the next runRename treats the new name as the destination filename
+  // inside this prefix instead of an in-place rename. Populated by collision
+  // handlers in runMove so the user's original move intent is preserved.
+  const [collisionMoveDest, setCollisionMoveDest] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
@@ -255,32 +259,61 @@ export default function BrowseScreen() {
       showAlert('Invalid name', 'Name cannot be empty or contain "/".');
       return;
     }
-    setBusy('Renaming…');
-    try {
-      if (singleSelected.kind === 'file') {
-        const dest = dirname(singleSelected.key) + trimmed;
+
+    // collisionMoveDest is set when this rename is the second step of a move
+    // that hit a destination collision — we move into that prefix with the
+    // new name instead of renaming in place. Snapshot now; clear in finally.
+    const moveDestOverride = collisionMoveDest;
+    const isCollisionMove = moveDestOverride !== null;
+    const operationLabel = isCollisionMove ? 'Moving…' : 'Renaming…';
+
+    if (singleSelected.kind === 'file') {
+      setBusy(operationLabel);
+      try {
+        const dest = isCollisionMove
+          ? moveDestOverride + trimmed
+          : dirname(singleSelected.key) + trimmed;
         const res = await api.moveFile(singleSelected.key, dest);
         if (res.failed?.length) {
           for (const entry of res.failed) {
             await recordMoveFailure({ from: entry.key, to: dest, itemKind: 'file', reason: entry.reason }).catch(() => undefined);
           }
           showAlert(
-            'Rename partially completed',
-            `${res.failed.length} item(s) could not be renamed:\n` +
+            isCollisionMove ? 'Move partially completed' : 'Rename partially completed',
+            `${res.failed.length} item(s) could not be ${isCollisionMove ? 'moved' : 'renamed'}:\n` +
               res.failed
                 .slice(0, 5)
                 .map((e: { key: string; reason: string }) => `• ${e.key}: ${e.reason}`)
                 .join('\n'),
           );
         }
-      } else {
-        const parent = dirname(singleSelected.prefix.replace(/\/$/, ''));
-        const dest = parent + trimmed + '/';
-        const fromPrefix = singleSelected.prefix;
-        // moveFolder now returns 202 { jobId } for async processing.
-        const res = await api.moveFolder(fromPrefix, dest);
-        await addJob(res.jobId, { fromPrefix, toPrefix: dest });
+        setSelection(emptySelection());
+        setSelectionMode(false);
+        await load(path, 'refresh');
+      } catch (err) {
+        showAlert(
+          isCollisionMove ? 'Move failed' : 'Rename failed',
+          err instanceof Error ? err.message : 'Unknown error',
+        );
+      } finally {
+        setBusy(null);
+        setCollisionMoveDest(null);
       }
+      return;
+    }
+
+    // Folder branch — async via SQS job. Clear the busy overlay the moment we
+    // have a jobId so the user sees the JobsStrip take over instead of staring
+    // at the centered card through the post-rename directory refresh.
+    setBusy(operationLabel);
+    try {
+      const dest = isCollisionMove
+        ? moveDestOverride + trimmed + '/'
+        : dirname(singleSelected.prefix.replace(/\/$/, '')) + trimmed + '/';
+      const fromPrefix = singleSelected.prefix;
+      const res = await api.moveFolder(fromPrefix, dest);
+      await addJob(res.jobId, { fromPrefix, toPrefix: dest });
+      setBusy(null);
       setSelection(emptySelection());
       setSelectionMode(false);
       await load(path, 'refresh');
@@ -288,18 +321,18 @@ export default function BrowseScreen() {
       if (isFolderTooLargeError(err)) {
         const body = err.body as FolderTooLargeErrorBody;
         const countStr = body.truncated ? `${body.fileCount}+` : String(body.fileCount);
-        // Re-open the modal with an inline error rather than an alert.
         setRenameError(`Folder too large (${countStr} files; limit ${body.limit})`);
         setRenameVisible(true);
         setBusy(null);
         return;
       }
       showAlert(
-        'Rename failed',
+        isCollisionMove ? 'Move failed' : 'Rename failed',
         err instanceof Error ? err.message : 'Unknown error',
       );
     } finally {
       setBusy(null);
+      setCollisionMoveDest(null);
     }
   }
 
@@ -699,9 +732,13 @@ export default function BrowseScreen() {
               onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
             },
             {
-              text: 'Rename',
+              text: 'Rename and Move',
               onPress: () => {
                 setRenameInitialOverride(suggestion);
+                // Capture the original move destination so runRename moves the
+                // item into destPrefix with the new name (rather than renaming
+                // in place under the source's parent).
+                setCollisionMoveDest(destPrefix);
                 setRenameVisible(true);
               },
             },
@@ -736,9 +773,12 @@ export default function BrowseScreen() {
               onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
             },
             {
-              text: 'Rename',
+              text: 'Rename and Move',
               onPress: () => {
                 setRenameInitialOverride(suggestion);
+                // Capture the original move destination — runRename will move
+                // the folder into destPrefix with the new name.
+                setCollisionMoveDest(destPrefix);
                 setRenameVisible(true);
               },
             },
@@ -1030,12 +1070,20 @@ export default function BrowseScreen() {
       <RenameModal
         visible={renameVisible}
         title={
-          singleSelected?.kind === 'folder' ? 'Rename folder' : 'Rename file'
+          collisionMoveDest
+            ? (singleSelected?.kind === 'folder' ? 'Rename and move folder' : 'Rename and move file')
+            : (singleSelected?.kind === 'folder' ? 'Rename folder' : 'Rename file')
         }
+        submitLabel={collisionMoveDest ? 'Rename and Move' : 'Rename'}
         initialValue={renameInitialOverride ?? renameInitial}
         originalValue={renameInitial}
         errorMessage={renameError ?? undefined}
-        onCancel={() => { setRenameVisible(false); setRenameInitialOverride(null); setRenameError(null); }}
+        onCancel={() => {
+          setRenameVisible(false);
+          setRenameInitialOverride(null);
+          setRenameError(null);
+          setCollisionMoveDest(null);
+        }}
         onSubmit={runRename}
       />
 
