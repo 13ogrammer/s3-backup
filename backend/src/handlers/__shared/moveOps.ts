@@ -39,6 +39,13 @@ export async function existsInBucket(key: string): Promise<boolean> {
  * and derived assets will be regenerated on next view.
  */
 export async function moveOneObject(fromKey: string, toKey: string): Promise<void> {
+  // Pre-check the destination so a collision becomes an explicit per-item
+  // failure rather than a silent overwrite. S3 CopyObject would otherwise
+  // clobber any existing object at toKey.
+  if (await existsInBucket(toKey)) {
+    throw new Error('destination already exists');
+  }
+
   // Copy + delete the original first. If this fails we throw so the caller
   // can mark the item failed without any state change having occurred.
   await copyObject(fromKey, toKey);

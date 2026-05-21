@@ -34,22 +34,26 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
   const fromPrefix = sanitizePrefix(record.fromPrefix);
   const toPrefix = sanitizePrefix(record.toPrefix);
 
-  // Worker re-checks that the destination is free before beginning work.
-  const destCheck = await s3.send(
-    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: toPrefix, MaxKeys: 1 }),
-  );
-  if (destCheck.Contents && destCheck.Contents.length > 0) {
-    await setTerminalStatus(record, 'failed', 'destination occupied');
-    log.warn('destination occupied, aborting', { jobId: msg.jobId, toPrefix });
-    return;
-  }
-
-  // Collect keys to process — either from the message (retry-failed) or by
-  // walking the source prefix with ListObjectsV2.
+  // Collect keys to process — either from the message (explicit key list for
+  // folder-keys / retry-failed) or by walking the source prefix.
   let keys: string[];
   if (msg.keys && msg.keys.length > 0) {
+    // folder-keys mode: caller picked specific keys. Per-item moveOneObject
+    // handles destination collisions into JobRecord.failed[]; do NOT reject
+    // the whole job because the destination prefix has other content.
     keys = msg.keys;
   } else {
+    // Full-folder mode: refuse if destination has any existing content, since
+    // the source is moved wholesale and silent overwrites would be data loss.
+    const destCheck = await s3.send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: toPrefix, MaxKeys: 1 }),
+    );
+    if (destCheck.Contents && destCheck.Contents.length > 0) {
+      await setTerminalStatus(record, 'failed', 'destination occupied');
+      log.warn('destination occupied, aborting', { jobId: msg.jobId, toPrefix });
+      return;
+    }
+
     keys = [];
     let continuationToken: string | undefined;
     do {

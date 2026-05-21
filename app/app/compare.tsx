@@ -486,39 +486,67 @@ export default function CompareScreen() {
   useEffect(() => {
     if (moveJobIds.size === 0) return;
 
-    const TERMINAL_STATUSES = new Set(['completed', 'completed-with-errors', 'cancelled', 'failed']);
+    const COMPLETED_STATUSES = new Set(['completed', 'completed-with-errors']);
+    const ABORTED_STATUSES = new Set(['cancelled', 'failed']);
 
     for (const [jobId, { side, keys: trackedKeys }] of moveJobIds) {
       const record = allJobs.find((j) => j.jobId === jobId);
-      if (!record || !TERMINAL_STATUSES.has(record.status)) continue;
+      if (!record) continue;
 
-      const failedKeySet = new Set((record.failed ?? []).map((f) => f.key));
-      const successKeys = trackedKeys.filter((k) => !failedKeySet.has(k));
+      const isCompleted = COMPLETED_STATUSES.has(record.status);
+      const isAborted = ABORTED_STATUSES.has(record.status);
+      if (!isCompleted && !isAborted) continue;
 
-      if (successKeys.length > 0) {
-        const successSet = new Set(successKeys);
-        if (side === 'a') {
-          setResult((prev) =>
-            prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !successSet.has(f.key)) } : prev,
-          );
-          setOnlyADecisions((prev) => {
-            const next = new Map(prev);
-            for (const k of successSet) next.delete(k);
-            return next;
-          });
-        } else {
-          setResult((prev) =>
-            prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !successSet.has(f.key)) } : prev,
-          );
-          setOnlyBDecisions((prev) => {
-            const next = new Map(prev);
-            for (const k of successSet) next.delete(k);
-            return next;
-          });
+      if (isCompleted) {
+        // Per-item processing ran. Trust failed[]; prune the rest.
+        const failedKeySet = new Set((record.failed ?? []).map((f) => f.key));
+        const successKeys = trackedKeys.filter((k) => !failedKeySet.has(k));
+
+        if (successKeys.length > 0) {
+          const successSet = new Set(successKeys);
+          if (side === 'a') {
+            setResult((prev) =>
+              prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !successSet.has(f.key)) } : prev,
+            );
+            setOnlyADecisions((prev) => {
+              const next = new Map(prev);
+              for (const k of successSet) next.delete(k);
+              return next;
+            });
+          } else {
+            setResult((prev) =>
+              prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !successSet.has(f.key)) } : prev,
+            );
+            setOnlyBDecisions((prev) => {
+              const next = new Map(prev);
+              for (const k of successSet) next.delete(k);
+              return next;
+            });
+          }
         }
+
+        if (record.failed && record.failed.length > 0) {
+          const sample = record.failed
+            .slice(0, 5)
+            .map((f) => `• ${basename(f.key)}: ${f.reason}`)
+            .join('\n');
+          showAlert(
+            'Some moves failed',
+            `${record.failed.length} of ${trackedKeys.length} file(s) could not be moved:\n${sample}`,
+          );
+        }
+      } else {
+        // Aborted (failed / cancelled) — we don't know which keys (if any)
+        // were moved before the worker bailed. Leave the rows in place so
+        // the user can retry; surface the worker's reason if known.
+        showAlert(
+          record.status === 'cancelled' ? 'Move cancelled' : 'Move failed',
+          record.error ?? 'The move job did not complete. The affected files are still in their original folder; rescan to re-evaluate.',
+        );
       }
 
-      // Remove all tracked keys (success + failed) from the in-flight set.
+      // Either way, release the rows from the in-flight set so they're
+      // interactive again, and stop tracking this job.
       setInFlightMoveKeys((prev) => {
         const next = new Set(prev);
         for (const k of trackedKeys) next.delete(k);
