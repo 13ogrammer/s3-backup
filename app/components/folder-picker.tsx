@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -110,112 +112,117 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent>
-      <ThemedView style={styles.container}>
-        <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
-          <Pressable onPress={onClose} accessibilityRole="button">
-            <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
-          </Pressable>
-          <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
-          <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
-            <ThemedText
-              style={{
-                color: colors.tint,
-                fontWeight: '600',
-                fontSize: 16,
-                opacity: validationError ? 0.35 : 1,
-              }}>
-              {confirmLabel ?? 'Select'}
-            </ThemedText>
-          </Pressable>
-        </View>
-        {validationError && (
-          <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
-            <ThemedText style={styles.errorText}>{validationError}</ThemedText>
-          </View>
-        )}
-
-        <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
-          {path !== '' && (
-            <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
-              <IconSymbol name="chevron.left" size={20} color={colors.tint} />
-              <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
-            </Pressable>
-          )}
-          <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
-            /{path || '(root)'}
-          </ThemedText>
-        </View>
-
-        {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator />
-          </View>
-        ) : (
-          <FlatList
-            data={folders}
-            keyExtractor={(item) => item}
-            contentContainerStyle={styles.list}
-            ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
-            ListEmptyComponent={
-              <ThemedText style={[styles.empty, { color: colors.muted }]}>
-                No subfolders. Use "New folder" below or tap Select to use this folder.
-              </ThemedText>
-            }
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => goInto(item)}
-                style={({ pressed }) => [
-                  styles.row,
-                  { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <IconSymbol name="folder" size={22} color={colors.icon} />
-                <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
-                <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}>
+          <ThemedView style={styles.container}>
+            <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+              <Pressable onPress={onClose} accessibilityRole="button">
+                <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
               </Pressable>
+              <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
+              <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
+                <ThemedText
+                  style={{
+                    color: colors.tint,
+                    fontWeight: '600',
+                    fontSize: 16,
+                    opacity: validationError ? 0.35 : 1,
+                  }}>
+                  {confirmLabel ?? 'Select'}
+                </ThemedText>
+              </Pressable>
+            </View>
+            {validationError && (
+              <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
+                <ThemedText style={styles.errorText}>{validationError}</ThemedText>
+              </View>
             )}
-          />
-        )}
 
-        {!hideNewFolder && (
-          <View
-            style={[
-              styles.newFolderRow,
-              {
-                backgroundColor: colors.surface,
-                paddingBottom: Spacing.md + insets.bottom,
-              },
-            ]}>
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="New folder name"
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[
-                styles.input,
-                { color: colors.text, backgroundColor: colors.surfaceMuted },
-              ]}
-              onSubmitEditing={createSubfolder}
-              returnKeyType="done"
-            />
-            <Pressable
-              onPress={createSubfolder}
-              disabled={!newName.trim()}
-              style={({ pressed }) => [
-                styles.createButton,
-                {
-                  backgroundColor: colors.tint,
-                  opacity: pressed || !newName.trim() ? 0.5 : 1,
-                },
-              ]}>
-              <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
-                Add
+            <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
+              {path !== '' && (
+                <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
+                  <IconSymbol name="chevron.left" size={20} color={colors.tint} />
+                  <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
+                </Pressable>
+              )}
+              <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
+                /{path || '(root)'}
               </ThemedText>
-            </Pressable>
-          </View>
-        )}
-      </ThemedView>
+            </View>
+
+            {loading ? (
+              <View style={styles.center}>
+                <ActivityIndicator />
+              </View>
+            ) : (
+              <FlatList
+                data={folders}
+                keyExtractor={(item) => item}
+                contentContainerStyle={styles.list}
+                ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+                ListEmptyComponent={
+                  <ThemedText style={[styles.empty, { color: colors.muted }]}>
+                    No subfolders. Use "New folder" below or tap Select to use this folder.
+                  </ThemedText>
+                }
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => goInto(item)}
+                    style={({ pressed }) => [
+                      styles.row,
+                      { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
+                    ]}>
+                    <IconSymbol name="folder" size={22} color={colors.icon} />
+                    <ThemedText style={styles.rowLabel}>{lastSegment(item)}</ThemedText>
+                    <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+                  </Pressable>
+                )}
+              />
+            )}
+
+            {!hideNewFolder && (
+              <View
+                style={[
+                  styles.newFolderRow,
+                  {
+                    backgroundColor: colors.surface,
+                    paddingBottom: Spacing.md + insets.bottom,
+                  },
+                ]}>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="New folder name"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[
+                    styles.input,
+                    { color: colors.text, backgroundColor: colors.surfaceMuted },
+                  ]}
+                  onSubmitEditing={createSubfolder}
+                  returnKeyType="done"
+                />
+                <Pressable
+                  onPress={createSubfolder}
+                  disabled={!newName.trim()}
+                  style={({ pressed }) => [
+                    styles.createButton,
+                    {
+                      backgroundColor: colors.tint,
+                      opacity: pressed || !newName.trim() ? 0.5 : 1,
+                    },
+                  ]}>
+                  <ThemedText style={[styles.createButtonText, { color: colors.onAccent }]}>
+                    Add
+                  </ThemedText>
+                </Pressable>
+              </View>
+            )}
+          </ThemedView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
