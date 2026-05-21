@@ -48,6 +48,14 @@ export default function CompareScreen() {
     });
   }, [navigation, nameA, nameB]);
 
+  // Auto-start when both folders are available on mount.
+  // startScan and scanState intentionally omitted from deps: startScan isn't
+  // memoized, and including scanState would re-fire on done→idle transitions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (prefixA && prefixB && scanState === 'idle') { startScan(); }
+  }, [prefixA, prefixB]);
+
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [scanError, setScanError] = useState<string | null>(null);
   const [progressA, setProgressA] = useState<ScanProgress>({
