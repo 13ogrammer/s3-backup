@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Dispatch, SetStateAction, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -159,6 +159,27 @@ export default function CompareScreen() {
       next.set(key, d);
       return next;
     });
+  }
+
+  function setAllPairDecisions(kind: PairDecision['kind']): void {
+    if (!result) return;
+    const next = new Map<string, PairDecision>();
+    for (const pair of result.shared) {
+      next.set(pair.etag, { kind });
+    }
+    setPairDecisions(next);
+  }
+
+  function setAllSingleDecisions(
+    files: ScannedFile[],
+    setter: Dispatch<SetStateAction<Map<string, SingleDecision>>>,
+    kind: SingleDecision['kind'],
+  ): void {
+    const next = new Map<string, SingleDecision>();
+    for (const f of files) {
+      next.set(f.key, { kind });
+    }
+    setter(next);
   }
 
   // ---- Apply: shared pairs ----
@@ -470,6 +491,26 @@ export default function CompareScreen() {
 
     return (
       <>
+        <View style={styles.bulkBar}>
+          {(
+            [
+              { kind: 'keep-a' as const, label: 'Keep all from A' },
+              { kind: 'keep-b' as const, label: 'Keep all from B' },
+              { kind: 'skip' as const, label: 'Skip all' },
+            ] as const
+          ).map(({ kind, label }) => (
+            <Pressable
+              key={kind}
+              onPress={() => setAllPairDecisions(kind)}
+              disabled={applying}
+              style={({ pressed }) => [
+                styles.actionChip,
+                { backgroundColor: colors.surfaceMuted, opacity: applying || pressed ? 0.7 : 1 },
+              ]}>
+              <ThemedText style={[Type.meta, { color: colors.text }]}>{label}</ThemedText>
+            </Pressable>
+          ))}
+        </View>
         {actionable.length > 0 && (
           <Pressable
             onPress={runApplyShared}
@@ -565,6 +606,7 @@ export default function CompareScreen() {
     setDecision: (key: string, d: SingleDecision) => void,
     emptyMsg: string,
     onApply: () => void,
+    setAllDecisions: (kind: SingleDecision['kind']) => void,
   ) {
     if (files.length === 0) {
       return (
@@ -578,6 +620,25 @@ export default function CompareScreen() {
 
     return (
       <>
+        <View style={styles.bulkBar}>
+          {(
+            [
+              { kind: 'delete' as const, label: 'Delete all' },
+              { kind: 'skip' as const, label: 'Skip all' },
+            ] as const
+          ).map(({ kind, label }) => (
+            <Pressable
+              key={kind}
+              onPress={() => setAllDecisions(kind)}
+              disabled={applying}
+              style={({ pressed }) => [
+                styles.actionChip,
+                { backgroundColor: colors.surfaceMuted, opacity: applying || pressed ? 0.7 : 1 },
+              ]}>
+              <ThemedText style={[Type.meta, { color: colors.text }]}>{label}</ThemedText>
+            </Pressable>
+          ))}
+        </View>
         {toDeleteCount > 0 && (
           <Pressable
             onPress={onApply}
@@ -694,6 +755,7 @@ export default function CompareScreen() {
             setOnlyADecision,
             `No files found only in "${nameA}".`,
             runApplyOnlyA,
+            (kind) => setAllSingleDecisions(result.onlyInA, setOnlyADecisions, kind),
           )}
         {activeSection === 'only-b' &&
           renderSingleSection(
@@ -702,6 +764,7 @@ export default function CompareScreen() {
             setOnlyBDecision,
             `No files found only in "${nameB}".`,
             runApplyOnlyB,
+            (kind) => setAllSingleDecisions(result.onlyInB, setOnlyBDecisions, kind),
           )}
         {activeSection === 'uncomparable' && renderUncomparableSection()}
       </View>
@@ -905,6 +968,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
     borderRadius: Radius.pill,
+  },
+  bulkBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
   },
   applyButton: {
     paddingVertical: Spacing.md,
