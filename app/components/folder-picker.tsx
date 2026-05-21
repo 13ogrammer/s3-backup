@@ -126,7 +126,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent>
-      <ThemedView style={[styles.container, { paddingBottom: keyboardHeight }]}>
+      <ThemedView style={[styles.container, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + insets.bottom : 0 }]}>
         <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
           <Pressable onPress={onClose} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
