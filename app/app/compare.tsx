@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
-import { Dispatch, SetStateAction, useLayoutEffect, useRef, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -20,18 +20,20 @@ import { appendAudit } from '@/lib/audit';
 import { diffFolders, scanFolder, type ComparePair, type FolderCompareResult, type UncomparableFile } from '@/lib/compare';
 import { type ScanProgress, type ScannedFile } from '@/lib/duplicates';
 import { basename, formatBytes } from '@/lib/format';
+import { useJobs } from '@/lib/jobs';
 
 type ScanState = 'idle' | 'scanning' | 'done' | 'error';
 type ActiveSection = 'shared' | 'only-a' | 'only-b' | 'uncomparable' | null;
 
 type PairDecision = { kind: 'keep-a' } | { kind: 'keep-b' } | { kind: 'skip' };
-type SingleDecision = { kind: 'delete' } | { kind: 'skip' };
+type SingleDecision = { kind: 'delete' } | { kind: 'move-to-other' } | { kind: 'skip' };
 
 export default function CompareScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { showAlert } = useAlert();
   const navigation = useNavigation();
+  const { addJob, allJobs } = useJobs();
 
   // Router params: a and b are folder prefixes, pre-sorted lexicographically.
   const { a: rawA, b: rawB } = useLocalSearchParams<{ a: string; b: string }>();
@@ -70,6 +72,16 @@ export default function CompareScreen() {
   const [thumbCache, setThumbCache] = useState<Map<string, string>>(new Map());
   const [applying, setApplying] = useState(false);
 
+  // Keys with an in-flight move job: rows are greyed out but not unmounted.
+  const [inFlightMoveKeys, setInFlightMoveKeys] = useState<Set<string>>(new Set());
+  // jobId -> { side, keys } for terminal-status cleanup via useEffect.
+  const [moveJobIds, setMoveJobIds] = useState<Map<string, { side: 'a' | 'b'; keys: string[] }>>(new Map());
+
+  // Mirror result into a ref so the allJobs effect doesn't re-trigger on every
+  // result prune (would create an infinite loop).
+  const resultRef = useRef<FolderCompareResult | null>(null);
+  resultRef.current = result;
+
   const abortRef = useRef<AbortController | null>(null);
 
   function ensureThumb(key: string, kind: 'image' | 'video' | 'other') {
@@ -102,6 +114,8 @@ export default function CompareScreen() {
     setOnlyADecisions(new Map());
     setOnlyBDecisions(new Map());
     setThumbCache(new Map());
+    setInFlightMoveKeys(new Set());
+    setMoveJobIds(new Map());
 
     const initProg: ScanProgress = { pagesFetched: 0, filesScanned: 0, filesWithEtag: 0, filesSkippedMultipart: 0 };
     setProgressA({ ...initProg });
@@ -277,110 +291,248 @@ export default function CompareScreen() {
 
   async function runApplyOnlyA() {
     if (!result) return;
-    const toDelete = result.onlyInA.filter((f) => {
-      const d = onlyADecisions.get(f.key);
-      return d?.kind === 'delete';
-    });
+    const toDelete = result.onlyInA.filter((f) => onlyADecisions.get(f.key)?.kind === 'delete');
+    const toMove = result.onlyInA.filter((f) => onlyADecisions.get(f.key)?.kind === 'move-to-other');
 
-    if (toDelete.length === 0) {
-      showAlert('No deletions selected', 'Mark at least one file as Delete in the "Only in A" section.');
+    if (toDelete.length === 0 && toMove.length === 0) {
+      showAlert('No actions selected', 'Mark at least one file as Delete or Move to B in the "Only in A" section.');
       return;
     }
 
-    const totalBytes = toDelete.reduce((acc, f) => acc + f.size, 0);
-    showAlert(
-      `Delete ${toDelete.length} file(s) from "${nameA}"?`,
-      `Frees ~${formatBytes(totalBytes)}. S3 versioning recommended.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => runApplySingleSection(toDelete, 'a') },
-      ],
-    );
+    const totalDeleteBytes = toDelete.reduce((acc, f) => acc + f.size, 0);
+
+    if (toDelete.length > 0 && toMove.length > 0) {
+      showAlert(
+        `Delete ${toDelete.length} file(s) and move ${toMove.length} file(s) to "${nameB}"?`,
+        `Frees ~${formatBytes(totalDeleteBytes)}. S3 versioning recommended.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Apply', style: 'destructive', onPress: () => runApplySingleSection(toDelete, toMove, 'a') },
+        ],
+      );
+    } else if (toMove.length > 0) {
+      showAlert(
+        `Move ${toMove.length} file(s) to "${nameB}"?`,
+        '',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Move', style: 'default', onPress: () => runApplySingleSection(toDelete, toMove, 'a') },
+        ],
+      );
+    } else {
+      showAlert(
+        `Delete ${toDelete.length} file(s) from "${nameA}"?`,
+        `Frees ~${formatBytes(totalDeleteBytes)}. S3 versioning recommended.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => runApplySingleSection(toDelete, toMove, 'a') },
+        ],
+      );
+    }
   }
 
   async function runApplyOnlyB() {
     if (!result) return;
-    const toDelete = result.onlyInB.filter((f) => {
-      const d = onlyBDecisions.get(f.key);
-      return d?.kind === 'delete';
-    });
+    const toDelete = result.onlyInB.filter((f) => onlyBDecisions.get(f.key)?.kind === 'delete');
+    const toMove = result.onlyInB.filter((f) => onlyBDecisions.get(f.key)?.kind === 'move-to-other');
 
-    if (toDelete.length === 0) {
-      showAlert('No deletions selected', 'Mark at least one file as Delete in the "Only in B" section.');
+    if (toDelete.length === 0 && toMove.length === 0) {
+      showAlert('No actions selected', 'Mark at least one file as Delete or Move to A in the "Only in B" section.');
       return;
     }
 
-    const totalBytes = toDelete.reduce((acc, f) => acc + f.size, 0);
-    showAlert(
-      `Delete ${toDelete.length} file(s) from "${nameB}"?`,
-      `Frees ~${formatBytes(totalBytes)}. S3 versioning recommended.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => runApplySingleSection(toDelete, 'b') },
-      ],
-    );
+    const totalDeleteBytes = toDelete.reduce((acc, f) => acc + f.size, 0);
+
+    if (toDelete.length > 0 && toMove.length > 0) {
+      showAlert(
+        `Delete ${toDelete.length} file(s) and move ${toMove.length} file(s) to "${nameA}"?`,
+        `Frees ~${formatBytes(totalDeleteBytes)}. S3 versioning recommended.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Apply', style: 'destructive', onPress: () => runApplySingleSection(toDelete, toMove, 'b') },
+        ],
+      );
+    } else if (toMove.length > 0) {
+      showAlert(
+        `Move ${toMove.length} file(s) to "${nameA}"?`,
+        '',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Move', style: 'default', onPress: () => runApplySingleSection(toDelete, toMove, 'b') },
+        ],
+      );
+    } else {
+      showAlert(
+        `Delete ${toDelete.length} file(s) from "${nameB}"?`,
+        `Frees ~${formatBytes(totalDeleteBytes)}. S3 versioning recommended.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => runApplySingleSection(toDelete, toMove, 'b') },
+        ],
+      );
+    }
   }
 
-  async function runApplySingleSection(files: ScannedFile[], side: 'a' | 'b') {
+  async function runApplySingleSection(
+    toDelete: ScannedFile[],
+    toMove: ScannedFile[],
+    side: 'a' | 'b',
+  ) {
     setApplying(true);
-    try {
-      const keys = files.map((f) => f.key);
-      const res = await api.delete({ keys });
+    const fromPrefix = side === 'a' ? prefixA : prefixB;
+    const toPrefix = side === 'a' ? prefixB : prefixA;
 
-      if (res.errors.length > 0) {
-        const errList = res.errors
-          .slice(0, 5)
-          .map((e) => `• ${basename(e.key)}: ${e.message}`)
-          .join('\n');
-        showAlert(
-          'Partial delete',
-          `Deleted ${res.deleted.length} of ${keys.length}.\n${res.errors.length} failed:\n${errList}`,
-        );
+    const deleteTask =
+      toDelete.length > 0
+        ? api.delete({ keys: toDelete.map((f) => f.key) })
+        : Promise.resolve(null);
+
+    const moveTask =
+      toMove.length > 0
+        ? api.moveFolderKeys(fromPrefix, toPrefix, toMove.map((f) => f.key))
+        : Promise.resolve(null);
+
+    try {
+      const [deleteResult, moveResult] = await Promise.allSettled([deleteTask, moveTask]);
+
+      // Handle delete result.
+      if (deleteResult.status === 'fulfilled' && deleteResult.value !== null) {
+        const res = deleteResult.value;
+
+        if (res.errors.length > 0) {
+          const errList = res.errors
+            .slice(0, 5)
+            .map((e) => `• ${basename(e.key)}: ${e.message}`)
+            .join('\n');
+          showAlert(
+            'Partial delete',
+            `Deleted ${res.deleted.length} of ${toDelete.length}.\n${res.errors.length} failed:\n${errList}`,
+          );
+        }
+
+        if (res.deleted.length > 0) {
+          const deletedSet = new Set(res.deleted);
+          const recoveredBytes = toDelete
+            .filter((f) => deletedSet.has(f.key))
+            .reduce((acc, f) => acc + f.size, 0);
+
+          await appendAudit({
+            action: 'delete-folder-compare',
+            strategy: 'manual',
+            keptKey: side === 'a' ? prefixB : prefixA,
+            discardedKeys: res.deleted,
+            recoveredBytes,
+          });
+
+          if (side === 'a') {
+            setResult((prev) =>
+              prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !deletedSet.has(f.key)) } : prev,
+            );
+            setOnlyADecisions((prev) => {
+              const next = new Map(prev);
+              for (const k of deletedSet) next.delete(k);
+              return next;
+            });
+          } else {
+            setResult((prev) =>
+              prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !deletedSet.has(f.key)) } : prev,
+            );
+            setOnlyBDecisions((prev) => {
+              const next = new Map(prev);
+              for (const k of deletedSet) next.delete(k);
+              return next;
+            });
+          }
+        }
+      } else if (deleteResult.status === 'rejected') {
+        showAlert('Delete failed', deleteResult.reason instanceof Error ? deleteResult.reason.message : 'Unknown error');
       }
 
-      if (res.deleted.length > 0) {
-        const deletedSetForBytes = new Set(res.deleted);
-        // Only count bytes for keys that were actually deleted — avoids
-        // over-reporting when the API returns partial failures.
-        const recoveredBytes = files
-          .filter((f) => deletedSetForBytes.has(f.key))
-          .reduce((acc, f) => acc + f.size, 0);
+      // Handle move result.
+      if (moveResult.status === 'fulfilled' && moveResult.value !== null) {
+        const { jobId } = moveResult.value;
+        const keysToMove = toMove.map((f) => f.key);
 
-        // Bulk audit entry for the section.
-        await appendAudit({
-          action: 'delete-folder-compare',
-          strategy: 'manual',
-          keptKey: side === 'a' ? prefixB : prefixA,
-          discardedKeys: res.deleted,
-          recoveredBytes,
+        await addJob(jobId, { fromPrefix, toPrefix });
+
+        setInFlightMoveKeys((prev) => {
+          const next = new Set(prev);
+          for (const k of keysToMove) next.add(k);
+          return next;
+        });
+        setMoveJobIds((prev) => {
+          const next = new Map(prev);
+          next.set(jobId, { side, keys: keysToMove });
+          return next;
         });
 
-        if (side === 'a') {
-          setResult((prev) =>
-            prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !deletedSetForBytes.has(f.key)) } : prev,
-          );
-          setOnlyADecisions((prev) => {
-            const next = new Map(prev);
-            for (const k of deletedSetForBytes) next.delete(k);
-            return next;
-          });
-        } else {
-          setResult((prev) =>
-            prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !deletedSetForBytes.has(f.key)) } : prev,
-          );
-          setOnlyBDecisions((prev) => {
-            const next = new Map(prev);
-            for (const k of deletedSetForBytes) next.delete(k);
-            return next;
-          });
-        }
+        await appendAudit({
+          action: 'move-folder-compare',
+          strategy: 'manual',
+          keptKey: toPrefix,
+          discardedKeys: keysToMove,
+          recoveredBytes: 0,
+        });
+      } else if (moveResult.status === 'rejected') {
+        showAlert('Move failed', moveResult.reason instanceof Error ? moveResult.reason.message : 'Unknown error');
       }
-    } catch (err) {
-      showAlert('Delete failed', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setApplying(false);
     }
   }
+
+  // ---- Jobs-effect: prune terminal move jobs ----
+
+  useEffect(() => {
+    if (moveJobIds.size === 0) return;
+
+    const TERMINAL_STATUSES = new Set(['completed', 'completed-with-errors', 'cancelled', 'failed']);
+
+    for (const [jobId, { side, keys: trackedKeys }] of moveJobIds) {
+      const record = allJobs.find((j) => j.jobId === jobId);
+      if (!record || !TERMINAL_STATUSES.has(record.status)) continue;
+
+      const failedKeySet = new Set((record.failed ?? []).map((f) => f.key));
+      const successKeys = trackedKeys.filter((k) => !failedKeySet.has(k));
+
+      if (successKeys.length > 0) {
+        const successSet = new Set(successKeys);
+        if (side === 'a') {
+          setResult((prev) =>
+            prev ? { ...prev, onlyInA: prev.onlyInA.filter((f) => !successSet.has(f.key)) } : prev,
+          );
+          setOnlyADecisions((prev) => {
+            const next = new Map(prev);
+            for (const k of successSet) next.delete(k);
+            return next;
+          });
+        } else {
+          setResult((prev) =>
+            prev ? { ...prev, onlyInB: prev.onlyInB.filter((f) => !successSet.has(f.key)) } : prev,
+          );
+          setOnlyBDecisions((prev) => {
+            const next = new Map(prev);
+            for (const k of successSet) next.delete(k);
+            return next;
+          });
+        }
+      }
+
+      // Remove all tracked keys (success + failed) from the in-flight set.
+      setInFlightMoveKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of trackedKeys) next.delete(k);
+        return next;
+      });
+
+      setMoveJobIds((prev) => {
+        const next = new Map(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allJobs, moveJobIds]);
 
   // ---- Render helpers ----
 
@@ -607,6 +759,8 @@ export default function CompareScreen() {
     emptyMsg: string,
     onApply: () => void,
     setAllDecisions: (kind: SingleDecision['kind']) => void,
+    otherName: string,
+    sectionInFlightMoveKeys: Set<string>,
   ) {
     if (files.length === 0) {
       return (
@@ -617,6 +771,21 @@ export default function CompareScreen() {
     }
 
     const toDeleteCount = files.filter((f) => decisions.get(f.key)?.kind === 'delete').length;
+    const toMoveCount = files.filter((f) => decisions.get(f.key)?.kind === 'move-to-other').length;
+
+    // Determine apply button label and color based on which actions are selected.
+    let applyLabel: string | null = null;
+    let applyBgColor = colors.danger;
+    if (toDeleteCount > 0 && toMoveCount > 0) {
+      applyLabel = `Apply ${toDeleteCount} delete(s) + ${toMoveCount} move(s)`;
+      applyBgColor = colors.danger;
+    } else if (toMoveCount > 0) {
+      applyLabel = `Move ${toMoveCount} selected file(s) to "${otherName}"`;
+      applyBgColor = colors.tint;
+    } else if (toDeleteCount > 0) {
+      applyLabel = `Delete ${toDeleteCount} selected file(s)`;
+      applyBgColor = colors.danger;
+    }
 
     return (
       <>
@@ -624,7 +793,8 @@ export default function CompareScreen() {
           {(
             [
               { kind: 'delete' as const, label: 'Delete all' },
-              { kind: 'skip' as const, label: 'Skip all' },
+              { kind: 'move-to-other' as const, label: `Move all to ${otherName}` },
+              { kind: 'skip' as const, label: 'Keep all' },
             ] as const
           ).map(({ kind, label }) => (
             <Pressable
@@ -639,23 +809,31 @@ export default function CompareScreen() {
             </Pressable>
           ))}
         </View>
-        {toDeleteCount > 0 && (
+        {applyLabel !== null && (
           <Pressable
             onPress={onApply}
             disabled={applying}
             style={({ pressed }) => [
               styles.applyButton,
-              { backgroundColor: colors.danger, opacity: applying || pressed ? 0.7 : 1 },
+              { backgroundColor: applyBgColor, opacity: applying || pressed ? 0.7 : 1 },
             ]}>
             <ThemedText style={[Type.label, { color: colors.onAccent, fontWeight: '600' }]}>
-              Delete {toDeleteCount} selected file(s)
+              {applyLabel}
             </ThemedText>
           </Pressable>
         )}
         {files.map((f) => {
           const d = decisions.get(f.key);
+          const isInFlight = sectionInFlightMoveKeys.has(f.key);
           return (
-            <View key={f.key} style={[styles.card, { backgroundColor: colors.surface }, Shadow.card]}>
+            <View
+              key={f.key}
+              pointerEvents={isInFlight ? 'none' : 'auto'}
+              style={[
+                styles.card,
+                { backgroundColor: colors.surface, opacity: isInFlight ? 0.5 : 1 },
+                Shadow.card,
+              ]}>
               <View style={styles.sideRow}>
                 {renderThumb(f.key, f.kind)}
                 <ThemedText style={[Type.meta, { color: colors.text, flex: 1 }]} numberOfLines={2}>
@@ -681,6 +859,20 @@ export default function CompareScreen() {
                   </ThemedText>
                 </Pressable>
                 <Pressable
+                  onPress={() => setDecision(f.key, { kind: 'move-to-other' })}
+                  style={({ pressed }) => [
+                    styles.actionChip,
+                    {
+                      backgroundColor: d?.kind === 'move-to-other' ? colors.tint : colors.surfaceMuted,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}>
+                  <ThemedText
+                    style={[Type.meta, { color: d?.kind === 'move-to-other' ? colors.onAccent : colors.text }]}>
+                    Move to {otherName}
+                  </ThemedText>
+                </Pressable>
+                <Pressable
                   onPress={() => setDecision(f.key, { kind: 'skip' })}
                   style={({ pressed }) => [
                     styles.actionChip,
@@ -689,7 +881,7 @@ export default function CompareScreen() {
                       opacity: pressed ? 0.7 : 1,
                     },
                   ]}>
-                  <ThemedText style={[Type.meta, { color: colors.tint }]}>Skip</ThemedText>
+                  <ThemedText style={[Type.meta, { color: colors.tint }]}>Keep</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -718,7 +910,7 @@ export default function CompareScreen() {
           (e.g. uploaded in multiple parts), which cannot be compared reliably across clients.
           They are shown for reference only.
         </ThemedText>
-        {all.map((f) => (
+        {all.map((f: UncomparableFile) => (
           <View key={f.key} style={[styles.card, { backgroundColor: colors.surface }, Shadow.card]}>
             <View style={styles.sideRow}>
               <Ionicons name="alert-circle-outline" size={20} color={colors.muted} />
@@ -756,6 +948,8 @@ export default function CompareScreen() {
             `No files found only in "${nameA}".`,
             runApplyOnlyA,
             (kind) => setAllSingleDecisions(result.onlyInA, setOnlyADecisions, kind),
+            nameB,
+            inFlightMoveKeys,
           )}
         {activeSection === 'only-b' &&
           renderSingleSection(
@@ -765,6 +959,8 @@ export default function CompareScreen() {
             `No files found only in "${nameB}".`,
             runApplyOnlyB,
             (kind) => setAllSingleDecisions(result.onlyInB, setOnlyBDecisions, kind),
+            nameA,
+            inFlightMoveKeys,
           )}
         {activeSection === 'uncomparable' && renderUncomparableSection()}
       </View>
@@ -854,7 +1050,7 @@ export default function CompareScreen() {
         <View style={styles.busyOverlay}>
           <ThemedView style={styles.busyCard}>
             <ActivityIndicator />
-            <ThemedText>Deleting…</ThemedText>
+            <ThemedText>Applying…</ThemedText>
           </ThemedView>
         </View>
       )}

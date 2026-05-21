@@ -234,6 +234,8 @@ export const api = {
     call<{ ok: true; cancelRequested: true }>('/move-job-cancel', { jobId }),
   retryFailedMove: (jobId: string, fromPrefix: string, toPrefix: string, keys: string[]) =>
     call<MoveJobAcceptedResponse>('/move', { kind: 'folder-keys', fromPrefix, toPrefix, keys, retryOfJobId: jobId }),
+  moveFolderKeys: (fromPrefix: string, toPrefix: string, keys: string[]) =>
+    call<MoveJobAcceptedResponse>('/move', { kind: 'folder-keys', fromPrefix, toPrefix, keys }),
   getDerivedUrl: (key: string, tier: DerivedTier) =>
     call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
   folderPreview: (prefix: string) =>

@@ -8,7 +8,7 @@ import {
 export type AuditEntry = {
   id: string;
   at: string;
-  action: 'delete-duplicates' | 'delete-folder-compare';
+  action: 'delete-duplicates' | 'delete-folder-compare' | 'move-folder-compare';
   strategy: 'newest' | 'oldest' | 'manual';
   keptKey: string;
   discardedKeys: string[];
