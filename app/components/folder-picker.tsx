@@ -6,7 +6,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -127,7 +126,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
       navigationBarTranslucent>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={0}>
           <ThemedView style={styles.container}>
             <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
