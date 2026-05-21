@@ -72,13 +72,22 @@ points at a placeholder URL — users have to fall back to
 ## Local dev (MinIO + Node, no SAM/Docker for the backend itself)
 
 The fastest dev loop: backend runs as plain Node via `tsx watch`, S3 is
-emulated by **MinIO** (one Docker container, MIT-licensed, open-source).
-Hot reload on save, no Lambda cold-start, no AWS bill.
+emulated by **MinIO**, and SQS is emulated by **ElasticMQ** (two Docker
+containers, both open-source). Hot reload on save, no Lambda cold-start,
+no AWS bill.
 
-> Why MinIO and not LocalStack? LocalStack went fully commercial in
-> v2026.03 — both `latest` and `s3-latest` images now require a paid
-> license to start. MinIO is the simplest free, open-source S3-compatible
-> server and the AWS SDK works against it unchanged.
+> Why MinIO + ElasticMQ and not LocalStack? LocalStack went fully
+> commercial in v2026.03 — both `latest` and `s3-latest` images now
+> require a paid license to start. MinIO is the canonical free S3
+> replacement; ElasticMQ (SoftwareMill, Apache 2.0) is its SQS
+> counterpart and the AWS SDK works against it unchanged.
+
+The dev-server auto-creates `folder-move-queue` + `folder-move-dlq` on
+startup with a redrive policy (`maxReceiveCount: 1`) and visibility
+timeout matching the production SAM template. A built-in long-polling
+consumer dispatches each message to the worker handler in the same
+Node process — same code path as the deployed Lambda, just no cold
+start.
 
 ### Prereqs
 

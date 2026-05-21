@@ -16,3 +16,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  elasticmq:
+    container_name: s3backup-elasticmq
+    image: softwaremill/elasticmq-native:latest
+    ports:
+      - "9324:9324"   # SQS-compatible HTTP API
+      - "9325:9325"   # Optional admin UI

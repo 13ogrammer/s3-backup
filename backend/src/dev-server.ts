@@ -3,13 +3,20 @@ import { networkInterfaces } from 'node:os';
 
 import qrcode from 'qrcode-terminal';
 
-// When FOLDER_MOVE_QUEUE_URL is not set, default to local:// emulation so
-// folder-move jobs run in-process during development without an SQS queue.
-if (!process.env.FOLDER_MOVE_QUEUE_URL) {
-  process.env.FOLDER_MOVE_QUEUE_URL = 'local://dev';
+// Point the SQS SDK at ElasticMQ by default so folder-move jobs traverse a
+// real, faithful local queue (visibility timeout, DLQ, redrive). Operators can
+// override either to talk to real AWS SQS from a dev shell.
+if (!process.env.AWS_SQS_ENDPOINT_URL) {
+  process.env.AWS_SQS_ENDPOINT_URL = 'http://localhost:9324';
 }
 
-import { handler } from './index.js';
+import { ensureQueues, startPoller } from './dev-poller.js';
+
+const { mainUrl: folderMoveQueueUrl, dlqUrl: folderMoveDlqUrl } = await ensureQueues();
+process.env.FOLDER_MOVE_QUEUE_URL = folderMoveQueueUrl;
+startPoller(folderMoveQueueUrl);
+
+const { handler } = await import('./index.js');
 
 let requestCounter = 0;
 
@@ -97,6 +104,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  Health check: curl ${apiUrl}/health`);
   console.log(`  Bucket:       ${process.env.BUCKET_NAME ?? '(not set)'}`);
   console.log(`  S3 endpoint:  ${process.env.S3_ENDPOINT_URL ?? '(real AWS)'}`);
+  console.log(`  SQS endpoint: ${process.env.AWS_SQS_ENDPOINT_URL ?? '(real AWS)'}`);
+  console.log(`  SQS queue:    ${folderMoveQueueUrl}`);
+  console.log(`  SQS DLQ:      ${folderMoveDlqUrl}`);
   console.log(`  Auth token:   ${token ? '(set)' : '(NOT SET)'}`);
   console.log(`${sep}`);
 
