@@ -4,11 +4,13 @@ import {
   Alert,
   FlatList,
   Keyboard,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
   StyleSheet,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +21,10 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api } from '@/lib/api';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Props = {
   visible: boolean;
@@ -47,8 +53,22 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    const animate = (duration: number | undefined) => {
+      LayoutAnimation.configureNext({
+        duration: duration && duration > 0 ? duration : 250,
+        create: { type: 'keyboard', property: 'opacity' },
+        update: { type: 'keyboard' },
+        delete: { type: 'keyboard', property: 'opacity' },
+      });
+    };
+    const show = Keyboard.addListener(showEvent, (e) => {
+      animate(e.duration);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener(hideEvent, (e) => {
+      animate(e.duration);
+      setKeyboardHeight(0);
+    });
     return () => {
       show.remove();
       hide.remove();
