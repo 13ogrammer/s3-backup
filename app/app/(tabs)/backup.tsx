@@ -1040,19 +1040,6 @@ export default function BrowseScreen() {
             ]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Move…</ThemedText>
           </Pressable>
-          {selection.folders.size === 1 && selection.files.size === 0 && (
-            <Pressable
-              onPress={() => {
-                setFolderAForCompare(Array.from(selection.folders)[0]!);
-                setComparePickerVisible(true);
-              }}
-              style={({ pressed }) => [
-                styles.actionButton,
-                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
-              ]}>
-              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Compare against…</ThemedText>
-            </Pressable>
-          )}
           {canCompare && (
             <Pressable
               onPress={() => {
@@ -1161,6 +1148,9 @@ export default function BrowseScreen() {
           ...(selectionActive
             ? []
             : [{ label: 'Select', onPress: () => setSelectionMode(true) }]),
+          ...(selection.folders.size === 1 && selection.files.size === 0
+            ? [{ label: 'Compare against…', onPress: () => { setFolderAForCompare(Array.from(selection.folders)[0]!); setComparePickerVisible(true); } }]
+            : []),
           {
             label: 'Sort',
             trailing: `${SORT_LABELS[sortField]} ${sortDir === 'asc' ? '↑' : '↓'}`,
