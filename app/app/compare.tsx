@@ -720,7 +720,20 @@ export default function CompareScreen() {
   function renderPairCard(pair: ComparePair) {
     const decision = pairDecisions.get(pair.etag);
     return (
-      <View key={pair.etag} style={[styles.card, { backgroundColor: colors.surface }, Shadow.card]}>
+      <View
+        key={pair.etag}
+        style={[
+          styles.card,
+          {
+            backgroundColor:
+              decision?.kind === 'keep-a' || decision?.kind === 'keep-b'
+                ? colors.accentSoft
+                : decision?.kind === 'skip'
+                  ? colors.surfaceMuted
+                  : colors.surface,
+          },
+          Shadow.card,
+        ]}>
         <View style={styles.cardHeader}>
           <ThemedText style={[Type.meta, { color: colors.muted }]}>
             Same content · {formatBytes(pair.size)}
@@ -867,7 +880,17 @@ export default function CompareScreen() {
               pointerEvents={isInFlight ? 'none' : 'auto'}
               style={[
                 styles.card,
-                { backgroundColor: colors.surface, opacity: isInFlight ? 0.5 : 1 },
+                {
+                  backgroundColor:
+                    d?.kind === 'delete'
+                      ? colors.dangerSoft
+                      : d?.kind === 'move-to-other'
+                        ? colors.accentSoft
+                        : d?.kind === 'skip'
+                          ? colors.surfaceMuted
+                          : colors.surface,
+                  opacity: isInFlight ? 0.5 : 1,
+                },
                 Shadow.card,
               ]}>
               <View style={styles.sideRow}>
