@@ -15,6 +15,10 @@ export type ListResponse = {
   folders: string[];
   files: ListedFile[];
   nextToken?: string;
+  // Set when the first /list call hit MAX_FOLDER_DISCOVERY_PAGES before
+  // exhausting CommonPrefixes. Remaining folders surface during file
+  // pagination as the client scrolls. Omitted (undefined) in the common case.
+  foldersTruncated?: boolean;
 };
 
 /**

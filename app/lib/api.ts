@@ -37,6 +37,10 @@ export type ListResponse = {
   folders: string[];
   files: ListedFile[];
   nextToken?: string;
+  // Set when the backend hit its folder-discovery page cap on the first
+  // /list call. Remaining folders will surface naturally during file
+  // pagination. Omitted (undefined) in the common case.
+  foldersTruncated?: boolean;
 };
 
 export type SignedUrlResponse = { url: string; expiresIn: number };
