@@ -5,7 +5,7 @@ import { BUCKET, s3, sanitizeKey } from '../s3.js';
 import type { SignUploadRequest, SignUploadResponse } from '../types.js';
 import type { RequestContext } from '../index.js';
 
-const EXPIRES_IN = 60 * 15;
+const EXPIRES_IN = 60 * 60 * 24;
 
 export async function signUpload(body: SignUploadRequest, ctx: RequestContext): Promise<SignUploadResponse> {
   const key = sanitizeKey(body.key);
@@ -28,5 +28,5 @@ export async function signUpload(body: SignUploadRequest, ctx: RequestContext): 
 
   // Log keys only — avoid writing GPS coordinates or other PII to logs.
   ctx.log.info('sign-upload', { key, metaKeys: s3Meta ? Object.keys(s3Meta) : [] });
-  return { url, expiresIn: EXPIRES_IN };
+  return { url, expiresIn: EXPIRES_IN, signedAt: Date.now() };
 }

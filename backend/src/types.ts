@@ -43,7 +43,7 @@ export type MetadataBag = {
 };
 
 export type SignUploadRequest = { key: string; contentType: string; metadata?: MetadataBag };
-export type SignUploadResponse = { url: string; expiresIn: number };
+export type SignUploadResponse = { url: string; expiresIn: number; signedAt: number };
 
 export type SignDownloadRequest = { key: string };
 export type SignDownloadResponse = { url: string; expiresIn: number };
