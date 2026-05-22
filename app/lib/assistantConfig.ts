@@ -13,6 +13,7 @@ const KEY_ACTIVE_ID = 's3backup.llm.activeId';
 const KEY_PRIVACY = 's3backup.assistantPrivacyAcknowledged';
 const KEY_CONTEXT_PREFIX = 's3backup.assistantContextPrefix';
 const KEY_SESSION_RESET = 's3backup.assistantSessionResetVersion';
+const KEY_MUTATION_VERSION = 's3backup.assistantMutationVersion';
 const KEY_SEEDED = 's3backup.llm.seeded';
 
 function uid(): string {
@@ -177,4 +178,15 @@ export async function getAssistantSessionResetVersion(): Promise<number> {
 export async function bumpAssistantSessionResetVersion(): Promise<void> {
   const current = await getAssistantSessionResetVersion();
   await SecureStore.setItemAsync(KEY_SESSION_RESET, String(current + 1));
+}
+
+export async function getAssistantMutationVersion(): Promise<number> {
+  const raw = await SecureStore.getItemAsync(KEY_MUTATION_VERSION);
+  const n = parseInt(raw ?? '0', 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+export async function bumpAssistantMutationVersion(): Promise<void> {
+  const current = await getAssistantMutationVersion();
+  await SecureStore.setItemAsync(KEY_MUTATION_VERSION, String(current + 1));
 }

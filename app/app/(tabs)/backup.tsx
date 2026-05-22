@@ -27,7 +27,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError, isUserActionableError, isFolderTooLargeError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts, type FolderTooLargeErrorBody } from '@/lib/api';
-import { setAssistantContextPrefix } from '@/lib/assistantConfig';
+import { getAssistantMutationVersion, setAssistantContextPrefix } from '@/lib/assistantConfig';
 import { useJobs } from '@/lib/jobs';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
@@ -412,6 +412,31 @@ export default function BrowseScreen() {
       load(path);
       setSelection(emptySelection());
       setSelectionMode(false);
+    }, [path, load]),
+  );
+
+  // Refresh when the Assistant tab has approved a create-folder or move action.
+  // We track the mutation version in a ref so we only reload when it changes,
+  // not on every focus (the existing useFocusEffect above already handles that).
+  const mutationVersionRef = useRef<number>(-1);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      async function checkMutationVersion() {
+        const v = await getAssistantMutationVersion();
+        if (cancelled) return;
+        if (mutationVersionRef.current === -1) {
+          // First focus: record baseline without triggering an extra load.
+          mutationVersionRef.current = v;
+          return;
+        }
+        if (v !== mutationVersionRef.current) {
+          mutationVersionRef.current = v;
+          load(path, 'refresh');
+        }
+      }
+      checkMutationVersion();
+      return () => { cancelled = true; };
     }, [path, load]),
   );
 

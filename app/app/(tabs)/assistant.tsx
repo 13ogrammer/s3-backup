@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import { ChatComposer } from '@/components/assistant/ChatComposer';
+import { ConfirmationCard } from '@/components/assistant/ConfirmationCard';
 import { EmptyState } from '@/components/assistant/EmptyState';
 import { MessageBubble } from '@/components/assistant/MessageBubble';
 import { PrivacyNotice } from '@/components/assistant/PrivacyNotice';
@@ -25,22 +26,36 @@ import { Colors, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   acknowledgePrivacy,
+  bumpAssistantMutationVersion,
   bumpAssistantSessionResetVersion,
   getActiveProvider,
   getAssistantContextPrefix,
+  getAssistantMutationVersion,
   getAssistantSessionResetVersion,
   isPrivacyAcknowledged,
   isProviderUsable,
   type SavedProvider,
 } from '@/lib/assistantConfig';
+import { executeCreateFolder, executeMove } from '@/lib/assistantActions';
 import { LLMError, postChat, type LLMMessage, type LLMToolCall } from '@/lib/llm';
-import { ASSISTANT_TOOLS, TOOL_NAMES } from '@/lib/assistantTools';
+import { ASSISTANT_TOOLS, isPendingAction, TOOL_NAMES, type PendingActionPayload } from '@/lib/assistantTools';
+import { useJobs } from '@/lib/jobs';
 
 const MAX_TURNS = 20;
+
+type PendingActionMessage = {
+  id: string;
+  role: 'pending_action';
+  toolCallId: string;
+  payload: PendingActionPayload;
+  decision: 'awaiting' | 'approved' | 'rejected';
+  outcome?: { kind: 'ok'; result: unknown } | { kind: 'error'; error: string };
+};
 
 type ChatMessage =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'assistant'; text: string }
+  | PendingActionMessage
   | {
       id: string;
       role: 'tool';
@@ -74,7 +89,7 @@ function uid(): string {
 
 function buildSystemPrompt(contextPrefix: string | null): string {
   const base =
-    'You are a helpful assistant for an S3 backup app. You can answer questions about the user\'s S3 bucket using the tools provided. You cannot modify, delete, or move any files — only read and describe what exists.';
+    "You are a helpful assistant for an S3 backup app. You can answer questions about the user's S3 bucket using the tools provided. You can create folders and move files or folders for the user. You cannot delete anything — deletion is not an available tool. All mutations require explicit user approval in the chat before they run; if the user rejects a proposed action, suggest a different approach or stop. Never propose deletion as a workaround.";
   if (contextPrefix) {
     return `${base}\n\nThe user is currently browsing the folder: "${contextPrefix}". Use this as the default context scope for queries unless instructed otherwise.`;
   }
@@ -92,6 +107,7 @@ function parseToolArguments(raw: string): unknown {
 type RenderItem =
   | { type: 'bubble'; id: string; role: 'user' | 'assistant'; text: string }
   | { type: 'toolGroup'; id: string; tools: ToolEntry[] }
+  | { type: 'pendingAction'; id: string; message: PendingActionMessage }
   | { type: 'typing'; id: 'typing-indicator' };
 
 function buildRenderItems(messages: ChatMessage[], showTyping: boolean): RenderItem[] {
@@ -118,6 +134,9 @@ function buildRenderItems(messages: ChatMessage[], showTyping: boolean): RenderI
         result: m.result,
         errorMessage: m.errorMessage,
       });
+    } else if (m.role === 'pending_action') {
+      flushGroup();
+      items.push({ type: 'pendingAction', id: m.id, message: m });
     } else {
       flushGroup();
       items.push({ type: 'bubble', id: m.id, role: m.role, text: m.text });
@@ -132,10 +151,14 @@ function buildRenderItems(messages: ChatMessage[], showTyping: boolean): RenderI
   return items;
 }
 
+type Decision = { kind: 'approved' } | { kind: 'rejected' };
+
 export default function AssistantScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const navigation = useNavigation();
+
+  const { addJob } = useJobs();
 
   const [provider, setProvider] = useState<SavedProvider | null>(null);
   const [privacyAcked, setPrivacyAcked] = useState(false);
@@ -147,6 +170,8 @@ export default function AssistantScreen() {
   const sessionResetVersionRef = useRef<number>(0);
   const listRef = useRef<FlatList>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Resolvers for pending-action confirmations. Keyed by PendingActionMessage.id.
+  const pendingResolversRef = useRef<Map<string, (d: Decision) => void>>(new Map());
 
   // Manual keyboard-driven padding for the chat surface.
   //
@@ -417,6 +442,99 @@ export default function AssistantScreen() {
           }));
 
           const result = await tool.execute(parsedArgs);
+
+          // ---------- Pending-action intercept --------------------------------
+          // Write tools (create_folder, move) return a sentinel instead of
+          // calling the backend directly. Park the loop here until the user
+          // approves or rejects via the ConfirmationCard in the chat.
+          if (isPendingAction(result)) {
+            // Swap the tool pending card for a pending_action message so the
+            // FlatList can render a ConfirmationCard instead of a tool chip.
+            const actionMsgId = uid();
+            const actionMsg: PendingActionMessage = {
+              id: actionMsgId,
+              role: 'pending_action',
+              toolCallId: call.id,
+              payload: result,
+              decision: 'awaiting',
+            };
+            currentMessages = currentMessages
+              .filter((m) => m.id !== pendingCard.id)
+              .concat(actionMsg);
+            setSession((prev) => ({
+              ...prev,
+              messages: currentMessages,
+              turnCount: localTurnCount,
+              inputTokens: localInputTokens,
+              outputTokens: localOutputTokens,
+            }));
+            setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+
+            // Wait for user decision.
+            const decision = await new Promise<Decision>((resolve) => {
+              pendingResolversRef.current.set(actionMsgId, resolve);
+            });
+            pendingResolversRef.current.delete(actionMsgId);
+
+            if (decision.kind === 'rejected') {
+              // Mark rejected in the UI and return declined tool message.
+              currentMessages = currentMessages.map((m) =>
+                m.id === actionMsgId ? { ...actionMsg, decision: 'rejected' } : m,
+              );
+              setSession((prev) => ({ ...prev, messages: currentMessages }));
+              toolMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify({ declined: true, reason: 'user declined' }),
+              });
+              continue;
+            }
+
+            // Approved — execute the real action.
+            currentMessages = currentMessages.map((m) =>
+              m.id === actionMsgId ? { ...actionMsg, decision: 'approved' } : m,
+            );
+            setSession((prev) => ({ ...prev, messages: currentMessages }));
+
+            let actionResult: unknown;
+            try {
+              if (result.kind === 'create_folder') {
+                actionResult = await executeCreateFolder(result.args);
+              } else {
+                actionResult = await executeMove(result.args, { addJob });
+              }
+              await bumpAssistantMutationVersion();
+            } catch (err) {
+              actionResult = { error: err instanceof Error ? err.message : 'action failed' };
+            }
+
+            const actionIsError =
+              actionResult !== null &&
+              typeof actionResult === 'object' &&
+              'error' in (actionResult as object) &&
+              typeof (actionResult as { error: unknown }).error === 'string';
+
+            const finalActionMsg: PendingActionMessage = {
+              ...actionMsg,
+              decision: 'approved',
+              outcome: actionIsError
+                ? { kind: 'error', error: (actionResult as { error: string }).error }
+                : { kind: 'ok', result: actionResult },
+            };
+            currentMessages = currentMessages.map((m) =>
+              m.id === actionMsgId ? finalActionMsg : m,
+            );
+            setSession((prev) => ({ ...prev, messages: currentMessages }));
+
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify(actionResult),
+            });
+            continue;
+          }
+          // ---------- End pending-action intercept ----------------------------
+
           const isError =
             result !== null &&
             typeof result === 'object' &&
@@ -499,11 +617,20 @@ export default function AssistantScreen() {
     }
   }
 
+  function drainPendingResolvers() {
+    for (const resolve of pendingResolversRef.current.values()) {
+      resolve({ kind: 'rejected' });
+    }
+    pendingResolversRef.current.clear();
+  }
+
   function handleStop() {
+    drainPendingResolvers();
     abortRef.current?.abort();
   }
 
   async function handleClearChat() {
+    drainPendingResolvers();
     abortRef.current?.abort();
     setSession(EMPTY_SESSION);
     setCapReached(false);
@@ -527,7 +654,11 @@ export default function AssistantScreen() {
 
   const lastMessage = session.messages[session.messages.length - 1];
   const lastIsPendingTool = lastMessage?.role === 'tool' && lastMessage.status === 'pending';
-  const showTyping = session.busy && !lastIsPendingTool;
+  // Also suppress typing dots while we're waiting for a user decision on a
+  // pending action — the ConfirmationCard is already visible in that state.
+  const lastIsAwaitingDecision =
+    lastMessage?.role === 'pending_action' && lastMessage.decision === 'awaiting';
+  const showTyping = session.busy && !lastIsPendingTool && !lastIsAwaitingDecision;
   const renderItems = buildRenderItems(session.messages, showTyping);
 
   return (
@@ -558,6 +689,24 @@ export default function AssistantScreen() {
             }
             if (item.type === 'toolGroup') {
               return <ToolGroupCard tools={item.tools} />;
+            }
+            if (item.type === 'pendingAction') {
+              const { message } = item;
+              return (
+                <ConfirmationCard
+                  payload={message.payload}
+                  decision={message.decision}
+                  outcome={message.outcome}
+                  onApprove={() => {
+                    const resolve = pendingResolversRef.current.get(message.id);
+                    resolve?.({ kind: 'approved' });
+                  }}
+                  onReject={() => {
+                    const resolve = pendingResolversRef.current.get(message.id);
+                    resolve?.({ kind: 'rejected' });
+                  }}
+                />
+              );
             }
             return (
               <View style={styles.typingRow}>

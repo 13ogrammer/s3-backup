@@ -8,6 +8,40 @@ export type AssistantTool = {
   execute: ToolExecutor;
 };
 
+// ---------------------------------------------------------------------------
+// Pending-action sentinel — write tools return this instead of calling the
+// backend directly. The runLoop in assistant.tsx intercepts it, renders a
+// ConfirmationCard, and only executes the real action after user approval.
+// ---------------------------------------------------------------------------
+
+export const PENDING_ACTION_SENTINEL = '__assistant_pending_action__' as const;
+
+export type PendingActionKind = 'create_folder' | 'move';
+
+export type PendingActionPayload =
+  | {
+      sentinel: typeof PENDING_ACTION_SENTINEL;
+      kind: 'create_folder';
+      summary: string;
+      args: { prefix: string };
+    }
+  | {
+      sentinel: typeof PENDING_ACTION_SENTINEL;
+      kind: 'move';
+      summary: string;
+      args:
+        | { kind: 'file'; from: string; to: string }
+        | { kind: 'folder'; fromPrefix: string; toPrefix: string };
+    };
+
+export function isPendingAction(v: unknown): v is PendingActionPayload {
+  return (
+    v !== null &&
+    typeof v === 'object' &&
+    (v as { sentinel?: unknown }).sentinel === PENDING_ACTION_SENTINEL
+  );
+}
+
 function safeInput<T>(input: unknown): T {
   return (input ?? {}) as T;
 }
@@ -147,14 +181,102 @@ const existsTool: AssistantTool = {
   },
 };
 
+const createFolderTool: AssistantTool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'create_folder',
+      description:
+        'Create a new empty folder at the given S3 prefix. Prefix MUST end with "/". Idempotent: creating an existing folder is a no-op. Requires user approval before running.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prefix: {
+            type: 'string',
+            description: 'Folder prefix ending in "/", e.g. "photos/2025/".',
+          },
+        },
+        required: ['prefix'],
+      },
+    },
+  },
+  execute: async (input) => {
+    const { prefix } = safeInput<{ prefix: string }>(input);
+    const summary = `Create folder "${prefix}"`;
+    const payload: PendingActionPayload = {
+      sentinel: PENDING_ACTION_SENTINEL,
+      kind: 'create_folder',
+      summary,
+      args: { prefix },
+    };
+    return payload;
+  },
+};
+
+const moveTool: AssistantTool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'move',
+      description:
+        'Move a file or a folder to a new location. For files, use kind="file" with `from`/`to` keys. For folders, use kind="folder" with `from`/`to` prefixes ending in "/". Folder moves are async and return a jobId; the user will see it under the Backup tab. Requires user approval before running.',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['file', 'folder'] },
+          from: { type: 'string' },
+          to: { type: 'string' },
+        },
+        required: ['kind', 'from', 'to'],
+      },
+    },
+  },
+  execute: async (input) => {
+    const { kind, from, to } = safeInput<{ kind: 'file' | 'folder'; from: string; to: string }>(input);
+    if (kind === 'file') {
+      const summary = `Move file "${from}" → "${to}"`;
+      const payload: PendingActionPayload = {
+        sentinel: PENDING_ACTION_SENTINEL,
+        kind: 'move',
+        summary,
+        args: { kind: 'file', from, to },
+      };
+      return payload;
+    } else {
+      const summary = `Move folder "${from}" → "${to}"`;
+      const payload: PendingActionPayload = {
+        sentinel: PENDING_ACTION_SENTINEL,
+        kind: 'move',
+        summary,
+        // Normalise to the backend's fromPrefix/toPrefix naming.
+        args: { kind: 'folder', fromPrefix: from, toPrefix: to },
+      };
+      return payload;
+    }
+  },
+};
+
 export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool> = [
   listObjectsTool,
   getObjectMetadataTool,
   getFolderPreviewTool,
   getStorageStatsTool,
   existsTool,
+  createFolderTool,
+  moveTool,
 ] as const;
 
 export const TOOL_NAMES: ReadonlySet<string> = new Set(
   ASSISTANT_TOOLS.map((t) => t.definition.function.name),
 );
+
+// Safety guard: deletion tools must never be registered in this list.
+// This assertion fires at module load time, making any accidental registration
+// of a delete/remove tool immediately visible rather than silently slipping into
+// the LLM's tool catalogue.
+const FORBIDDEN_TOOL_NAMES = new Set(['delete', 'delete_object', 'delete_folder', 'remove']);
+for (const t of ASSISTANT_TOOLS) {
+  if (FORBIDDEN_TOOL_NAMES.has(t.definition.function.name)) {
+    throw new Error(`Forbidden tool registered: ${t.definition.function.name}`);
+  }
+}
