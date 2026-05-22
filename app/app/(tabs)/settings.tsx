@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  type TextInputProps,
   View,
 } from 'react-native';
 
@@ -332,18 +333,16 @@ export default function SettingsScreen() {
 
             <View style={styles.field}>
               <ThemedText style={styles.fieldLabel}>Bootstrap token</ThemedText>
-              <TextInput
+              <SecretInput
                 value={bootstrapToken}
                 onChangeText={setBootstrapToken}
                 placeholder="64-character hex string"
                 placeholderTextColor={colors.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                style={[
+                inputStyle={[
                   styles.input,
                   { color: colors.text, backgroundColor: colors.surfaceMuted },
                 ]}
+                iconColor={colors.muted}
               />
             </View>
           </View>
@@ -538,15 +537,13 @@ export default function SettingsScreen() {
         </View>
         <View style={styles.field}>
           <ThemedText style={styles.fieldLabel}>API key (optional)</ThemedText>
-          <TextInput
+          <SecretInput
             value={draft.apiKey}
             onChangeText={(v) => setDraft((d) => ({ ...d, apiKey: v }))}
             placeholder="Leave blank for local endpoints"
             placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted }]}
+            inputStyle={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted }]}
+            iconColor={colors.muted}
           />
         </View>
         <View style={styles.field}>
@@ -591,6 +588,50 @@ export default function SettingsScreen() {
   );
 }
 
+function SecretInput({
+  value,
+  onChangeText,
+  placeholder,
+  placeholderTextColor,
+  inputStyle,
+  iconColor,
+}: {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder: string;
+  placeholderTextColor: string;
+  inputStyle: TextInputProps['style'];
+  iconColor: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={styles.secretWrapper}>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={placeholderTextColor}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry={!visible}
+        style={[inputStyle, styles.secretInput]}
+      />
+      <Pressable
+        onPress={() => setVisible((v) => !v)}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={visible ? 'Hide value' : 'Show value'}
+        style={({ pressed }) => [styles.secretToggle, { opacity: pressed ? 0.6 : 1 }]}>
+        <Ionicons
+          name={visible ? 'eye-off-outline' : 'eye-outline'}
+          size={20}
+          color={iconColor}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, padding: Spacing.lg, gap: Spacing.md },
   center: { alignItems: 'center', justifyContent: 'center' },
@@ -608,6 +649,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 12,
     fontSize: 16,
+  },
+  secretWrapper: { position: 'relative' },
+  secretInput: { paddingRight: 44 },
+  secretToggle: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scanButton: {
     flexDirection: 'row',
