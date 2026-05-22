@@ -44,6 +44,9 @@ export type ListResponse = {
 };
 
 export type SignedUrlResponse = { url: string; expiresIn: number };
+// /sign-upload adds a server-authoritative timestamp so the app can detect
+// a stale URL before retrying (re-sign if > 23 h old, or on 403 response).
+export type SignUploadResponse = SignedUrlResponse & { signedAt: number };
 
 export type DeleteResponse = {
   deleted: string[];
@@ -214,7 +217,7 @@ export const api = {
   list: (params: { prefix?: string; continuationToken?: string; recursive?: boolean } = {}) =>
     call<ListResponse>('/list', params),
   signUpload: (key: string, contentType: string, metadata?: MetadataBag) =>
-    call<SignedUrlResponse>('/sign-upload', { key, contentType, ...(metadata ? { metadata } : {}) }),
+    call<SignUploadResponse>('/sign-upload', { key, contentType, ...(metadata ? { metadata } : {}) }),
   signDownload: (key: string) => call<SignedUrlResponse>('/sign-download', { key }),
   delete: (params: { keys?: string[]; prefixes?: string[] }) =>
     call<DeleteResponse>('/delete', params),
