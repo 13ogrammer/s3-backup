@@ -1,3 +1,5 @@
+import BackgroundUpload from 'react-native-background-upload';
+
 import {
   EncodingType,
   FileSystemUploadType,
@@ -37,6 +39,12 @@ const MULTIPART_THRESHOLD = 10 * 1024 * 1024; // 10 MB
 // 8 MB is a good middle ground — small enough to fit in memory comfortably,
 // big enough that even a 10 GB file stays well under the part-count cap.
 const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
+// S3 single-PUT ceiling. Files at or above this size cannot go through the
+// simple (non-multipart) path — MULTIPART_THRESHOLD (10 MB) already routes
+// all such files to multipart before they can reach uploadFileSimple, so
+// this constant is documentation-only. It exists to make the S3 constraint
+// explicit and searchable in the codebase.
+const BACKGROUND_MAX_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 
 function stripExt(key: string): string {
   const slashIdx = key.lastIndexOf('/');
@@ -90,8 +98,8 @@ async function uploadFileSimple(
   addUploadBreadcrumb('upload start', { remoteKey, mode: 'simple', totalBytes });
 
   // Metadata is embedded in the pre-signed PutObjectCommand — the signed URL
-  // covers the x-amz-meta-* headers. createUploadTask MUST send those same
-  // headers or S3 returns SignatureDoesNotMatch.
+  // covers the x-amz-meta-* headers. RNBU must not send x-amz-meta-* as HTTP
+  // headers (MinIO rejects duplicate metadata sources with a 400).
   const { url, signedAt } = await api.signUpload(remoteKey, contentType, metadata);
   addUploadBreadcrumb('sign-upload ok', { remoteKey, mode: 'simple', totalBytes });
 
@@ -107,48 +115,110 @@ async function uploadFileSimple(
     });
   }
 
-  addUploadBreadcrumb('PUT begin', { remoteKey, mode: 'simple' });
-
-  // Sample progress at 25 / 50 / 75 % — 100% is covered by 'upload complete'.
-  let lastBucket = 0;
-
-  // Note: metadata is carried in the signed URL's query string (the SDK puts
-  // x-amz-meta-* in the URL for presigned PUTs with host-only SignedHeaders),
-  // so we do NOT send x-amz-meta-* as HTTP headers. Sending them duplicates
-  // the metadata source and some S3 implementations (MinIO observed) reject
-  // the request with a generic 400.
-  const task = createUploadTask(
-    url,
-    localUri,
-    {
-      httpMethod: 'PUT',
-      uploadType: FileSystemUploadType.BINARY_CONTENT,
-      headers: { 'content-type': contentType },
-    },
-    (data) => {
-      onProgress?.({
-        bytesSent: data.totalBytesSent,
-        bytesTotal: data.totalBytesExpectedToSend,
-      });
-      const bucket = Math.floor((data.totalBytesSent / data.totalBytesExpectedToSend) * 4);
-      if (bucket !== lastBucket && bucket > 0 && bucket < 4) {
-        lastBucket = bucket;
-        addUploadBreadcrumb('upload progress', { remoteKey, percent: bucket * 25 });
-      }
-    },
-  );
-
-  const result = await task.uploadAsync();
-  if (!result) throw new UploadError(0, 'upload cancelled');
-  if (result.status < 200 || result.status >= 300) {
-    throw new UploadError(result.status, `upload failed: HTTP ${result.status}`);
-  }
+  await runRnbuUpload(localUri, remoteKey, contentType, url, onProgress, totalBytes);
 
   addUploadBreadcrumb('upload complete', { remoteKey, mode: 'simple', totalBytes });
 
   if (trackSimple) {
     await removePendingUpload(remoteKey).catch(() => undefined);
   }
+}
+
+// Hand the upload to react-native-background-upload (RNBU). RNBU uses
+// URLSession on iOS and WorkManager on Android, so the transfer continues
+// even if the JS thread is paused or the app is backgrounded.
+//
+// 403 is delivered via the 'completed' event (not 'error') because S3
+// returns a well-formed HTTP response. On the first 403 we re-sign and
+// retry once; a second 403 is a hard failure.
+async function runRnbuUpload(
+  localUri: string,
+  remoteKey: string,
+  contentType: string,
+  url: string,
+  onProgress: ((progress: UploadProgress) => void) | undefined,
+  totalBytes: number,
+  isRetry = false,
+): Promise<void> {
+  addUploadBreadcrumb('RNBU PUT begin', { remoteKey, mode: 'simple', isRetry });
+
+  await new Promise<void>((resolve, reject) => {
+    const listeners: Array<{ remove: () => void }> = [];
+
+    function cleanup() {
+      for (const l of listeners) l.remove();
+    }
+
+    BackgroundUpload.startUpload({
+      url,
+      path: localUri,
+      method: 'PUT',
+      type: 'raw',
+      headers: { 'content-type': contentType },
+      // Stable ID lets us correlate events to this specific upload.
+      customUploadId: remoteKey,
+      notification: {
+        enabled: true,
+        autoClear: true,
+        notificationChannel: 'background_uploads',
+        onProgressTitle: 's3-backup',
+        onProgressMessage: 'Uploading',
+        onCompleteTitle: 's3-backup',
+        onCompleteMessage: 'Upload complete',
+        onErrorTitle: 's3-backup',
+        onErrorMessage: 'Upload failed',
+        onCancelledTitle: 's3-backup',
+        onCancelledMessage: 'Upload cancelled',
+        enableRingTone: false,
+      },
+    }).then((uploadId) => {
+      listeners.push(
+        BackgroundUpload.addListener('progress', (data) => {
+          if (data.id !== uploadId) return;
+          onProgress?.({ bytesSent: Math.round((data.progress / 100) * totalBytes), bytesTotal: totalBytes });
+        }),
+      );
+
+      listeners.push(
+        BackgroundUpload.addListener('completed', (data) => {
+          if (data.id !== uploadId) return;
+          cleanup();
+          if (data.responseCode >= 200 && data.responseCode < 300) {
+            resolve();
+          } else if (data.responseCode === 403 && !isRetry) {
+            // Re-sign once and retry — the URL may have been generated
+            // just before a server-side clock skew or was somehow invalid.
+            api.signUpload(remoteKey, contentType)
+              .then(({ url: freshUrl }) =>
+                runRnbuUpload(localUri, remoteKey, contentType, freshUrl, onProgress, totalBytes, true),
+              )
+              .then(resolve, reject);
+          } else {
+            reject(new UploadError(data.responseCode, `upload failed: HTTP ${data.responseCode}`));
+          }
+        }),
+      );
+
+      listeners.push(
+        BackgroundUpload.addListener('error', (data) => {
+          if (data.id !== uploadId) return;
+          cleanup();
+          reject(new UploadError(0, `RNBU error: ${data.error}`));
+        }),
+      );
+
+      listeners.push(
+        BackgroundUpload.addListener('cancelled', (data) => {
+          if (data.id !== uploadId) return;
+          cleanup();
+          reject(new UploadError(0, 'upload cancelled'));
+        }),
+      );
+    }).catch((err: unknown) => {
+      cleanup();
+      reject(err);
+    });
+  });
 }
 
 async function uploadFileMultipart(
