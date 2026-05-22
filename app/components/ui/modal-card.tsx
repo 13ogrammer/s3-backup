@@ -1,4 +1,15 @@
-import { type AccessibilityRole, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import {
+  type AccessibilityRole,
+  Animated,
+  Easing,
+  Keyboard,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -36,6 +47,44 @@ export function ModalCard({
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
+  // Track the keyboard so the card lifts above it instead of being clipped.
+  // RN's Modal renders in its own native window, so KeyboardAvoidingView is
+  // unreliable here — manual padding on the backdrop works on both platforms.
+  const keyboardPad = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e) => {
+      const target = e.endCoordinates.height;
+      if (Platform.OS === 'ios') {
+        Animated.timing(keyboardPad, {
+          toValue: target,
+          duration: e.duration ?? 250,
+          easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
+          useNativeDriver: false,
+        }).start();
+      } else {
+        keyboardPad.setValue(target);
+      }
+    });
+    const hide = Keyboard.addListener(hideEvent, (e) => {
+      if (Platform.OS === 'ios') {
+        Animated.timing(keyboardPad, {
+          toValue: 0,
+          duration: e.duration ?? 250,
+          easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
+          useNativeDriver: false,
+        }).start();
+      } else {
+        keyboardPad.setValue(0);
+      }
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [keyboardPad]);
+
   return (
     <Modal
       visible={visible}
@@ -43,32 +92,42 @@ export function ModalCard({
       animationType="fade"
       onRequestClose={onRequestClose}
       testID={testID}>
-      {/* Backdrop — tapping calls onRequestClose when dismissOnBackdrop=true */}
       <Pressable
-        style={styles.backdrop}
+        style={styles.backdropPressable}
         onPress={dismissOnBackdrop ? onRequestClose : undefined}>
-        {/* Stop touches propagating from the card to the backdrop; also
-            anchors the width cap so the card never stretches beyond it. */}
-        <Pressable style={[styles.cardWrapper, { maxWidth }]} onPress={() => {}}>
-          <ThemedView
-            style={[styles.card, { borderColor: colors.border }]}
-            accessibilityViewIsModal={accessibilityViewIsModal}
-            accessibilityRole={accessibilityRole}>
-            {title !== undefined && (
-              <ThemedText style={styles.title}>{title}</ThemedText>
-            )}
-            <View style={styles.content}>{children}</View>
-          </ThemedView>
-        </Pressable>
+        <Animated.View
+          style={[styles.backdrop, { paddingBottom: keyboardPad }]}
+          pointerEvents="box-none">
+          <Pressable style={[styles.cardWrapper, { maxWidth }]} onPress={() => {}}>
+            <ThemedView
+              style={[styles.card, { borderColor: colors.border }]}
+              accessibilityViewIsModal={accessibilityViewIsModal}
+              accessibilityRole={accessibilityRole}>
+              {title !== undefined && (
+                <ThemedText style={styles.title}>{title}</ThemedText>
+              )}
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}>
+                {children}
+              </ScrollView>
+            </ThemedView>
+          </Pressable>
+        </Animated.View>
       </Pressable>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  backdropPressable: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  backdrop: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
@@ -78,6 +137,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
+    maxHeight: '100%',
     borderRadius: Radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.lg,
@@ -87,7 +147,10 @@ const styles = StyleSheet.create({
   title: {
     ...Type.bodyStrong,
   },
-  content: {
+  scroll: {
+    flexGrow: 0,
+  },
+  scrollContent: {
     gap: Spacing.md,
   },
 });

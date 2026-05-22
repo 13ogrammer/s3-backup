@@ -29,6 +29,7 @@ const MAPPING = {
   'house': { mci: 'home-outline' },
   'house.fill': 'home',
   'paperplane.fill': 'send',
+  'stop.fill': 'stop',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
   'chevron.left': 'chevron-left',

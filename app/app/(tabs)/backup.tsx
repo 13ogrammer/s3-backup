@@ -27,6 +27,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError, isUserActionableError, isFolderTooLargeError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts, type FolderTooLargeErrorBody } from '@/lib/api';
+import { setAssistantContextPrefix } from '@/lib/assistantConfig';
 import { useJobs } from '@/lib/jobs';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
@@ -117,6 +118,13 @@ export default function BrowseScreen() {
   const [renameError, setRenameError] = useState<string | null>(null);
 
   const [path, setPath] = useState('');
+
+  // Mirror the current folder into SecureStore so the Assistant tab can default
+  // its scope to wherever the user is browsing.
+  useEffect(() => {
+    setAssistantContextPrefix(path);
+  }, [path]);
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
