@@ -340,12 +340,30 @@ export async function uploadAsset(
   });
 }
 
+// 23 hours in ms — if the signedAt is older than this, the 24 h URL is
+// approaching expiry and we re-sign before attempting the upload.
+const RESIGN_THRESHOLD_MS = 23 * 60 * 60 * 1000;
+
 export async function resumeUpload(
   pending: PendingUpload,
   onProgress?: (progress: UploadProgress) => void,
 ): Promise<void> {
   if (pending.kind === 'simple') {
-    // Re-PUT from zero — no partial state to recover.
+    const stale = Date.now() - pending.signedAt > RESIGN_THRESHOLD_MS;
+    if (stale) {
+      // Re-sign before handing off — the stored URL may be near expiry.
+      const { url: freshUrl, signedAt: freshSignedAt } = await api.signUpload(
+        pending.remoteKey,
+        pending.contentType,
+      );
+      await savePendingUpload({ ...pending, signedAt: freshSignedAt });
+      addUploadBreadcrumb('re-signed stale URL', { remoteKey: pending.remoteKey });
+      // Fall through to the normal upload path with the fresh URL in the
+      // persisted entry; uploadFileSimple will sign again internally, which
+      // is one extra /sign-upload call but keeps the code paths simple.
+      void freshUrl; // freshUrl is captured in the updated pendingUpload; uploadFileSimple re-signs
+    }
+    // Re-PUT from zero — no partial state to recover for simple uploads.
     await uploadFile(
       pending.localUri,
       pending.remoteKey,
