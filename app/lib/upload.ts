@@ -92,7 +92,7 @@ async function uploadFileSimple(
   // Metadata is embedded in the pre-signed PutObjectCommand — the signed URL
   // covers the x-amz-meta-* headers. createUploadTask MUST send those same
   // headers or S3 returns SignatureDoesNotMatch.
-  const { url } = await api.signUpload(remoteKey, contentType, metadata);
+  const { url, signedAt } = await api.signUpload(remoteKey, contentType, metadata);
   addUploadBreadcrumb('sign-upload ok', { remoteKey, mode: 'simple', totalBytes });
 
   if (trackSimple) {
@@ -102,6 +102,7 @@ async function uploadFileSimple(
       remoteKey,
       contentType,
       totalBytes,
+      signedAt,
       updatedAt: Date.now(),
     });
   }

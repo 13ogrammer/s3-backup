@@ -30,6 +30,10 @@ export type PendingMultipartUpload = PendingUploadBase & {
 
 export type PendingSimpleUpload = PendingUploadBase & {
   kind: 'simple';
+  // Server-authoritative Unix ms timestamp from signedAt in SignUploadResponse.
+  // Used to detect a stale URL before retrying (re-sign if > 23 h old).
+  // Defaults to 0 for entries written before this field was introduced.
+  signedAt: number;
 };
 
 export type PendingUpload = PendingMultipartUpload | PendingSimpleUpload;
@@ -62,9 +66,14 @@ async function readAll(): Promise<PendingUpload[]> {
 // Entries written before the kind discriminator was introduced have all
 // multipart fields but no `kind` property. Normalise them here so every
 // caller receives a fully-typed PendingUpload.
+// S3B-6: simple entries written before signedAt was added get signedAt=0,
+// which forces a re-sign on the first resume (0 is always > 23 h stale).
 function normalizeEntry(x: PendingUpload | LegacyMultipartEntry): PendingUpload {
   if (!('kind' in x) || x.kind === undefined) {
     return { ...(x as LegacyMultipartEntry), kind: 'multipart' };
+  }
+  if (x.kind === 'simple' && (x as PendingSimpleUpload).signedAt === undefined) {
+    return { ...(x as PendingSimpleUpload), signedAt: 0 };
   }
   return x as PendingUpload;
 }
@@ -92,8 +101,12 @@ export function isValidPending(x: unknown): x is PendingUpload | LegacyMultipart
 
   const kind = o.kind;
 
-  // Simple upload: just the base fields plus kind discriminator.
-  if (kind === 'simple') return true;
+  // Simple upload: base fields + kind discriminator. signedAt is optional
+  // here so legacy entries written before S3B-6 still pass validation;
+  // normalizeEntry fills in 0.
+  if (kind === 'simple') {
+    return o.signedAt === undefined || typeof o.signedAt === 'number';
+  }
 
   // Multipart (explicit or legacy untagged): needs uploadId, partSize, completedParts.
   if (kind === 'multipart' || kind === undefined) {
