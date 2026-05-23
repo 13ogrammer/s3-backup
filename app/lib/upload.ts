@@ -173,15 +173,13 @@ async function runRnbuUpload(
       },
     }).then((uploadId) => {
       listeners.push(
-        BackgroundUpload.addListener('progress', (data) => {
-          if (data.id !== uploadId) return;
+        BackgroundUpload.addListener('progress', uploadId, (data) => {
           onProgress?.({ bytesSent: Math.round((data.progress / 100) * totalBytes), bytesTotal: totalBytes });
         }),
       );
 
       listeners.push(
-        BackgroundUpload.addListener('completed', (data) => {
-          if (data.id !== uploadId) return;
+        BackgroundUpload.addListener('completed', uploadId, (data) => {
           cleanup();
           if (data.responseCode >= 200 && data.responseCode < 300) {
             resolve();
@@ -200,16 +198,14 @@ async function runRnbuUpload(
       );
 
       listeners.push(
-        BackgroundUpload.addListener('error', (data) => {
-          if (data.id !== uploadId) return;
+        BackgroundUpload.addListener('error', uploadId, (data) => {
           cleanup();
           reject(new UploadError(0, `RNBU error: ${data.error}`));
         }),
       );
 
       listeners.push(
-        BackgroundUpload.addListener('cancelled', (data) => {
-          if (data.id !== uploadId) return;
+        BackgroundUpload.addListener('cancelled', uploadId, (data) => {
           cleanup();
           reject(new UploadError(0, 'upload cancelled'));
         }),
