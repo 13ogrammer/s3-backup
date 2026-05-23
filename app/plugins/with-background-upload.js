@@ -58,8 +58,13 @@ function withBackgroundUpload(config, options = {}) {
 
   // --- Android ---
   config = withAndroidManifest(config, (mod) => {
+    // ensurePermission mutates the manifest in place and returns a bool
+    // (true if it added the permission). Do NOT assign its return to
+    // mod.modResults — that would clobber the manifest with undefined,
+    // breaking the next iteration with "Cannot read properties of
+    // undefined (reading 'manifest')".
     for (const permission of ANDROID_PERMISSIONS) {
-      mod.modResults = AndroidConfig.Permissions.addPermission(mod.modResults, permission);
+      AndroidConfig.Permissions.ensurePermission(mod.modResults, permission);
     }
     return mod;
   });
