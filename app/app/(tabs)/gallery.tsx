@@ -2,7 +2,7 @@ import { getInfoAsync } from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import type { AssetInfo } from 'expo-media-library';
-import { useNavigation, useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,7 +29,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
 import { loadBackedUpMap, recordBackedUp, removeBackedUp, type BackedUpMap } from '@/lib/backedUpState';
 import { getLastFolder, loadConfig, setLastFolder } from '@/lib/config';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, formatRelative } from '@/lib/format';
+import { loadAutoBackupState, type AutoBackupState } from '@/lib/autoBackupState';
 import { buildGallerySections, type GalleryRow, type GallerySection } from '@/lib/gallerySections';
 import { buildMetadataBag } from '@/lib/metadata';
 import {
@@ -88,6 +89,8 @@ export default function GalleryScreen() {
   const filterActive = dateFilter.start !== null || dateFilter.end !== null;
   const mountedRef = useRef(false);
 
+  const [autoState, setAutoState] = useState<AutoBackupState | null>(null);
+
   // Cache of assetId → fileSize (bytes), populated lazily as items are selected.
   const fileSizeCacheRef = useRef<Map<string, number>>(new Map());
 
@@ -137,6 +140,30 @@ export default function GalleryScreen() {
       .then(setBackedUpMap)
       .catch((err) => console.warn('loadBackedUpMap failed', err));
   }, []);
+
+  // Hydrate auto-backup status on mount.
+  useEffect(() => {
+    loadAutoBackupState().then(setAutoState).catch(console.warn);
+  }, []);
+
+  // Re-hydrate when the app returns to the foreground (e.g. background tick ran).
+  // Extend the existing AppState listener below — this is a separate effect
+  // to keep concerns separate and avoid merging with the pendingResume logic.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        loadAutoBackupState().then(setAutoState).catch(console.warn);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Re-hydrate when the user navigates back to the Gallery tab from Settings.
+  useFocusEffect(
+    useCallback(() => {
+      loadAutoBackupState().then(setAutoState).catch(console.warn);
+    }, []),
+  );
 
   // Reset and reload when the date filter changes, but not on the initial render.
   useEffect(() => {
@@ -724,6 +751,26 @@ export default function GalleryScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {autoState?.enabled === true && (
+        <View
+          style={[
+            styles.autoBackupChip,
+            { backgroundColor: colors.accentSoft, borderColor: colors.icon },
+          ]}>
+          <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+            {autoState.paused
+              ? `Auto paused — last ran ${formatRelative(autoState.lastRanAt)}`
+              : `Auto on — last ran ${formatRelative(autoState.lastRanAt)}`}
+            {autoState.failureCount > 0 ? ` · ${autoState.failureCount} failed` : ''}
+          </ThemedText>
+          {autoState.largeQueueCount > 0 && (
+            <ThemedText style={{ fontSize: 12, opacity: 0.75 }}>
+              {autoState.largeQueueCount} items waiting for foreground upload
+            </ThemedText>
+          )}
+        </View>
+      )}
+
       {pendingResume.length > 0 && !uploadState && (
         <View
           style={[
@@ -1138,6 +1185,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressBarFill: { height: '100%' },
+  autoBackupChip: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+  },
   resumeBanner: {
     flexDirection: 'row',
     alignItems: 'center',

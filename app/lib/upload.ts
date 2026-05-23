@@ -556,6 +556,26 @@ function defaultIsRetryable(err: unknown): boolean {
   return false;
 }
 
+// Background-safe upload path for the auto-backup tick.
+//
+// Routes through uploadFileSimple directly, bypassing the MULTIPART_THRESHOLD
+// router in uploadFile. The caller (autoBackupTask) enforces the
+// BACKGROUND_MAX_BYTES (<5 GB) ceiling before calling here, so all files
+// arriving at this function fit within S3's single-PUT limit.
+//
+// No thumbnail sidecar is generated here — thumbnails are produced on-demand
+// by the /get-derived-url Lambda sidecar when first viewed in Browse.
+export function uploadFileBackground(
+  localUri: string,
+  remoteKey: string,
+  contentType: string,
+  size: number,
+): Promise<void> {
+  return withRetry(() =>
+    uploadFileSimple(localUri, remoteKey, contentType, size, undefined, false, undefined),
+  );
+}
+
 // Run an async worker over a list of items with bounded concurrency.
 // Returns the items that failed (after retries inside the worker).
 export async function runWithConcurrency<T>(

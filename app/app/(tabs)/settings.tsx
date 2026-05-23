@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   type TextInputProps,
   View,
@@ -33,6 +34,17 @@ import {
 } from '@/lib/assistantConfig';
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
 import { parseQrPayload } from '@/lib/qr-config';
+import {
+  loadAutoBackupState,
+  saveAutoBackupState,
+  DEFAULT_AUTO_BACKUP_STATE,
+  type AutoBackupState,
+} from '@/lib/autoBackupState';
+import {
+  registerAutoBackup,
+  unregisterAutoBackup,
+  runAutoBackupTick,
+} from '@/lib/autoBackupTask';
 
 type EditorState =
   | { mode: 'add' }
@@ -63,17 +75,24 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [autoBackupState, setAutoBackupState] = useState<AutoBackupState>(DEFAULT_AUTO_BACKUP_STATE);
+  // Whether backend config exists — auto-backup toggles are disabled without it.
+  const [hasConfig, setHasConfig] = useState(false);
 
   useEffect(() => {
-    Promise.all([loadConfig(), getProviders(), getActiveProviderId()]).then(([cfg, list, aid]) => {
-      if (cfg) {
-        setBackendUrl(cfg.backendUrl);
-        setBootstrapToken(cfg.bootstrapToken);
-      }
-      setProviders(list);
-      setActiveId(aid ?? list[0]?.id ?? null);
-      setLoading(false);
-    });
+    Promise.all([loadConfig(), getProviders(), getActiveProviderId(), loadAutoBackupState()]).then(
+      ([cfg, list, aid, autoState]) => {
+        if (cfg) {
+          setBackendUrl(cfg.backendUrl);
+          setBootstrapToken(cfg.bootstrapToken);
+          setHasConfig(true);
+        }
+        setProviders(list);
+        setActiveId(aid ?? list[0]?.id ?? null);
+        setAutoBackupState(autoState);
+        setLoading(false);
+      },
+    );
   }, []);
 
   async function onSave() {
@@ -111,6 +130,30 @@ export default function SettingsScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onToggleAutoEnabled(value: boolean) {
+    if (value) {
+      const next = await saveAutoBackupState({ enabled: true });
+      setAutoBackupState(next);
+      await registerAutoBackup();
+      // First scan runs asynchronously so the toggle doesn't stall.
+      setImmediate(() => { runAutoBackupTick().catch(console.warn); });
+    } else {
+      await unregisterAutoBackup();
+      const next = await saveAutoBackupState({ enabled: false });
+      setAutoBackupState(next);
+    }
+  }
+
+  async function onToggleAutoPaused(value: boolean) {
+    const next = await saveAutoBackupState({ paused: value });
+    setAutoBackupState(next);
+  }
+
+  async function onToggleWifiOnly(value: boolean) {
+    const next = await saveAutoBackupState({ wifiOnly: value });
+    setAutoBackupState(next);
   }
 
   function onClear() {
@@ -370,6 +413,75 @@ export default function SettingsScreen() {
               ]}>
               <ThemedText style={[styles.buttonText, { color: colors.tint }]}>Test</ThemedText>
             </Pressable>
+          </View>
+
+          <ThemedText style={[styles.sectionHeader, { color: colors.muted }]}>
+            Auto-backup
+          </ThemedText>
+
+          {!hasConfig && (
+            <ThemedText style={[styles.hint, { color: colors.muted }]}>
+              Configure your backend in the section above before enabling auto-backup.
+            </ThemedText>
+          )}
+
+          <View style={[styles.card, { backgroundColor: colors.surface, gap: 0, padding: 0 }]}>
+            <View
+              style={[
+                styles.toggleRow,
+                { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+              ]}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={[Type.body, { color: colors.text }]}>Enable</ThemedText>
+                <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                  Automatically back up new photos and videos in the background
+                </ThemedText>
+              </View>
+              <Switch
+                value={autoBackupState.enabled}
+                onValueChange={onToggleAutoEnabled}
+                disabled={!hasConfig}
+                trackColor={{ false: colors.border, true: colors.tint }}
+                thumbColor={colors.onAccent}
+              />
+            </View>
+
+            {autoBackupState.enabled && (
+              <View
+                style={[
+                  styles.toggleRow,
+                  { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+                ]}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[Type.body, { color: colors.text }]}>Paused</ThemedText>
+                  <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                    Keep the task registered but skip each tick
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={autoBackupState.paused}
+                  onValueChange={onToggleAutoPaused}
+                  trackColor={{ false: colors.border, true: colors.tint }}
+                  thumbColor={colors.onAccent}
+                />
+              </View>
+            )}
+
+            <View style={styles.toggleRow}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={[Type.body, { color: colors.text }]}>Wi-Fi only</ThemedText>
+                <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                  Skip backup ticks on cellular to avoid data charges
+                </ThemedText>
+              </View>
+              <Switch
+                value={autoBackupState.wifiOnly}
+                onValueChange={onToggleWifiOnly}
+                disabled={!hasConfig}
+                trackColor={{ false: colors.border, true: colors.tint }}
+                thumbColor={colors.onAccent}
+              />
+            </View>
           </View>
 
           <ThemedText style={[styles.sectionHeader, { color: colors.muted }]}>
@@ -728,5 +840,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
   },
 });

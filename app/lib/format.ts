@@ -82,3 +82,21 @@ export function formatShutter(s: string): string {
   }
   return `${n} s`;
 }
+
+/**
+ * Human-readable relative time for the auto-backup status chip.
+ * null → 'never'; < 1 min → 'just now'; < 1 hr → 'N min ago';
+ * < 24 hr → 'N hr ago'; else → locale date string.
+ */
+export function formatRelative(ms: number | null): string {
+  if (ms === null) return 'never';
+  const delta = Date.now() - ms;
+  if (delta < 60_000) return 'just now';
+  if (delta < 60 * 60_000) return `${Math.floor(delta / 60_000)} min ago`;
+  if (delta < 24 * 60 * 60_000) return `${Math.floor(delta / 3_600_000)} hr ago`;
+  return new Date(ms).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
