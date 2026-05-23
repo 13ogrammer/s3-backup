@@ -18,7 +18,10 @@ const {
   AndroidConfig,
 } = require('@expo/config-plugins');
 
-const DEFAULT_IOS_BACKGROUND_MODES = ['fetch'];
+// 'fetch' — keeps URLSession background transfers alive (RNBU).
+// 'processing' — registers BGProcessingTask identifiers via expo-background-task
+//   so the OS can invoke the auto-backup tick during device charging/idle windows.
+const DEFAULT_IOS_BACKGROUND_MODES = ['fetch', 'processing'];
 const DEFAULT_ANDROID_CHANNEL = 'background_uploads';
 const DEFAULT_ANDROID_CHANNEL_NAME = 'Background uploads';
 

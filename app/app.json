@@ -71,6 +71,7 @@
       ],
       "@react-native-community/datetimepicker",
       ["./plugins/with-background-upload", { "androidChannel": "background_uploads" }],
+      "expo-background-task",
       [
         "@sentry/react-native",
         {
