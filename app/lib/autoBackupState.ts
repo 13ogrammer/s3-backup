@@ -5,10 +5,16 @@ import {
   writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
+export type BackupMode = 'all' | 'newOnly' | 'fromDate';
+
 export type AutoBackupState = {
   enabled: boolean;
   paused: boolean;
+  pauseStartedAt: number | null;
   wifiOnly: boolean;
+  backupMode: BackupMode;
+  customStartDate: number | null;
+  prefix: string;
   lastRanAt: number | null;
   lastCreatedAt: number | null;
   failureCount: number;
@@ -18,7 +24,11 @@ export type AutoBackupState = {
 export const DEFAULT_AUTO_BACKUP_STATE: AutoBackupState = {
   enabled: false,
   paused: false,
+  pauseStartedAt: null,
   wifiOnly: true,
+  backupMode: 'all',
+  customStartDate: null,
+  prefix: 'auto/',
   lastRanAt: null,
   lastCreatedAt: null,
   failureCount: 0,
@@ -47,10 +57,20 @@ async function readState(): Promise<AutoBackupState> {
       return { ...DEFAULT_AUTO_BACKUP_STATE };
     }
     const obj = parsed as Record<string, unknown>;
+
+    // Validate backupMode — anything unrecognised falls back to 'all'.
+    const rawMode = obj.backupMode;
+    const backupMode: BackupMode =
+      rawMode === 'all' || rawMode === 'newOnly' || rawMode === 'fromDate' ? rawMode : 'all';
+
     return {
       enabled: typeof obj.enabled === 'boolean' ? obj.enabled : DEFAULT_AUTO_BACKUP_STATE.enabled,
       paused: typeof obj.paused === 'boolean' ? obj.paused : DEFAULT_AUTO_BACKUP_STATE.paused,
+      pauseStartedAt: typeof obj.pauseStartedAt === 'number' ? obj.pauseStartedAt : null,
       wifiOnly: typeof obj.wifiOnly === 'boolean' ? obj.wifiOnly : DEFAULT_AUTO_BACKUP_STATE.wifiOnly,
+      backupMode,
+      customStartDate: typeof obj.customStartDate === 'number' ? obj.customStartDate : null,
+      prefix: typeof obj.prefix === 'string' ? obj.prefix : 'auto/',
       lastRanAt: typeof obj.lastRanAt === 'number' ? obj.lastRanAt : null,
       lastCreatedAt: typeof obj.lastCreatedAt === 'number' ? obj.lastCreatedAt : null,
       failureCount: typeof obj.failureCount === 'number' ? obj.failureCount : 0,
@@ -70,10 +90,16 @@ export function loadAutoBackupState(): Promise<AutoBackupState> {
   return serialize(readState);
 }
 
-export function saveAutoBackupState(patch: Partial<AutoBackupState>): Promise<AutoBackupState> {
+// Accepts either a plain partial patch or a patch function that receives the
+// current state. The function form is used for race-safe read-modify-write
+// operations (e.g. pause-skip logic) where the patch depends on current values.
+export function saveAutoBackupState(
+  patch: Partial<AutoBackupState> | ((current: AutoBackupState) => Partial<AutoBackupState>),
+): Promise<AutoBackupState> {
   return serialize(async () => {
     const current = await readState();
-    const next: AutoBackupState = { ...current, ...patch };
+    const partial = typeof patch === 'function' ? patch(current) : patch;
+    const next: AutoBackupState = { ...current, ...partial };
     await writeState(next);
     return next;
   });

@@ -141,7 +141,7 @@ export async function runAutoBackupTick(): Promise<TickResult> {
     }
 
     const contentType = guessContentType(filename);
-    const remoteKey = autoFolderKey(asset.creationTime, filename);
+    const remoteKey = autoFolderKey(state.prefix, asset.creationTime, filename);
 
     try {
       await uploadFileBackground(localUri, remoteKey, contentType, fileSize);
@@ -183,12 +183,14 @@ export async function runAutoBackupTick(): Promise<TickResult> {
 // Compose the remote key for an auto-backed-up asset.
 // Uses device local time (not UTC) so the folder date matches what the user
 // sees in their photo app when they took the photo.
-function autoFolderKey(creationTimeMs: number, filename: string): string {
+// Empty prefix → <YYYY-MM-DD>/<filename> with no leading slash.
+function autoFolderKey(prefix: string, creationTimeMs: number, filename: string): string {
   const d = new Date(creationTimeMs);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  return `auto/${y}-${m}-${day}/${filename}`;
+  const datePart = `${y}-${m}-${day}/${filename}`;
+  return prefix ? `${prefix}${datePart}` : datePart;
 }
 
 // Simple content-type inference for background uploads. Matches the
