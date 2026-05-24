@@ -79,12 +79,19 @@ export async function runAutoBackupTick(): Promise<TickResult> {
   // Prefer getPermissionsAsync to avoid prompting from background context.
   const { status } = await MediaLibrary.getPermissionsAsync();
   if (status !== 'granted') {
-    captureException(new Error(`autoBackup: MediaLibrary permission not granted (status=${status})`), {
-      tags: { area: 'autoBackup', stage: 'permission' },
-      extra: { status },
-    });
-    await saveAutoBackupState({ lastRanAt: Date.now(), failureCount: state.failureCount + 1 });
-    return { uploaded: 0, skippedLarge: 0, failed: 1 };
+    // `undetermined` = user hasn't been asked yet. Silent no-op: the Settings
+    // toggle prompts before enabling, so foreground UI will resolve it.
+    // `denied` = user revoked (or OS reset) — worth a Sentry breadcrumb and a
+    // failureCount bump so the Gallery chip surfaces it.
+    if (status === 'denied') {
+      captureException(new Error('autoBackup: MediaLibrary permission denied'), {
+        tags: { area: 'autoBackup', stage: 'permission' },
+        extra: { status },
+      });
+      await saveAutoBackupState({ lastRanAt: Date.now(), failureCount: state.failureCount + 1 });
+      return { uploaded: 0, skippedLarge: 0, failed: 1 };
+    }
+    return empty;
   }
 
   const since = new Date(state.lastCreatedAt ?? 0);

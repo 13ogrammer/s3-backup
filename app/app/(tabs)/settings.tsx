@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -78,6 +81,10 @@ export default function SettingsScreen() {
   const [autoBackupState, setAutoBackupState] = useState<AutoBackupState>(DEFAULT_AUTO_BACKUP_STATE);
   // Whether backend config exists — auto-backup toggles are disabled without it.
   const [hasConfig, setHasConfig] = useState(false);
+  // Tracks MediaLibrary permission so we can surface a re-grant row if it's
+  // revoked while auto-backup is enabled. `null` = not checked yet.
+  const [mediaPermStatus, setMediaPermStatus] =
+    useState<MediaLibrary.PermissionStatus | null>(null);
 
   useEffect(() => {
     Promise.all([loadConfig(), getProviders(), getActiveProviderId(), loadAutoBackupState()]).then(
@@ -93,6 +100,21 @@ export default function SettingsScreen() {
         setLoading(false);
       },
     );
+  }, []);
+
+  // Refresh permission status on mount and whenever the app returns from
+  // background (covers the case where the user toggled it in system Settings).
+  useEffect(() => {
+    const refresh = () => {
+      MediaLibrary.getPermissionsAsync()
+        .then((res) => setMediaPermStatus(res.status))
+        .catch(() => {});
+    };
+    refresh();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
   }, []);
 
   async function onSave() {
@@ -134,6 +156,15 @@ export default function SettingsScreen() {
 
   async function onToggleAutoEnabled(value: boolean) {
     if (value) {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      setMediaPermStatus(status);
+      if (status !== 'granted') {
+        showAlert(
+          'Photo access needed',
+          'Auto-backup needs access to your photos and videos. Grant access in Settings, then try again.',
+        );
+        return;
+      }
       const next = await saveAutoBackupState({ enabled: true });
       setAutoBackupState(next);
       await registerAutoBackup();
@@ -143,6 +174,21 @@ export default function SettingsScreen() {
       await unregisterAutoBackup();
       const next = await saveAutoBackupState({ enabled: false });
       setAutoBackupState(next);
+    }
+  }
+
+  // Try to re-prompt for permission; if the OS won't show the dialog again
+  // (Android "Don't ask again" / iOS post-denial), open system Settings.
+  async function onFixMediaPermission() {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    setMediaPermStatus(status);
+    if (status !== 'granted') {
+      Linking.openSettings().catch(() => {
+        showAlert(
+          'Open Settings',
+          'Could not open system Settings. Please grant photo access manually.',
+        );
+      });
     }
   }
 
@@ -445,6 +491,33 @@ export default function SettingsScreen() {
                 thumbColor={colors.onAccent}
               />
             </View>
+
+            {autoBackupState.enabled &&
+              mediaPermStatus !== null &&
+              mediaPermStatus !== 'granted' && (
+                <Pressable
+                  onPress={onFixMediaPermission}
+                  style={({ pressed }) => [
+                    styles.toggleRow,
+                    {
+                      backgroundColor: colors.dangerSoft,
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: colors.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}>
+                  <Ionicons name="alert-circle" size={20} color={colors.danger} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={[Type.body, { color: colors.danger }]}>
+                      Photo access needed
+                    </ThemedText>
+                    <ThemedText style={[Type.meta, { color: colors.danger }]}>
+                      Auto-backup is paused until you grant access. Tap to fix.
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.danger} />
+                </Pressable>
+              )}
 
             {autoBackupState.enabled && (
               <View
