@@ -15,6 +15,7 @@
 const {
   withInfoPlist,
   withAndroidManifest,
+  withProjectBuildGradle,
   AndroidConfig,
 } = require('@expo/config-plugins');
 
@@ -65,6 +66,19 @@ function withBackgroundUpload(config, options = {}) {
     // undefined (reading 'manifest')".
     for (const permission of ANDROID_PERMISSIONS) {
       AndroidConfig.Permissions.ensurePermission(mod.modResults, permission);
+    }
+    return mod;
+  });
+
+  // Force the transitive `net.gotev:uploadservice` dep to 4.9.4. RNBU 6.6.0
+  // pins 4.7.0, which crashes on Android 14+ (`registerReceiver` requires
+  // RECEIVER_EXPORTED/_NOT_EXPORTED on targetSdk>=34); the fix landed
+  // upstream in 4.9.0.
+  config = withProjectBuildGradle(config, (mod) => {
+    const MARK_BEGIN = '// BEGIN withBackgroundUpload-gotev-force';
+    const MARK_END = '// END withBackgroundUpload-gotev-force';
+    if (!mod.modResults.contents.includes(MARK_BEGIN)) {
+      mod.modResults.contents += `\n${MARK_BEGIN}\nallprojects {\n    configurations.all {\n        resolutionStrategy {\n            force 'net.gotev:uploadservice:4.9.4'\n            force 'net.gotev:uploadservice-okhttp:4.9.4'\n        }\n    }\n}\n${MARK_END}\n`;
     }
     return mod;
   });

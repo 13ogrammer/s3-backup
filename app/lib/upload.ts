@@ -149,9 +149,16 @@ async function runRnbuUpload(
       for (const l of listeners) l.remove();
     }
 
+    // RNBU 6.6.0 rejects `file://` URIs — only `/` (absolute path) and
+    // `content://` are accepted. MediaLibrary.getAssetInfoAsync returns
+    // `file:///storage/...` on Android, so strip the scheme here.
+    const rnbuPath = localUri.startsWith('file://')
+      ? localUri.slice('file://'.length)
+      : localUri;
+
     BackgroundUpload.startUpload({
       url,
-      path: localUri,
+      path: rnbuPath,
       method: 'PUT',
       type: 'raw',
       headers: { 'content-type': contentType },
