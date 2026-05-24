@@ -10,7 +10,7 @@
     "build": "sam build --build-in-source",
     "deploy": "sam deploy",
     "local": "sam local start-api",
-    "dev": "tsx watch --env-file-if-exists=.env src/dev-server.ts",
+    "dev": "npm run set-ip && tsx watch --env-file-if-exists=.env src/dev-server.ts",
     "dev:minio": "docker compose up -d",
     "dev:minio:stop": "docker compose down",
     "minio:ui": "open http://localhost:9001",
@@ -18,6 +18,7 @@
     "backfill:video-thumbs": "tsx --env-file-if-exists=.env scripts/backfill-video-thumbs.ts",
     "check:bucket": "tsx scripts/check-bucket.ts",
     "qr": "tsx scripts/qr.ts",
+    "set-ip": "./scripts/set-endpoint-ip.sh",
     "bootstrap:dist-bucket": "./scripts/bootstrap-dist-bucket.sh",
     "publish:template": "./scripts/publish-template.sh",
     "ip": "ipconfig getifaddr en0"
