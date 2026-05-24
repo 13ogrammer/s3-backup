@@ -6,6 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { loadBackedUpMap, recordBackedUp } from './backedUpState';
 import { loadConfig } from './config';
 import { loadAutoBackupState, saveAutoBackupState } from './autoBackupState';
+import { captureException } from './sentry';
 import { uploadFileBackground } from './upload';
 
 export const AUTO_BACKUP_TASK = 'AUTO_BACKUP_TASK';
@@ -26,7 +27,8 @@ TaskManager.defineTask(AUTO_BACKUP_TASK, async () => {
   try {
     await runAutoBackupTick();
     return BackgroundTask.BackgroundTaskResult.Success;
-  } catch {
+  } catch (err) {
+    captureException(err, { tags: { area: 'autoBackup', stage: 'tick' } });
     return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
@@ -77,6 +79,10 @@ export async function runAutoBackupTick(): Promise<TickResult> {
   // Prefer getPermissionsAsync to avoid prompting from background context.
   const { status } = await MediaLibrary.getPermissionsAsync();
   if (status !== 'granted') {
+    captureException(new Error(`autoBackup: MediaLibrary permission not granted (status=${status})`), {
+      tags: { area: 'autoBackup', stage: 'permission' },
+      extra: { status },
+    });
     await saveAutoBackupState({ lastRanAt: Date.now(), failureCount: state.failureCount + 1 });
     return { uploaded: 0, skippedLarge: 0, failed: 1 };
   }
@@ -111,7 +117,11 @@ export async function runAutoBackupTick(): Promise<TickResult> {
       localUri = info.localUri ?? asset.uri;
       filename = info.filename ?? asset.filename;
       fileSize = (info as MediaLibrary.AssetInfo & { fileSize?: number }).fileSize ?? 0;
-    } catch {
+    } catch (err) {
+      captureException(err, {
+        tags: { area: 'autoBackup', stage: 'getAssetInfo' },
+        extra: { assetId: asset.id, assetUri: asset.uri },
+      });
       failed += 1;
       continue;
     }
@@ -137,6 +147,10 @@ export async function runAutoBackupTick(): Promise<TickResult> {
       }
     } catch (err) {
       console.warn('autoBackup upload failed', remoteKey, err);
+      captureException(err, {
+        tags: { area: 'autoBackup', stage: 'upload' },
+        extra: { remoteKey, assetId: asset.id, fileSize },
+      });
       failed += 1;
     }
   }

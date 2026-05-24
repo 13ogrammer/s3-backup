@@ -55,3 +55,19 @@ export function captureApiError(err: unknown): void {
     Sentry.captureException(err);
   }
 }
+
+export function captureException(
+  err: unknown,
+  opts?: { tags?: Record<string, string>; extra?: Record<string, unknown> },
+): void {
+  if (!process.env.EXPO_PUBLIC_SENTRY_DSN) return;
+  Sentry.withScope((scope) => {
+    if (opts?.tags) {
+      for (const [k, v] of Object.entries(opts.tags)) scope.setTag(k, v);
+    }
+    if (opts?.extra) {
+      for (const [k, v] of Object.entries(opts.extra)) scope.setExtra(k, v);
+    }
+    Sentry.captureException(err);
+  });
+}
