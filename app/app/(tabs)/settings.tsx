@@ -17,6 +17,8 @@ import {
   View,
 } from 'react-native';
 
+import { AutoBackupModeModal } from '@/components/auto-backup-mode-modal';
+import { AutoBackupPrefixModal } from '@/components/auto-backup-prefix-modal';
 import { QrScannerModal } from '@/components/qr-scanner-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -42,6 +44,7 @@ import {
   saveAutoBackupState,
   DEFAULT_AUTO_BACKUP_STATE,
   type AutoBackupState,
+  type BackupMode,
 } from '@/lib/autoBackupState';
 import {
   registerAutoBackup,
@@ -85,6 +88,13 @@ export default function SettingsScreen() {
   // revoked while auto-backup is enabled. `null` = not checked yet.
   const [mediaPermStatus, setMediaPermStatus] =
     useState<MediaLibrary.PermissionStatus | null>(null);
+
+  // Mode chooser modal: shown on first-enable and when user taps the mode row.
+  const [modeModalVisible, setModeModalVisible] = useState(false);
+  // True when the chooser was opened for first-enable (vs. a mode switch).
+  const [modeModalIsFirstEnable, setModeModalIsFirstEnable] = useState(false);
+  // Prefix editor modal.
+  const [prefixModalVisible, setPrefixModalVisible] = useState(false);
 
   useEffect(() => {
     Promise.all([loadConfig(), getProviders(), getActiveProviderId(), loadAutoBackupState()]).then(
@@ -165,16 +175,151 @@ export default function SettingsScreen() {
         );
         return;
       }
-      const next = await saveAutoBackupState({ enabled: true });
-      setAutoBackupState(next);
-      await registerAutoBackup();
-      // First scan runs asynchronously so the toggle doesn't stall.
-      setImmediate(() => { runAutoBackupTick().catch(console.warn); });
+      // Open the required mode chooser before committing any state.
+      // onModeChosen / onModeChooserCancel handle the rest.
+      setModeModalIsFirstEnable(true);
+      setModeModalVisible(true);
     } else {
       await unregisterAutoBackup();
       const next = await saveAutoBackupState({ enabled: false });
       setAutoBackupState(next);
     }
+  }
+
+  // Called when the user confirms a mode in the chooser (first-enable path).
+  async function onModeChosenFirstEnable(result: {
+    mode: BackupMode;
+    customStartDate: number | null;
+  }) {
+    setModeModalVisible(false);
+    const lastCreatedAt =
+      result.mode === 'all'
+        ? null
+        : result.mode === 'newOnly'
+          ? Date.now()
+          : result.customStartDate;
+
+    const next = await saveAutoBackupState({
+      enabled: true,
+      backupMode: result.mode,
+      customStartDate: result.customStartDate,
+      lastCreatedAt,
+    });
+    setAutoBackupState(next);
+    await registerAutoBackup();
+    setImmediate(() => { runAutoBackupTick().catch(console.warn); });
+  }
+
+  function onModeChooserCancel() {
+    setModeModalVisible(false);
+    // In first-enable context: toggle returns to OFF (no state was written).
+    // In post-enable context: modal closes, nothing changes.
+  }
+
+  // Dispatch to the correct handler based on whether this is a first-enable
+  // or a post-enable mode switch.
+  function onModeConfirm(result: { mode: BackupMode; customStartDate: number | null }) {
+    if (modeModalIsFirstEnable) {
+      onModeChosenFirstEnable(result);
+    } else {
+      onModeSwitched(result);
+    }
+  }
+
+  // Called when the user taps the mode row while already enabled.
+  function onTapModeRow() {
+    setModeModalIsFirstEnable(false);
+    setModeModalVisible(true);
+  }
+
+  // Called when the user confirms a mode switch from the chooser (post-enable).
+  async function onModeSwitched(result: {
+    mode: BackupMode;
+    customStartDate: number | null;
+  }) {
+    setModeModalVisible(false);
+    const currentMode = autoBackupState.backupMode;
+
+    // Same-mode no-op.
+    if (
+      result.mode === currentMode &&
+      !(result.mode === 'fromDate' && currentMode === 'fromDate')
+    ) {
+      return;
+    }
+    if (
+      result.mode === 'fromDate' &&
+      currentMode === 'fromDate' &&
+      result.customStartDate === autoBackupState.customStartDate
+    ) {
+      return;
+    }
+
+    function doSwitch() {
+      const lastCreatedAt =
+        result.mode === 'all'
+          ? null
+          : result.mode === 'newOnly'
+            ? Date.now()
+            : result.customStartDate;
+
+      saveAutoBackupState({
+        backupMode: result.mode,
+        customStartDate: result.customStartDate,
+        lastCreatedAt,
+      }).then((next) => setAutoBackupState(next)).catch(console.warn);
+    }
+
+    // Determine confirmation copy per the mode-switch matrix.
+    const pickedDate = result.customStartDate;
+    const pickedDateLabel = pickedDate != null
+      ? new Date(pickedDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+      : '';
+
+    type ConfirmSpec = { title: string; body: string };
+
+    function getConfirmSpec(): ConfirmSpec | null {
+      if (result.mode === currentMode && result.mode !== 'fromDate') return null;
+
+      if (result.mode === 'all') {
+        return {
+          title: 'Back up everything?',
+          body: 'This will queue your entire photo library for backup. Continue?',
+        };
+      }
+      if (result.mode === 'newOnly') {
+        return {
+          title: 'New media only?',
+          body: "Stop backing up older media you haven't uploaded yet?",
+        };
+      }
+      // fromDate
+      if (pickedDate != null) {
+        const cursor = autoBackupState.lastCreatedAt ?? 0;
+        if (pickedDate < cursor) {
+          return {
+            title: `Re-queue from ${pickedDateLabel}?`,
+            body: `This will re-queue media created since ${pickedDateLabel}.`,
+          };
+        }
+        return {
+          title: `Start from ${pickedDateLabel}?`,
+          body: `Skip older media and start from ${pickedDateLabel}?`,
+        };
+      }
+      return null;
+    }
+
+    const spec = getConfirmSpec();
+    if (!spec) {
+      doSwitch();
+      return;
+    }
+
+    showAlert(spec.title, spec.body, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Confirm', style: 'destructive', onPress: doSwitch },
+    ]);
   }
 
   // Try to re-prompt for permission; if the OS won't show the dialog again
@@ -193,7 +338,36 @@ export default function SettingsScreen() {
   }
 
   async function onToggleAutoPaused(value: boolean) {
-    const next = await saveAutoBackupState({ paused: value });
+    let next: AutoBackupState;
+    if (value) {
+      // Pause: record when the pause started. Defensive: don't overwrite an
+      // existing pauseStartedAt if somehow called twice.
+      next = await saveAutoBackupState((current) => ({
+        paused: true,
+        pauseStartedAt: current.pauseStartedAt ?? Date.now(),
+      }));
+    } else {
+      // Unpause with pause-skip: if the cursor has caught up past the pause
+      // start, advance lastCreatedAt to now so media taken during the pause
+      // is excluded. If mid-sweep, leave the cursor alone and let it finish.
+      next = await saveAutoBackupState((current) => {
+        const advance =
+          current.pauseStartedAt !== null &&
+          current.lastCreatedAt !== null &&
+          current.lastCreatedAt >= current.pauseStartedAt;
+        return {
+          paused: false,
+          pauseStartedAt: null,
+          lastCreatedAt: advance ? Date.now() : current.lastCreatedAt,
+        };
+      });
+    }
+    setAutoBackupState(next);
+  }
+
+  async function onSavePrefix(sanitized: string) {
+    setPrefixModalVisible(false);
+    const next = await saveAutoBackupState({ prefix: sanitized });
     setAutoBackupState(next);
   }
 
@@ -528,7 +702,7 @@ export default function SettingsScreen() {
                 <View style={{ flex: 1 }}>
                   <ThemedText style={[Type.body, { color: colors.text }]}>Paused</ThemedText>
                   <ThemedText style={[Type.meta, { color: colors.muted }]}>
-                    Keep the task registered but skip each tick
+                    Skip ticks. Media created while paused won&apos;t be uploaded after resuming.
                   </ThemedText>
                 </View>
                 <Switch
@@ -538,6 +712,65 @@ export default function SettingsScreen() {
                   thumbColor={colors.onAccent}
                 />
               </View>
+            )}
+
+            {autoBackupState.enabled && (
+              <Pressable
+                onPress={onTapModeRow}
+                style={({ pressed }) => [
+                  styles.toggleRow,
+                  {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[Type.body, { color: colors.text }]}>
+                    {autoBackupState.backupMode === 'all'
+                      ? 'Backing up: Everything'
+                      : autoBackupState.backupMode === 'newOnly'
+                        ? 'Backing up: New media only'
+                        : `Backing up: Since ${
+                            autoBackupState.customStartDate != null
+                              ? new Date(autoBackupState.customStartDate).toLocaleDateString(
+                                  undefined,
+                                  { day: '2-digit', month: 'short', year: 'numeric' },
+                                )
+                              : '—'
+                          }`}
+                  </ThemedText>
+                  {autoBackupState.lastRanAt != null && (
+                    <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                      {`Last ran ${formatRelativeTime(autoBackupState.lastRanAt)}`}
+                    </ThemedText>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </Pressable>
+            )}
+
+            {autoBackupState.enabled && (
+              <Pressable
+                onPress={() => setPrefixModalVisible(true)}
+                style={({ pressed }) => [
+                  styles.toggleRow,
+                  {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[Type.body, { color: colors.text }]}>
+                    Folder prefix
+                  </ThemedText>
+                  <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                    {autoBackupState.prefix === '' ? '(bucket root)' : autoBackupState.prefix}
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </Pressable>
             )}
 
             <View style={styles.toggleRow}>
@@ -691,6 +924,21 @@ export default function SettingsScreen() {
         onScanned={applyQrConfig}
       />
 
+      <AutoBackupModeModal
+        visible={modeModalVisible}
+        initialMode={modeModalIsFirstEnable ? undefined : autoBackupState.backupMode}
+        initialCustomDate={modeModalIsFirstEnable ? null : autoBackupState.customStartDate}
+        onConfirm={onModeConfirm}
+        onCancel={onModeChooserCancel}
+      />
+
+      <AutoBackupPrefixModal
+        visible={prefixModalVisible}
+        initialValue={autoBackupState.prefix}
+        onSave={onSavePrefix}
+        onCancel={() => setPrefixModalVisible(false)}
+      />
+
       <ModalCard
         visible={editor !== null}
         onRequestClose={closeEditor}
@@ -771,6 +1019,18 @@ export default function SettingsScreen() {
       </ModalCard>
     </KeyboardAvoidingView>
   );
+}
+
+// Returns a human-readable relative time string for display (e.g. "2 hours ago").
+function formatRelativeTime(ms: number): string {
+  const diff = Date.now() - ms;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function SecretInput({
