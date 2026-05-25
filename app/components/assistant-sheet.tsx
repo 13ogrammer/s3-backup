@@ -148,51 +148,50 @@ export function AssistantSheet({ visible, onClose }: Props) {
 
   const listRef = useRef<FlatList>(null);
 
-  // Manual keyboard-driven padding for the chat surface.
-  //
-  // The keyboard's reported endCoordinates.height is measured from the bottom
-  // of the screen. In a pageSheet modal there's no tab bar to subtract, so we
-  // use the raw keyboard height. Floor: the system nav-bar inset on Android
-  // (the Modal uses navigationBarTranslucent so content draws behind it).
-  const restingPad = Platform.OS === 'android' ? insets.bottom : 0;
-  const keyboardPad = useRef(new Animated.Value(restingPad)).current;
+  // Manual keyboard-driven padding for the chat surface — same pattern as
+  // folder-picker.tsx. Resting floor is insets.bottom (the Modal uses
+  // navigationBarTranslucent + iOS pageSheet, both of which need explicit
+  // safe-area handling). Keyboard-open adds the keyboard frame on top of
+  // the resting inset.
+  const keyboardPad = useRef(new Animated.Value(insets.bottom)).current;
 
   useEffect(() => {
-    keyboardPad.setValue(restingPad);
-  }, [keyboardPad, restingPad]);
+    keyboardPad.setValue(insets.bottom);
+  }, [keyboardPad, insets.bottom]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const show = Keyboard.addListener(showEvent, (e) => {
+      const target = e.endCoordinates.height + insets.bottom;
       if (Platform.OS === 'ios') {
         Animated.timing(keyboardPad, {
-          toValue: e.endCoordinates.height,
+          toValue: target,
           duration: e.duration ?? 250,
           easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
           useNativeDriver: false,
         }).start();
       } else {
-        keyboardPad.setValue(e.endCoordinates.height);
+        keyboardPad.setValue(target);
       }
     });
     const hide = Keyboard.addListener(hideEvent, (e) => {
       if (Platform.OS === 'ios') {
         Animated.timing(keyboardPad, {
-          toValue: 0,
+          toValue: insets.bottom,
           duration: e.duration ?? 250,
           easing: Easing.bezier(0.17, 0.59, 0.4, 0.77),
           useNativeDriver: false,
         }).start();
       } else {
-        keyboardPad.setValue(restingPad);
+        keyboardPad.setValue(insets.bottom);
       }
     });
     return () => {
       show.remove();
       hide.remove();
     };
-  }, [keyboardPad, restingPad]);
+  }, [keyboardPad, insets.bottom]);
 
   // On visible flip false→true: load contextPrefix, privacyAcked, refresh provider,
   // run session reset check.
