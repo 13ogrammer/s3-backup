@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { DateFilterModal, type DateFilter } from '@/components/date-filter-modal';
 import { FolderPicker } from '@/components/folder-picker';
+import { SelectionActionBar, type SelectionAction } from '@/components/selection-action-bar';
 import { ThemedText } from '@/components/themed-text';
 import { Thumb } from '@/components/Thumb';
 import { ThemedView } from '@/components/themed-view';
@@ -313,9 +314,14 @@ export default function GalleryScreen() {
     const n = eligibleIds.length;
     if (n === 0) return;
     const label = n === 1 ? '1 item' : `${n} items`;
+    const skipped = selectedCount - n;
+    const body =
+      skipped > 0
+        ? `${n} of ${selectedCount} selected items are backed up and eligible for deletion from this device. The remaining ${skipped} will be skipped. These items will be removed from this device's photo library. This cannot be undone — the originals will only exist in your bucket.`
+        : 'These items are backed up to S3 and will be removed from this device\'s photo library. This cannot be undone — the originals will only exist in your bucket.';
     showAlert(
       `Delete ${label} from this device?`,
-      'These items are backed up to S3 and will be removed from this device\'s photo library. This cannot be undone — the originals will only exist in your bucket.',
+      body,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -893,54 +899,18 @@ export default function GalleryScreen() {
       />
 
       {selectedCount > 0 && (
-        <View style={[styles.bottomBar, { backgroundColor: colors.background, borderColor: colors.icon, marginBottom: bottomBarMargin }]}>
-          <View style={{ flex: 1 }}>
-            <ThemedText type="defaultSemiBold">
-              {selectedCount} selected{selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}
-            </ThemedText>
-            <Pressable onPress={clearSelection}>
-              <ThemedText style={{ color: colors.tint, fontSize: 13 }}>Clear</ThemedText>
-            </Pressable>
-          </View>
-          {(() => {
-            const eligible = eligibleForDeviceDelete(selectedIds, backedUpMap);
-            const eligibleCount = eligible.length;
-            const deleteDisabled = uploading || eligibleCount === 0;
-            const deleteLabel =
-              eligibleCount > 0 && eligibleCount < selectedCount
-                ? `Delete ${eligibleCount} from device`
-                : 'Delete from device';
-            return (
-              <Pressable
-                onPress={onTapDeleteFromDevice}
-                disabled={deleteDisabled}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  deleteDisabled
-                    ? { backgroundColor: colors.surfaceMuted, opacity: 0.4 }
-                    : { backgroundColor: colors.danger, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <ThemedText
-                  style={[
-                    styles.primaryButtonText,
-                    { color: deleteDisabled ? colors.danger : colors.onAccent },
-                  ]}>
-                  {deleteLabel}
-                </ThemedText>
-              </Pressable>
-            );
-          })()}
-          <Pressable
-            onPress={onTapUpload}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <ThemedText style={[styles.primaryButtonText, { color: colors.onAccent }]}>
-              Upload…
-            </ThemedText>
-          </Pressable>
-        </View>
+        <SelectionActionBar
+          statusLabel={`${selectedCount} selected${selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}`}
+          actions={galleryActions(
+            onTapUpload,
+            onTapDeleteFromDevice,
+            uploading,
+            eligibleForDeviceDelete(selectedIds, backedUpMap).length,
+          )}
+          onDismiss={clearSelection}
+          dismissAccessibilityLabel="Exit selection mode"
+          style={{ marginBottom: bottomBarMargin }}
+        />
       )}
 
       <DateFilterModal
@@ -1002,6 +972,30 @@ export default function GalleryScreen() {
       </ModalCard>
     </ThemedView>
   );
+}
+
+function galleryActions(
+  onUpload: () => void,
+  onDelete: () => void,
+  uploading: boolean,
+  eligibleCount: number,
+): SelectionAction[] {
+  return [
+    {
+      key: 'upload',
+      icon: 'arrow.up',
+      accessibilityLabel: 'Upload selected items',
+      onPress: onUpload,
+    },
+    {
+      key: 'delete',
+      icon: 'trash',
+      accessibilityLabel: 'Delete from device',
+      onPress: onDelete,
+      disabled: uploading || eligibleCount === 0,
+      tone: 'danger',
+    },
+  ];
 }
 
 function eligibleForDeviceDelete(
@@ -1122,20 +1116,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: Radius.md,
   },
-  bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
   primaryButton: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.md,
   },
-  primaryButtonText: { fontWeight: '600', fontSize: 14 },
+  primaryButtonText: { fontWeight: '600' as const, fontSize: 14 },
   uploadContent: {
     gap: Spacing.sm,
     alignItems: 'center',
