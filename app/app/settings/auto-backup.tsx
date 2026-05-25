@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library';
 import { useEffect, useState } from 'react';
 import {
@@ -257,9 +258,35 @@ export default function AutoBackupScreen() {
   async function onBackupNow() {
     setBackingUpNow(true);
     try {
-      await runAutoBackupTick();
+      if (autoBackupState.wifiOnly) {
+        const net = await NetInfo.fetch();
+        if (net.type !== 'wifi') {
+          showAlert(
+            'Skipped',
+            'Wi-Fi only is enabled. Connect to Wi-Fi or turn off Wi-Fi only to back up now.',
+          );
+          return;
+        }
+      }
+      if (mediaPermStatus !== null && mediaPermStatus !== MediaLibrary.PermissionStatus.GRANTED) {
+        showAlert(
+          'Photo access required',
+          'Grant photo access in system Settings to back up.',
+        );
+        return;
+      }
+      const result = await runAutoBackupTick();
+      const parts: string[] = [];
+      if (result.uploaded > 0) parts.push(`Backed up ${result.uploaded}`);
+      if (result.skippedLarge > 0) parts.push(`${result.skippedLarge} skipped (too large)`);
+      if (result.failed > 0) parts.push(`${result.failed} failed`);
+      showAlert(
+        'Backup complete',
+        parts.length > 0 ? `${parts.join(', ')}.` : 'Nothing new to back up.',
+      );
     } catch (err) {
       console.warn(err);
+      showAlert('Backup error', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setBackingUpNow(false);
       loadAutoBackupState().then(setAutoBackupState).catch(() => {});
