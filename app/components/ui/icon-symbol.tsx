@@ -60,6 +60,7 @@ const MAPPING = {
   'pencil': 'edit',
   'tray.and.arrow.down': { mci: 'tray-arrow-down' },
   'rectangle.split.2x1': { mci: 'view-split-horizontal' },
+  'arrow.triangle.merge': { mci: 'source-merge' },
 } as IconMapping;
 
 /**

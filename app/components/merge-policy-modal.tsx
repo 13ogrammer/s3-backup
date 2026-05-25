@@ -13,6 +13,7 @@ type Props = {
   fromPrefix: string;
   toPrefix: string;
   report: CollisionReport;
+  mode?: 'collision' | 'intentional';
   onCancel: () => void;
   onChoose: (policy: MergePolicy) => void;
 };
@@ -46,6 +47,7 @@ export function MergePolicyModal({
   fromPrefix,
   toPrefix,
   report,
+  mode = 'collision',
   onCancel,
   onChoose,
 }: Props) {
@@ -54,6 +56,7 @@ export function MergePolicyModal({
 
   const fromName = fromPrefix.replace(/\/$/, '').split('/').pop() ?? fromPrefix;
   const toName = toPrefix.replace(/\/$/, '').split('/').pop() ?? toPrefix;
+  const isIntentional = mode === 'intentional';
 
   const collisionCountLabel = report.truncated
     ? `${report.total}+ collisions`
@@ -63,36 +66,55 @@ export function MergePolicyModal({
     <ModalCard
       visible={visible}
       onRequestClose={onCancel}
-      title="Folder already exists"
+      title={isIntentional ? 'Merge folders' : 'Folder already exists'}
       dismissOnBackdrop={false}>
-      <ThemedText style={[Type.body, { color: colors.text }]}>
-        <ThemedText style={{ fontWeight: '600' }}>{fromName}</ThemedText>
-        {' cannot be merged into '}
-        <ThemedText style={{ fontWeight: '600' }}>{toName}</ThemedText>
-        {' without conflicts. '}
-        <ThemedText style={{ color: colors.muted }}>{collisionCountLabel} found.</ThemedText>
-      </ThemedText>
+      {isIntentional ? (
+        <ThemedText style={[Type.body, { color: colors.text }]}>
+          {'Merge '}
+          <ThemedText style={{ fontWeight: '600' }}>{fromName}</ThemedText>
+          {' into '}
+          <ThemedText style={{ fontWeight: '600' }}>{toName}</ThemedText>
+          {'.'}
+        </ThemedText>
+      ) : (
+        <ThemedText style={[Type.body, { color: colors.text }]}>
+          <ThemedText style={{ fontWeight: '600' }}>{fromName}</ThemedText>
+          {' cannot be merged into '}
+          <ThemedText style={{ fontWeight: '600' }}>{toName}</ThemedText>
+          {' without conflicts. '}
+          <ThemedText style={{ color: colors.muted }}>{collisionCountLabel} found.</ThemedText>
+        </ThemedText>
+      )}
 
-      {report.samples.length > 0 && (
-        <View style={[styles.sampleBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-          {report.samples.map((rel) => (
-            <ThemedText
-              key={rel}
-              style={[Type.meta, { color: colors.muted }]}
-              numberOfLines={1}>
-              • {rel}
-            </ThemedText>
-          ))}
-          {report.truncated && (
+      {report.total > 0 && (
+        <>
+          {isIntentional && (
             <ThemedText style={[Type.meta, { color: colors.muted }]}>
-              + more (scan was truncated)
+              {collisionCountLabel} found.
             </ThemedText>
           )}
-        </View>
+          {report.samples.length > 0 && (
+            <View style={[styles.sampleBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              {report.samples.map((rel) => (
+                <ThemedText
+                  key={rel}
+                  style={[Type.meta, { color: colors.muted }]}
+                  numberOfLines={1}>
+                  • {rel}
+                </ThemedText>
+              ))}
+              {report.truncated && (
+                <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                  + more (scan was truncated)
+                </ThemedText>
+              )}
+            </View>
+          )}
+        </>
       )}
 
       <ThemedText style={[Type.label, { color: colors.text, marginTop: Spacing.xs }]}>
-        How should conflicts be handled?
+        {report.total > 0 ? 'How should conflicts be handled?' : 'How should files be combined?'}
       </ThemedText>
 
       {POLICY_OPTIONS.map((opt) => (
