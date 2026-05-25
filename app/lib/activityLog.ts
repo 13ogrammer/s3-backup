@@ -6,6 +6,7 @@ import {
 } from 'expo-file-system/legacy';
 
 import { ApiError } from './api';
+import type { MergePolicy } from './api';
 import { UploadError } from './upload';
 
 export type ActivityUploadEntry = {
@@ -36,6 +37,8 @@ export type ActivityMoveEntry = {
   firstAt: number;
   lastAt: number;
   attempts: number;
+  mergePolicy?: MergePolicy;
+  mergeCounts?: { moved: number; renamed: number; skipped: number; failed: number };
 };
 
 export type ActivityAutoBackupRunEntry = {
@@ -386,6 +389,94 @@ export function removeUploadEntryByKey(remoteKey: string): Promise<void> {
 export function clearActivity(): Promise<void> {
   return serialize(async () => {
     await writeEntries([]);
+  });
+}
+
+export function recordMergeFolderSuccess(input: {
+  from: string;
+  to: string;
+  policy: MergePolicy;
+  counts?: { moved: number; renamed: number; skipped: number; failed: number };
+}): Promise<void> {
+  return serialize(async () => {
+    const entries = await readEntries();
+    const existing = entries.find(
+      (e): e is ActivityMoveEntry =>
+        e.kind === 'move' && e.from === input.from && e.to === input.to,
+    );
+    const now = Date.now();
+    if (existing) {
+      existing.attempts += 1;
+      existing.lastAt = now;
+      existing.status = 'success';
+      existing.mergePolicy = input.policy;
+      if (input.counts) existing.mergeCounts = input.counts;
+      delete existing.reason;
+      delete existing.failureStatus;
+      delete existing.failureRequestId;
+    } else {
+      const firstAt = now;
+      const entry: ActivityMoveEntry = {
+        id: `${firstAt}-${slug(input.from)}-${slug(input.to)}`,
+        kind: 'move',
+        from: input.from,
+        to: input.to,
+        itemKind: 'folder',
+        status: 'success',
+        mergePolicy: input.policy,
+        ...(input.counts ? { mergeCounts: input.counts } : {}),
+        firstAt,
+        lastAt: firstAt,
+        attempts: 1,
+      };
+      entries.push(entry);
+    }
+    const capped = entries.length > MAX_ENTRIES ? entries.slice(entries.length - MAX_ENTRIES) : entries;
+    await writeEntries(capped);
+  });
+}
+
+export function recordMergeFolderFailure(input: {
+  from: string;
+  to: string;
+  reason: string;
+  failureStatus?: number;
+  failureRequestId?: string;
+}): Promise<void> {
+  return serialize(async () => {
+    const entries = await readEntries();
+    const existing = entries.find(
+      (e): e is ActivityMoveEntry =>
+        e.kind === 'move' && e.from === input.from && e.to === input.to,
+    );
+    const now = Date.now();
+    if (existing) {
+      existing.attempts += 1;
+      existing.lastAt = now;
+      existing.status = 'failed';
+      existing.reason = input.reason;
+      existing.failureStatus = input.failureStatus;
+      existing.failureRequestId = input.failureRequestId;
+    } else {
+      const firstAt = now;
+      const entry: ActivityMoveEntry = {
+        id: `${firstAt}-${slug(input.from)}-${slug(input.to)}`,
+        kind: 'move',
+        from: input.from,
+        to: input.to,
+        itemKind: 'folder',
+        status: 'failed',
+        reason: input.reason,
+        failureStatus: input.failureStatus,
+        failureRequestId: input.failureRequestId,
+        firstAt,
+        lastAt: firstAt,
+        attempts: 1,
+      };
+      entries.push(entry);
+    }
+    const capped = entries.length > MAX_ENTRIES ? entries.slice(entries.length - MAX_ENTRIES) : entries;
+    await writeEntries(capped);
   });
 }
 

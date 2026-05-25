@@ -28,12 +28,15 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, ApiError, isUserActionableError, isFolderTooLargeError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts, type FolderTooLargeErrorBody } from '@/lib/api';
+import { api, ApiError, isUserActionableError, isFolderTooLargeError, type ListResponse, type GetDerivedUrlResponse, type FolderPreviewThumb, type FolderCounts, type FolderTooLargeErrorBody, type MergePolicy } from '@/lib/api';
 import { getAssistantMutationVersion, setAssistantContextPrefix } from '@/lib/assistantConfig';
 import { useJobs } from '@/lib/jobs';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
-import { fromErr, recordMoveFailure, recordMoveSuccess, toReason } from '@/lib/activityLog';
+import { fromErr, recordMoveFailure, recordMoveSuccess, recordMergeFolderSuccess, toReason } from '@/lib/activityLog';
+import { detectCollisions } from '@/lib/mergePrecheck';
+import { MergePolicyModal } from '@/components/merge-policy-modal';
+import type { CollisionReport } from '@/lib/mergePrecheck';
 import { captureApiError } from '@/lib/sentry';
 
 const THUMB_SIZE = 56;
@@ -152,6 +155,25 @@ export default function BrowseScreen() {
   // handlers in runMove so the user's original move intent is preserved.
   const [collisionMoveDest, setCollisionMoveDest] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Merge-policy modal: shown when a single-folder move collides with an
+  // existing destination that has overlapping content.
+  type MergePolicyModalState = {
+    fromPrefix: string;
+    toPrefix: string;
+    report: CollisionReport;
+  };
+  const [mergePolicyModal, setMergePolicyModal] = useState<MergePolicyModalState | null>(null);
+  // Resolve function for the currently-open merge modal. Settled when the user
+  // picks a policy or cancels (null = cancelled).
+  const mergePolicyResolveRef = useRef<((policy: MergePolicy | null) => void) | null>(null);
+
+  function promptMergePolicy(fromPrefix: string, toPrefix: string, report: CollisionReport): Promise<MergePolicy | null> {
+    return new Promise((resolve) => {
+      mergePolicyResolveRef.current = resolve;
+      setMergePolicyModal({ fromPrefix, toPrefix, report });
+    });
+  }
 
   const [snack, setSnack] = useState<{ message: string; onUndo: () => void } | null>(null);
   type Filter = 'all' | 'image' | 'video';
@@ -817,31 +839,68 @@ export default function BrowseScreen() {
         await recordMoveSuccess({ from: prefix, to: dest, itemKind: 'folder' }).catch(() => undefined);
       } catch (err) {
         if (total === 1 && isUserActionableError(err)) {
-          // Destination folder exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.
+          // Destination folder exists — for a single-folder selection, offer
+          // merge (content-level collision resolution) in addition to rename.
+          setBusy('Checking for conflicts…');
+          let report: CollisionReport | null = null;
+          try {
+            report = await detectCollisions(prefix, dest);
+          } catch {
+            // If pre-check fails, fall back to the rename-only path.
+          }
           setBusy(null);
-          const suggestion = suggestRenameForCollision(folderName);
-          showAlert('Destination already exists', err.message, [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
-            },
-            {
-              text: 'Rename and Move',
-              onPress: () => {
-                setRenameInitialOverride(suggestion);
-                // Capture the original move destination — runRename will move
-                // the folder into destPrefix with the new name.
-                setCollisionMoveDest(destPrefix);
-                setRenameVisible(true);
+
+          if (report && report.total > 0) {
+            // Content collisions detected — show merge policy picker.
+            const policy = await promptMergePolicy(prefix, dest, report);
+            setMergePolicyModal(null);
+            if (policy === null) {
+              // User cancelled — clean up selection and bail.
+              setSelection(emptySelection());
+              setSelectionMode(false);
+              return;
+            }
+            // Enqueue merge job with chosen policy.
+            setBusy('Merging…');
+            try {
+              const mergeRes = await api.mergeFolder(prefix, dest, policy);
+              await addJob(mergeRes.jobId, { fromPrefix: prefix, toPrefix: dest, kind: 'merge', policy });
+              movedFolders.push({ from: prefix, to: dest });
+              await recordMergeFolderSuccess({ from: prefix, to: dest, policy }).catch(() => undefined);
+            } catch (mergeErr) {
+              captureApiError(mergeErr);
+              await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(mergeErr) }).catch(() => undefined);
+              failed.push({ src: prefix, message: mergeErr instanceof Error ? mergeErr.message : 'failed' });
+            } finally {
+              setBusy(null);
+            }
+          } else {
+            // No content collisions (or pre-check failed) — fall back to rename.
+            const suggestion = suggestRenameForCollision(folderName);
+            showAlert('Destination already exists', err.message, [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
               },
-            },
-          ]);
-          return;
+              {
+                text: 'Rename and Move',
+                onPress: () => {
+                  setRenameInitialOverride(suggestion);
+                  // Capture the original move destination — runRename will move
+                  // the folder into destPrefix with the new name.
+                  setCollisionMoveDest(destPrefix);
+                  setRenameVisible(true);
+                },
+              },
+            ]);
+            return;
+          }
+        } else {
+          captureApiError(err);
+          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
+          failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
         }
-        captureApiError(err);
-        await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
-        failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
       }
       done += 1;
       setBusy(`Moving ${done} of ${total}…`);
@@ -1158,6 +1217,25 @@ export default function BrowseScreen() {
         }}
         onSubmit={runRename}
       />
+
+      {mergePolicyModal && (
+        <MergePolicyModal
+          visible
+          fromPrefix={mergePolicyModal.fromPrefix}
+          toPrefix={mergePolicyModal.toPrefix}
+          report={mergePolicyModal.report}
+          onCancel={() => {
+            const resolve = mergePolicyResolveRef.current;
+            mergePolicyResolveRef.current = null;
+            resolve?.(null);
+          }}
+          onChoose={(policy) => {
+            const resolve = mergePolicyResolveRef.current;
+            mergePolicyResolveRef.current = null;
+            resolve?.(policy);
+          }}
+        />
+      )}
 
       {busy && (
         <View style={styles.busyOverlay}>
