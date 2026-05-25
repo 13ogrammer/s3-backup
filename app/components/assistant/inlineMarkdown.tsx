@@ -87,9 +87,7 @@ function tokenize(text: string): Token[] {
         let closeIdx = -1;
         for (let j = i + 2; j < text.length; j++) {
           if (text[j] === '*' && text[j + 1] !== '*' && isCloseBoundary(text, j - 1)) {
-            if (text[j - 1] !== '\n') {
-              closeIdx = j;
-            }
+            closeIdx = j;
             break;
           }
           if (text[j] === '\n') break;

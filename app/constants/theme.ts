@@ -25,7 +25,7 @@ export const Colors = {
     onAccent: '#ffffff',
     skeletonBase: '#E5E7EB',
     skeletonHighlight: '#F3F4F6',
-    codeSurface: '#f1f5f9',
+    codeSurface: '#e4eaf2',
   },
   dark: {
     text: '#e2e8f0',

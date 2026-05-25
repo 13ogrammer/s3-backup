@@ -843,7 +843,7 @@ function MoveSuccessRow({ entry, colors }: MoveSuccessRowProps) {
     ? entry.from.slice(entry.from.lastIndexOf('/') + 1) || entry.from
     : entry.from;
 
-  const label = entry.itemKind === 'folder' ? 'Folder move started' : 'Moved';
+  const label = entry.itemKind === 'folder' ? 'Folder move queued' : 'Moved';
 
   return (
     <View style={[styles.historyRow, { backgroundColor: colors.surface }]}>
