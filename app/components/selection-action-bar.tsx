@@ -18,7 +18,6 @@ export type SelectionAction = {
 };
 
 export type SelectionActionBarProps = {
-  statusLabel: string;
   actions: SelectionAction[];
   onDismiss: () => void;
   dismissLabel?: string;
@@ -27,7 +26,6 @@ export type SelectionActionBarProps = {
 };
 
 export function SelectionActionBar({
-  statusLabel,
   actions,
   onDismiss,
   dismissLabel = 'Cancel',
@@ -45,77 +43,54 @@ export function SelectionActionBar({
         { backgroundColor: colors.accentSoft, ...Shadow.cardElevated },
         style,
       ]}>
-      <View style={styles.statusRow}>
+      {actions.map((action) => {
+        const tintColor = action.tone === 'danger' ? colors.danger : colors.tint;
+        return (
+          <Pressable
+            key={action.key}
+            onPress={action.onPress}
+            disabled={action.disabled}
+            accessibilityLabel={action.accessibilityLabel}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.actionButton,
+              { opacity: action.disabled ? 0.4 : pressed ? 0.6 : 1 },
+            ]}>
+            <IconSymbol name={action.icon} size={22} color={tintColor} />
+            <ThemedText
+              style={[styles.actionLabel, { color: tintColor }]}
+              numberOfLines={1}>
+              {action.label}
+            </ThemedText>
+          </Pressable>
+        );
+      })}
+      <Pressable
+        onPress={onDismiss}
+        accessibilityLabel={dismissAccessibilityLabel}
+        accessibilityRole="button"
+        style={({ pressed }) => [
+          styles.actionButton,
+          { opacity: pressed ? 0.6 : 1 },
+        ]}>
+        <IconSymbol name="xmark" size={22} color={colors.text} />
         <ThemedText
-          style={[styles.status, { color: colors.text }]}
+          style={[styles.actionLabel, { color: colors.text }]}
           numberOfLines={1}>
-          {statusLabel}
+          {dismissLabel}
         </ThemedText>
-      </View>
-      <View style={styles.actions}>
-        {actions.map((action) => {
-          const tintColor = action.tone === 'danger' ? colors.danger : colors.tint;
-          return (
-            <Pressable
-              key={action.key}
-              onPress={action.onPress}
-              disabled={action.disabled}
-              accessibilityLabel={action.accessibilityLabel}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.actionButton,
-                { opacity: action.disabled ? 0.4 : pressed ? 0.6 : 1 },
-              ]}>
-              <IconSymbol name={action.icon} size={22} color={tintColor} />
-              <ThemedText
-                style={[styles.actionLabel, { color: tintColor }]}
-                numberOfLines={1}>
-                {action.label}
-              </ThemedText>
-            </Pressable>
-          );
-        })}
-        <Pressable
-          onPress={onDismiss}
-          accessibilityLabel={dismissAccessibilityLabel}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.actionButton,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}>
-          <IconSymbol name="xmark" size={22} color={colors.text} />
-          <ThemedText
-            style={[styles.actionLabel, { color: colors.text }]}
-            numberOfLines={1}>
-            {dismissLabel}
-          </ThemedText>
-        </Pressable>
-      </View>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'column',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.xs,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  status: {
-    ...Type.meta,
-    flex: 1,
-    minWidth: 0,
-  },
-  actions: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
     gap: Spacing.xs,
   },
   actionButton: {

@@ -26,7 +26,7 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAlert } from '@/components/ui/alert-provider';
 import { ModalCard } from '@/components/ui/modal-card';
-import { Colors, Radius, Spacing, Type } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, ApiError } from '@/lib/api';
 import { loadBackedUpMap, recordBackedUp, removeBackedUp, type BackedUpMap } from '@/lib/backedUpState';
@@ -239,6 +239,10 @@ export default function GalleryScreen() {
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(assets.map((a) => a.id)));
   }
 
   const sections = useMemo(
@@ -625,6 +629,7 @@ export default function GalleryScreen() {
   }
 
   const selectedCount = selectedIds.size;
+  const allSelected = assets.length > 0 && selectedCount === assets.length;
 
   // Fetch fileSize for newly-selected asset ids we haven't seen before.
   // getAssetInfoAsync is called per-id; results are cached to avoid repeat
@@ -736,6 +741,21 @@ export default function GalleryScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {selectedCount > 0 && (
+        <View style={[styles.selectionHeader, { backgroundColor: colors.accentSoft }]}>
+          <ThemedText type="defaultSemiBold">
+            {selectedCount} selected
+            {selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}
+          </ThemedText>
+          <Pressable
+            onPress={allSelected ? clearSelection : selectAll}
+            hitSlop={8}>
+            <ThemedText style={{ color: colors.tint, fontSize: 16 }}>
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
       {pendingResume.length > 0 && !uploadState && (
         <View
           style={[
@@ -896,7 +916,6 @@ export default function GalleryScreen() {
 
       {selectedCount > 0 && (
         <SelectionActionBar
-          statusLabel={`${selectedCount} selected${selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}`}
           actions={galleryActions(
             onTapUpload,
             onTapDeleteFromDevice,
@@ -1044,6 +1063,14 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
+  selectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    ...Shadow.cardElevated,
+  },
   row: {
     flexDirection: 'row',
     gap: SPACING,

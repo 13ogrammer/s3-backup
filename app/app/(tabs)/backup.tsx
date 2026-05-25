@@ -976,19 +976,12 @@ export default function BrowseScreen() {
     <ThemedView style={styles.container}>
       {selectionActive ? (
         <View style={[styles.selectionHeader, { backgroundColor: colors.accentSoft }]}>
-          <Pressable
-            onPress={() => { setSelection(emptySelection()); setSelectionMode(false); }}
-            accessibilityLabel="Exit selection mode"
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.selectionHeaderIconButton, { opacity: pressed ? 0.6 : 1 }]}>
-            <IconSymbol name="xmark" size={22} color={colors.icon} />
-          </Pressable>
           <ThemedText type="defaultSemiBold">{selectionCount} selected</ThemedText>
           <Pressable
             onPress={allSelected ? () => setSelection(emptySelection()) : selectAll}
             hitSlop={8}>
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>
-              {allSelected ? 'None' : 'All'}
+              {allSelected ? 'Deselect all' : 'Select all'}
             </ThemedText>
           </Pressable>
         </View>
@@ -1141,7 +1134,6 @@ export default function BrowseScreen() {
 
       {selectionCount > 0 && (
         <SelectionActionBar
-          statusLabel={`${selectionCount} selected`}
           actions={backupActions({
             singleSelected: singleSelected !== null,
             canMerge,
@@ -1734,8 +1726,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     ...Shadow.cardElevated,
   },
   selectionHeaderIconButton: {
