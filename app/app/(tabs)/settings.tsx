@@ -43,6 +43,7 @@ import {
 import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
 import { parseQrPayload } from '@/lib/qr-config';
 import {
+  isAutoBackupRunningFresh,
   loadAutoBackupState,
   saveAutoBackupState,
   DEFAULT_AUTO_BACKUP_STATE,
@@ -85,6 +86,7 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [autoBackupState, setAutoBackupState] = useState<AutoBackupState>(DEFAULT_AUTO_BACKUP_STATE);
+  const [backingUpNow, setBackingUpNow] = useState<boolean>(false);
   // Whether backend config exists — auto-backup toggles are disabled without it.
   const [hasConfig, setHasConfig] = useState(false);
   // Tracks MediaLibrary permission so we can surface a re-grant row if it's
@@ -117,11 +119,13 @@ export default function SettingsScreen() {
 
   // Refresh permission status on mount and whenever the app returns from
   // background (covers the case where the user toggled it in system Settings).
+  // Also refreshes auto-backup state so "Last ran" updates after a background tick.
   useEffect(() => {
     const refresh = () => {
       MediaLibrary.getPermissionsAsync()
         .then((res) => setMediaPermStatus(res.status))
         .catch(() => {});
+      loadAutoBackupState().then(setAutoBackupState).catch(() => {});
     };
     refresh();
     const sub = AppState.addEventListener('change', (state) => {
@@ -356,6 +360,18 @@ export default function SettingsScreen() {
     setAutoBackupState(next);
   }
 
+  async function onBackupNow() {
+    setBackingUpNow(true);
+    try {
+      await runAutoBackupTick();
+    } catch (err) {
+      console.warn(err);
+    } finally {
+      setBackingUpNow(false);
+      loadAutoBackupState().then(setAutoBackupState).catch(() => {});
+    }
+  }
+
   function onClear() {
     showAlert(
       'Clear settings?',
@@ -518,6 +534,8 @@ export default function SettingsScreen() {
   const isLocalActive =
     activeProvider != null &&
     /^https?:\/\/(localhost|127\.|192\.168\.|10\.|172\.)/i.test(activeProvider.baseUrl);
+
+  const backupNowDisabled = backingUpNow || isAutoBackupRunningFresh(autoBackupState);
 
   if (loading) {
     return (
@@ -747,6 +765,30 @@ export default function SettingsScreen() {
                 thumbColor={colors.onAccent}
               />
             </View>
+
+            {autoBackupState.enabled && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back up now"
+                accessibilityState={{ disabled: backupNowDisabled }}
+                disabled={backupNowDisabled}
+                onPress={onBackupNow}
+                style={[
+                  styles.toggleRow,
+                  {
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    borderTopColor: colors.border,
+                    opacity: backupNowDisabled ? 0.5 : 1,
+                  },
+                ]}>
+                <Ionicons name="cloud-upload-outline" size={20} color={colors.tint} />
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[Type.body, { color: colors.tint, fontWeight: '600' }]}>
+                    Back up now
+                  </ThemedText>
+                </View>
+              </Pressable>
+            )}
           </View>
 
           <ThemedText style={[styles.sectionHeader, { color: colors.muted }]}>
