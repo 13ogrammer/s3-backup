@@ -53,6 +53,9 @@ const MAPPING = {
   'video.fill': { mci: 'video' },
   'doc': { mci: 'file-outline' },
   'clock': { mci: 'clock-outline' },
+  'checkmark.circle': { mci: 'check-circle-outline' },
+  'arrow.right.circle': { mci: 'arrow-right-circle-outline' },
+  'icloud.and.arrow.up': { mci: 'cloud-upload-outline' },
 } as IconMapping;
 
 /**
@@ -73,6 +76,12 @@ export function IconSymbol({
   weight?: SymbolWeight;
 }) {
   const mapped = MAPPING[name];
+  if (mapped == null) {
+    if (__DEV__) {
+      console.warn(`IconSymbol: no mapping for "${name}"; falling back to help-circle`);
+    }
+    return <MaterialCommunityIcons color={color} size={size} name="help-circle-outline" style={style} />;
+  }
   if (typeof mapped === 'string') {
     return <MaterialIcons color={color} size={size} name={mapped} style={style} />;
   }
