@@ -9,8 +9,6 @@ export type BackupMode = 'all' | 'newOnly' | 'fromDate';
 
 export type AutoBackupState = {
   enabled: boolean;
-  paused: boolean;
-  pauseStartedAt: number | null;
   wifiOnly: boolean;
   backupMode: BackupMode;
   customStartDate: number | null;
@@ -23,8 +21,6 @@ export type AutoBackupState = {
 
 export const DEFAULT_AUTO_BACKUP_STATE: AutoBackupState = {
   enabled: false,
-  paused: false,
-  pauseStartedAt: null,
   wifiOnly: true,
   backupMode: 'all',
   customStartDate: null,
@@ -65,8 +61,6 @@ async function readState(): Promise<AutoBackupState> {
 
     return {
       enabled: typeof obj.enabled === 'boolean' ? obj.enabled : DEFAULT_AUTO_BACKUP_STATE.enabled,
-      paused: typeof obj.paused === 'boolean' ? obj.paused : DEFAULT_AUTO_BACKUP_STATE.paused,
-      pauseStartedAt: typeof obj.pauseStartedAt === 'number' ? obj.pauseStartedAt : null,
       wifiOnly: typeof obj.wifiOnly === 'boolean' ? obj.wifiOnly : DEFAULT_AUTO_BACKUP_STATE.wifiOnly,
       backupMode,
       customStartDate: typeof obj.customStartDate === 'number' ? obj.customStartDate : null,
@@ -92,7 +86,8 @@ export function loadAutoBackupState(): Promise<AutoBackupState> {
 
 // Accepts either a plain partial patch or a patch function that receives the
 // current state. The function form is used for race-safe read-modify-write
-// operations (e.g. pause-skip logic) where the patch depends on current values.
+// operations (e.g. first-tick cursor advance based on current `lastCreatedAt`)
+// where the patch depends on current values.
 export function saveAutoBackupState(
   patch: Partial<AutoBackupState> | ((current: AutoBackupState) => Partial<AutoBackupState>),
 ): Promise<AutoBackupState> {

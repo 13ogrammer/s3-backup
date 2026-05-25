@@ -758,9 +758,7 @@ export default function GalleryScreen() {
             { backgroundColor: colors.accentSoft, borderColor: colors.icon },
           ]}>
           <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
-            {autoState.paused
-              ? `Auto paused — last ran ${formatRelative(autoState.lastRanAt)}`
-              : `Auto on — last ran ${formatRelative(autoState.lastRanAt)}`}
+            {`Auto on — last ran ${formatRelative(autoState.lastRanAt)}`}
             {autoState.failureCount > 0 ? ` · ${autoState.failureCount} failed` : ''}
           </ThemedText>
           {autoState.largeQueueCount > 0 && (

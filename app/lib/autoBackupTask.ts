@@ -57,7 +57,7 @@ type TickResult = { uploaded: number; skippedLarge: number; failed: number };
 //   • The registered background task body (above).
 //   • Settings toggle ON → setImmediate(() => runAutoBackupTick()) for first scan.
 //
-// Fail-closed: early-exit on paused, missing config, no Wi-Fi, or denied
+// Fail-closed: early-exit on disabled, missing config, no Wi-Fi, or denied
 // permission without advancing lastCreatedAt so the next tick retries.
 export async function runAutoBackupTick(): Promise<TickResult> {
   initSentry();
@@ -66,7 +66,7 @@ export async function runAutoBackupTick(): Promise<TickResult> {
   const empty: TickResult = { uploaded: 0, skippedLarge: 0, failed: 0 };
 
   const state = await loadAutoBackupState();
-  if (!state.enabled || state.paused) return empty;
+  if (!state.enabled) return empty;
 
   const config = await loadConfig();
   // Missing config → don't bump failureCount; backend isn't set up yet.

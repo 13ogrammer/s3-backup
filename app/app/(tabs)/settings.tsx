@@ -345,34 +345,6 @@ export default function SettingsScreen() {
     }
   }
 
-  async function onToggleAutoPaused(value: boolean) {
-    let next: AutoBackupState;
-    if (value) {
-      // Pause: record when the pause started. Defensive: don't overwrite an
-      // existing pauseStartedAt if somehow called twice.
-      next = await saveAutoBackupState((current) => ({
-        paused: true,
-        pauseStartedAt: current.pauseStartedAt ?? Date.now(),
-      }));
-    } else {
-      // Unpause with pause-skip: if the cursor has caught up past the pause
-      // start, advance lastCreatedAt to now so media taken during the pause
-      // is excluded. If mid-sweep, leave the cursor alone and let it finish.
-      next = await saveAutoBackupState((current) => {
-        const advance =
-          current.pauseStartedAt !== null &&
-          current.lastCreatedAt !== null &&
-          current.lastCreatedAt >= current.pauseStartedAt;
-        return {
-          paused: false,
-          pauseStartedAt: null,
-          lastCreatedAt: advance ? Date.now() : current.lastCreatedAt,
-        };
-      });
-    }
-    setAutoBackupState(next);
-  }
-
   async function onSavePrefix(sanitized: string) {
     setPrefixModalVisible(false);
     const next = await saveAutoBackupState({ prefix: sanitized });
@@ -694,33 +666,12 @@ export default function SettingsScreen() {
                       Photo access needed
                     </ThemedText>
                     <ThemedText style={[Type.meta, { color: colors.danger }]}>
-                      Auto-backup is paused until you grant access. Tap to fix.
+                      Auto-backup can&apos;t run without photo access. Tap to fix.
                     </ThemedText>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={colors.danger} />
                 </Pressable>
               )}
-
-            {autoBackupState.enabled && (
-              <View
-                style={[
-                  styles.toggleRow,
-                  { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-                ]}>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={[Type.body, { color: colors.text }]}>Paused</ThemedText>
-                  <ThemedText style={[Type.meta, { color: colors.muted }]}>
-                    Skip ticks. Media created while paused won&apos;t be uploaded after resuming.
-                  </ThemedText>
-                </View>
-                <Switch
-                  value={autoBackupState.paused}
-                  onValueChange={onToggleAutoPaused}
-                  trackColor={{ false: colors.border, true: colors.tint }}
-                  thumbColor={colors.onAccent}
-                />
-              </View>
-            )}
 
             {autoBackupState.enabled && (
               <Pressable
