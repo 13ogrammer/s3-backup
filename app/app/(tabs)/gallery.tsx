@@ -979,12 +979,14 @@ function galleryActions(
     {
       key: 'upload',
       icon: 'icloud.and.arrow.up',
+      label: 'Upload',
       accessibilityLabel: 'Upload selected items',
       onPress: onUpload,
     },
     {
       key: 'delete',
       icon: 'trash',
+      label: 'Delete',
       accessibilityLabel: 'Delete from device',
       onPress: onDelete,
       disabled: uploading || eligibleCount === 0,

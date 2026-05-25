@@ -975,7 +975,7 @@ export default function BrowseScreen() {
   return (
     <ThemedView style={styles.container}>
       {selectionActive ? (
-        <View style={[styles.selectionHeader, { backgroundColor: colors.surface }]}>
+        <View style={[styles.selectionHeader, { backgroundColor: colors.accentSoft }]}>
           <Pressable
             onPress={() => { setSelection(emptySelection()); setSelectionMode(false); }}
             accessibilityLabel="Exit selection mode"
@@ -1672,6 +1672,7 @@ function backupActions({
     actions.push({
       key: 'rename',
       icon: 'pencil',
+      label: 'Rename',
       accessibilityLabel: 'Rename',
       onPress: onRename,
     });
@@ -1680,20 +1681,23 @@ function backupActions({
     actions.push({
       key: 'merge',
       icon: 'arrow.triangle.merge',
+      label: 'Merge',
       accessibilityLabel: 'Merge into folder',
       onPress: onMerge,
     });
   }
   actions.push({
     key: 'move',
-    icon: 'tray.and.arrow.down',
+    icon: 'arrow.right',
+    label: 'Move',
     accessibilityLabel: 'Move to folder',
     onPress: onMove,
   });
   if (canCompare) {
     actions.push({
       key: 'compare',
-      icon: 'rectangle.split.2x1',
+      icon: 'arrow.left.arrow.right',
+      label: 'Compare',
       accessibilityLabel: 'Compare folders',
       onPress: onCompare,
     });
@@ -1701,6 +1705,7 @@ function backupActions({
   actions.push({
     key: 'delete',
     icon: 'trash',
+    label: 'Delete',
     accessibilityLabel: 'Delete',
     onPress: onDelete,
     tone: 'danger',

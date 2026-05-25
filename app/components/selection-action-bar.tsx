@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export type SelectionAction = {
   key: string;
   icon: IconSymbolName;
+  label: string;
   accessibilityLabel: string;
   onPress: () => void;
   disabled?: boolean;
@@ -20,6 +21,7 @@ export type SelectionActionBarProps = {
   statusLabel: string;
   actions: SelectionAction[];
   onDismiss: () => void;
+  dismissLabel?: string;
   dismissAccessibilityLabel?: string;
   style?: ViewStyle;
 };
@@ -28,6 +30,7 @@ export function SelectionActionBar({
   statusLabel,
   actions,
   onDismiss,
+  dismissLabel = 'Cancel',
   dismissAccessibilityLabel = 'Exit selection mode',
   style,
 }: SelectionActionBarProps) {
@@ -39,21 +42,19 @@ export function SelectionActionBar({
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.surface, ...Shadow.cardElevated },
+        { backgroundColor: colors.accentSoft, ...Shadow.cardElevated },
         style,
       ]}>
-      <ThemedText
-        style={[styles.status, { color: colors.text }]}
-        numberOfLines={1}>
-        {statusLabel}
-      </ThemedText>
+      <View style={styles.statusRow}>
+        <ThemedText
+          style={[styles.status, { color: colors.text }]}
+          numberOfLines={1}>
+          {statusLabel}
+        </ThemedText>
+      </View>
       <View style={styles.actions}>
         {actions.map((action) => {
-          const iconColor = action.disabled
-            ? colors.icon
-            : action.tone === 'danger'
-              ? colors.danger
-              : colors.tint;
+          const tintColor = action.tone === 'danger' ? colors.danger : colors.tint;
           return (
             <Pressable
               key={action.key}
@@ -62,10 +63,15 @@ export function SelectionActionBar({
               accessibilityLabel={action.accessibilityLabel}
               accessibilityRole="button"
               style={({ pressed }) => [
-                styles.iconButton,
+                styles.actionButton,
                 { opacity: action.disabled ? 0.4 : pressed ? 0.6 : 1 },
               ]}>
-              <IconSymbol name={action.icon} size={22} color={iconColor} />
+              <IconSymbol name={action.icon} size={22} color={tintColor} />
+              <ThemedText
+                style={[styles.actionLabel, { color: tintColor }]}
+                numberOfLines={1}>
+                {action.label}
+              </ThemedText>
             </Pressable>
           );
         })}
@@ -74,10 +80,15 @@ export function SelectionActionBar({
           accessibilityLabel={dismissAccessibilityLabel}
           accessibilityRole="button"
           style={({ pressed }) => [
-            styles.iconButton,
+            styles.actionButton,
             { opacity: pressed ? 0.6 : 1 },
           ]}>
-          <IconSymbol name="xmark" size={22} color={colors.icon} />
+          <IconSymbol name="xmark" size={22} color={colors.text} />
+          <ThemedText
+            style={[styles.actionLabel, { color: colors.text }]}
+            numberOfLines={1}>
+            {dismissLabel}
+          </ThemedText>
         </Pressable>
       </View>
     </View>
@@ -86,26 +97,37 @@ export function SelectionActionBar({
 
 const styles = StyleSheet.create({
   container: {
+    flexDirection: 'column',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
   },
   status: {
-    ...Type.bodyStrong,
+    ...Type.meta,
     flex: 1,
     minWidth: 0,
   },
   actions: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: Spacing.xs,
   },
-  iconButton: {
-    width: 44,
-    height: 44,
+  actionButton: {
+    flex: 1,
+    minWidth: 44,
+    paddingVertical: Spacing.xs,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
+  },
+  actionLabel: {
+    ...Type.meta,
   },
 });

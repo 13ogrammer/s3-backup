@@ -58,8 +58,8 @@ const MAPPING = {
   'icloud.and.arrow.up': { mci: 'cloud-upload-outline' },
   'trash': 'delete-outline',
   'pencil': 'edit',
-  'tray.and.arrow.down': { mci: 'tray-arrow-down' },
-  'rectangle.split.2x1': { mci: 'view-split-horizontal' },
+  'arrow.right': 'arrow-forward',
+  'arrow.left.arrow.right': { mci: 'swap-horizontal' },
   'arrow.triangle.merge': { mci: 'source-merge' },
 } as IconMapping;
 
