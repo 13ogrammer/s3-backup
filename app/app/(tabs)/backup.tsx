@@ -961,8 +961,12 @@ export default function BrowseScreen() {
     <ThemedView style={styles.container}>
       {selectionActive ? (
         <View style={[styles.selectionHeader, { backgroundColor: colors.surface }]}>
-          <Pressable onPress={() => { setSelection(emptySelection()); setSelectionMode(false); }} hitSlop={8}>
-            <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
+          <Pressable
+            onPress={() => { setSelection(emptySelection()); setSelectionMode(false); }}
+            accessibilityLabel="Exit selection mode"
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.selectionHeaderIconButton, { opacity: pressed ? 0.6 : 1 }]}>
+            <IconSymbol name="xmark" size={22} color={colors.icon} />
           </Pressable>
           <ThemedText type="defaultSemiBold">{selectionCount} selected</ThemedText>
           <Pressable
@@ -1685,9 +1689,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    ...Shadow.card,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    ...Shadow.cardElevated,
+  },
+  selectionHeaderIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   row: {
     flexDirection: 'row',
