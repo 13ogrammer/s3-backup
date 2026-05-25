@@ -1,3 +1,12 @@
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,14 +46,55 @@ export function useAiFabClearance(): AiFabClearance {
   return { contentPaddingBottom, aboveFabBottom, fabBottom };
 }
 
+type SelectionModeState = {
+  active: boolean;
+  acquire: () => void;
+  release: () => void;
+};
+
+const SelectionModeContext = createContext<SelectionModeState | null>(null);
+
+export function SelectionModeProvider({ children }: { children: ReactNode }) {
+  const [count, setCount] = useState(0);
+  const acquire = useCallback(() => setCount((c) => c + 1), []);
+  const release = useCallback(() => setCount((c) => Math.max(0, c - 1)), []);
+  const value = useMemo<SelectionModeState>(
+    () => ({ active: count > 0, acquire, release }),
+    [count, acquire, release],
+  );
+  return (
+    <SelectionModeContext.Provider value={value}>
+      {children}
+    </SelectionModeContext.Provider>
+  );
+}
+
+/**
+ * Suppress the AI FAB for the lifetime of the calling component. Used by
+ * SelectionActionBar so the FAB hides while a contextual selection toolbar
+ * is on screen, instead of the toolbar being reflowed above the FAB.
+ */
+export function useSuppressAiFab() {
+  const ctx = useContext(SelectionModeContext);
+  const acquire = ctx?.acquire;
+  const release = ctx?.release;
+  useEffect(() => {
+    if (!acquire || !release) return;
+    acquire();
+    return release;
+  }, [acquire, release]);
+}
+
 type Props = { onPress: () => void; visible?: boolean };
 
 export function AiFab({ onPress, visible = true }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { fabBottom } = useAiFabClearance();
+  const ctx = useContext(SelectionModeContext);
+  const suppressed = ctx?.active ?? false;
 
-  if (!visible) return null;
+  if (!visible || suppressed) return null;
 
   return (
     <Pressable

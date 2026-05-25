@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
+import { useSuppressAiFab } from '@/components/ai-fab';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import type { IconSymbolName } from '@/components/ui/icon-symbol';
@@ -32,6 +33,7 @@ export function SelectionActionBar({
 }: SelectionActionBarProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  useSuppressAiFab();
 
   return (
     <View

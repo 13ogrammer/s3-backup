@@ -11,9 +11,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
+import { useAiFabClearance } from '@/components/ai-fab';
 import { ActionSheet } from '@/components/action-sheet';
 import { BottomSheet } from '@/components/bottom-sheet';
 import { SelectionActionBar, type SelectionAction } from '@/components/selection-action-bar';
@@ -115,10 +114,7 @@ export default function BrowseScreen() {
   const { showAlert } = useAlert();
   const navigation = useNavigation();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { contentPaddingBottom, aboveFabBottom } = useAiFabClearance();
-  // How much to lift the flow-layout action bar above where it naturally sits (tab-bar level).
-  const actionBarMargin = aboveFabBottom - (insets.bottom + TAB_BAR_CONTENT_HEIGHT);
 
   const { addJob } = useJobs();
   const [overflowVisible, setOverflowVisible] = useState(false);
@@ -1143,7 +1139,6 @@ export default function BrowseScreen() {
             setSelectionMode(false);
           }}
           dismissAccessibilityLabel="Exit selection mode"
-          style={{ marginBottom: actionBarMargin }}
         />
       )}
 

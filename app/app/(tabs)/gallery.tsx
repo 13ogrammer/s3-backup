@@ -15,9 +15,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
+import { useAiFabClearance } from '@/components/ai-fab';
 import { DateFilterModal, type DateFilter } from '@/components/date-filter-modal';
 import { FolderPicker } from '@/components/folder-picker';
 import { SelectionActionBar, type SelectionAction } from '@/components/selection-action-bar';
@@ -71,10 +70,7 @@ export default function GalleryScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const { showAlert } = useAlert();
-  const insets = useSafeAreaInsets();
-  const { contentPaddingBottom, aboveFabBottom } = useAiFabClearance();
-  // How much to lift the bottom bar above where it naturally sits (at tab-bar level).
-  const bottomBarMargin = aboveFabBottom - (insets.bottom + TAB_BAR_CONTENT_HEIGHT);
+  const { contentPaddingBottom } = useAiFabClearance();
 
   const [permission, requestPermission] = MediaLibrary.usePermissions({
     granularPermissions: ['photo', 'video'],
@@ -909,7 +905,6 @@ export default function GalleryScreen() {
           )}
           onDismiss={clearSelection}
           dismissAccessibilityLabel="Exit selection mode"
-          style={{ marginBottom: bottomBarMargin }}
         />
       )}
 

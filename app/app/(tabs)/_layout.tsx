@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AiFab, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
+import { AiFab, SelectionModeProvider, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { AssistantSheet } from '@/components/assistant-sheet';
 import { HapticTab } from '@/components/haptic-tab';
 import { JobsStrip } from '@/components/jobs-strip';
@@ -25,7 +25,7 @@ export default function TabLayout() {
   const bottomPadding = Math.max(insets.bottom, Spacing.md);
 
   return (
-    <>
+    <SelectionModeProvider>
       <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
@@ -88,6 +88,6 @@ export default function TabLayout() {
       <AiFab onPress={() => setAssistantOpen(true)} />
       {/* Sheet stays mounted with visible prop — history + scroll preserved across opens */}
       <AssistantSheet visible={assistantOpen} onClose={() => setAssistantOpen(false)} />
-    </>
+    </SelectionModeProvider>
   );
 }
