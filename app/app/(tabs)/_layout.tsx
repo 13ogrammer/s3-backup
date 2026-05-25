@@ -1,16 +1,18 @@
 import Constants from 'expo-constants';
 import { Tabs, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiFab } from '@/components/ai-fab';
+import { AssistantSheet } from '@/components/assistant-sheet';
 import { HapticTab } from '@/components/haptic-tab';
 import { JobsStrip } from '@/components/jobs-strip';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const TAB_BAR_CONTENT_HEIGHT = 48;
+export const TAB_BAR_CONTENT_HEIGHT = 48;
 const TAB_ICON_SIZE = 22;
 const APP_NAME = Constants.expoConfig?.name ?? 'S3 Backup';
 
@@ -19,6 +21,8 @@ export default function TabLayout() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const bottomPadding = Math.max(insets.bottom, Spacing.md);
 
@@ -73,16 +77,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="assistant"
+        name="activity"
         options={{
-          title: 'Assistant',
-          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="sparkles" color={color} />,
+          title: 'Activity',
+          tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="clock" color={color} />,
         }}
       />
+      {/* assistant is kept hidden so deep-links don't 404 until step 10 removes it */}
+      <Tabs.Screen
+        name="assistant"
+        options={{ href: null }}
+      />
     </Tabs>
-      {/* Rendered AFTER Tabs so it paints on top — sibling z-order beats
-       *  zIndex on Android. JobsStrip carries its own absolute positioning. */}
+      {/* Rendered AFTER Tabs so they paint on top — sibling z-order beats
+       *  zIndex on Android. JobsStrip and AiFab carry their own absolute positioning. */}
       <JobsStrip />
+      <AiFab onPress={() => setAssistantOpen(true)} />
+      {/* Sheet stays mounted with visible prop — history + scroll preserved across opens */}
+      <AssistantSheet visible={assistantOpen} onClose={() => setAssistantOpen(false)} />
     </>
   );
 }

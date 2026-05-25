@@ -395,7 +395,7 @@ export default function GalleryScreen() {
         'Some resumes failed',
         `${items.length - failed.length}/${items.length} finished. The rest stay queued. View details to retry.`,
         [
-          { text: 'View details', onPress: () => router.push('/sync') },
+          { text: 'View details', onPress: () => router.push('/(tabs)/activity') },
           { text: 'OK', style: 'cancel' },
         ],
       );
@@ -542,7 +542,7 @@ export default function GalleryScreen() {
       'Some uploads failed',
       `${succeeded}/${toUpload.length} succeeded, ${failed.length} failed. Failed items kept selected so you can retry.\n\n${sample}${more}`,
       [
-        { text: 'View details', onPress: () => router.push('/sync') },
+        { text: 'View details', onPress: () => router.push('/(tabs)/activity') },
         { text: 'OK', style: 'cancel' },
       ],
     );

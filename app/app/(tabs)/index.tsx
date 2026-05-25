@@ -161,7 +161,7 @@ export default function DashboardScreen() {
         {/* Sync card — only when there's something to act on */}
         {showSyncCard && (
           <Pressable
-            onPress={() => router.push('/sync')}
+            onPress={() => router.push('/(tabs)/activity')}
             style={({ pressed }) => [
               styles.syncCard,
               { backgroundColor: colors.accentSoft, borderColor: colors.tint, opacity: pressed ? 0.8 : 1 },
