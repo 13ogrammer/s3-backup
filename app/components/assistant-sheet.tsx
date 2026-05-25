@@ -37,6 +37,7 @@ import {
 import { executeCreateFolder, executeMove } from '@/lib/assistantActions';
 import { LLMError, postChat, type LLMMessage } from '@/lib/llm';
 import { buildAssistantTools, isPendingAction, TOOL_NAMES } from '@/lib/assistantTools';
+import { getActiveUploadsSnapshot } from '@/lib/upload';
 import { useJobs } from '@/lib/jobs';
 import {
   abortRef,
@@ -154,8 +155,13 @@ export function AssistantSheet({ visible, onClose }: Props) {
 
   // Build tools once, injecting the jobs snapshot via ref so get_active_jobs
   // always sees the live in-memory records rather than re-loading from disk.
+  // getActiveUploadsSnapshot is the module singleton from upload.ts — no ref
+  // needed since it always reads the current Map at call time.
   const tools = useMemo(
-    () => buildAssistantTools({ getJobsSnapshot: () => allJobsRef.current }),
+    () => buildAssistantTools({
+      getJobsSnapshot: () => allJobsRef.current,
+      getActiveUploadsSnapshot,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );

@@ -7,6 +7,7 @@ import { loadActivity, type ActivityUploadEntry, type ActivityMoveEntry, type Ac
 import { loadBackedUpMap } from './backedUpState';
 import { loadAutoBackupState } from './autoBackupState';
 import { loadPendingUploads } from './uploadState';
+import type { ActiveUploadSnapshot } from './upload';
 
 export type ToolExecutor = (input: unknown) => Promise<unknown>;
 
@@ -388,7 +389,12 @@ const getBackupStatusTool: AssistantTool = {
 
 // get_active_jobs is built via factory so it can receive the in-memory jobs
 // snapshot from the React context without needing to re-read persisted JSON.
-function buildGetActiveJobsTool(getJobsSnapshot: () => JobRecord[]): AssistantTool {
+// getActiveUploadsSnapshot provides live simple-upload progress from the
+// module-level Map in upload.ts, overlaid on the persisted pending state.
+function buildGetActiveJobsTool(
+  getJobsSnapshot: () => JobRecord[],
+  getActiveUploadsSnapshot: () => ReadonlyMap<string, ActiveUploadSnapshot>,
+): AssistantTool {
   return {
     definition: {
       type: 'function',
@@ -409,9 +415,26 @@ function buildGetActiveJobsTool(getJobsSnapshot: () => JobRecord[]): AssistantTo
           Promise.resolve(getJobsSnapshot()),
         ]);
 
+        const snapshot = getActiveUploadsSnapshot();
+
         const uploads = pendingUploads.map((u) => {
-          const uploadedBytes =
-            u.kind === 'multipart' ? u.completedParts.length * u.partSize : 0;
+          let uploadedBytes: number;
+          let updatedAt: number = u.updatedAt;
+
+          if (u.kind === 'multipart') {
+            uploadedBytes = u.completedParts.length * u.partSize;
+          } else {
+            // Overlay live in-memory progress for simple uploads; fall back to
+            // 0 if the first onProgress tick hasn't fired yet.
+            const snap = snapshot.get(u.remoteKey);
+            if (snap) {
+              uploadedBytes = Math.min(snap.uploadedBytes, u.totalBytes);
+              updatedAt = Math.max(snap.updatedAt, u.updatedAt);
+            } else {
+              uploadedBytes = 0;
+            }
+          }
+
           const progress = u.totalBytes > 0 ? uploadedBytes / u.totalBytes : 0;
           return {
             remoteKey: u.remoteKey,
@@ -420,7 +443,7 @@ function buildGetActiveJobsTool(getJobsSnapshot: () => JobRecord[]): AssistantTo
             totalBytes: u.totalBytes,
             uploadedBytes,
             progress,
-            updatedAt: u.updatedAt,
+            updatedAt,
           };
         });
 
@@ -569,6 +592,7 @@ const getDeviceInventoryTool: AssistantTool = {
 
 export type AssistantToolDeps = {
   getJobsSnapshot: () => JobRecord[];
+  getActiveUploadsSnapshot: () => ReadonlyMap<string, ActiveUploadSnapshot>;
 };
 
 export function buildAssistantTools(
@@ -584,13 +608,14 @@ export function buildAssistantTools(
     moveTool,
     getRecentActivityTool,
     getBackupStatusTool,
-    buildGetActiveJobsTool(deps.getJobsSnapshot),
+    buildGetActiveJobsTool(deps.getJobsSnapshot, deps.getActiveUploadsSnapshot),
     getDeviceInventoryTool,
   ] as const;
 }
 
 export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool> = buildAssistantTools({
   getJobsSnapshot: () => [],
+  getActiveUploadsSnapshot: () => new Map(),
 });
 
 export const TOOL_NAMES: ReadonlySet<string> = new Set(

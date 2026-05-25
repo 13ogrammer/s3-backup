@@ -26,6 +26,22 @@ export type MediaKind = 'image' | 'video' | 'other';
 
 export type ResumeState = { uploadId: string; completedParts: CompletedPart[] };
 
+export type ActiveUploadSnapshot = {
+  uploadedBytes: number;
+  totalBytes: number;
+  updatedAt: number;
+};
+
+// In-memory progress tracking for simple (non-multipart) uploads that are
+// initiated by the user (trackSimple=true). Auto-backup uploads are excluded.
+// Keyed by remoteKey for O(1) lookup in get_active_jobs.
+const activeUploads = new Map<string, ActiveUploadSnapshot>();
+
+// Returns a defensive copy so callers can't mutate the live state.
+export function getActiveUploadsSnapshot(): ReadonlyMap<string, ActiveUploadSnapshot> {
+  return new Map(activeUploads);
+}
+
 const THUMB_MAX_WIDTH = 320;
 const THUMB_QUALITY = 0.7;
 const THUMB_PREFIX = '.thumbnails/';
@@ -115,7 +131,30 @@ async function uploadFileSimple(
     });
   }
 
-  await runRnbuUpload(localUri, remoteKey, contentType, url, onProgress, totalBytes);
+  // When trackSimple is true (user-initiated uploads only), intercept progress
+  // events to update the in-memory snapshot used by get_active_jobs. Auto-backup
+  // uploads (trackSimple=false) are kept out of the map intentionally.
+  // Defined inside uploadFileSimple so remoteKey and totalBytes close over.
+  // The cleanup is here (not in runRnbuUpload) so a 403 silent re-sign keeps
+  // the entry alive across retries.
+  const wrappedOnProgress: ((progress: UploadProgress) => void) | undefined = trackSimple
+    ? (progress) => {
+        activeUploads.set(remoteKey, {
+          uploadedBytes: progress.bytesSent,
+          totalBytes,
+          updatedAt: Date.now(),
+        });
+        onProgress?.(progress);
+      }
+    : onProgress;
+
+  try {
+    await runRnbuUpload(localUri, remoteKey, contentType, url, wrappedOnProgress, totalBytes);
+  } finally {
+    if (trackSimple) {
+      activeUploads.delete(remoteKey);
+    }
+  }
 
   addUploadBreadcrumb('upload complete', { remoteKey, mode: 'simple', totalBytes });
 
