@@ -33,9 +33,15 @@ type Props = {
   validatePick?: (prefix: string) => string | null;
   // S3B-61: prevent tapping into folders that can't be valid targets (e.g. source folder in Compare)
   isFolderSelectable?: (prefix: string) => boolean;
+  // Header copy — defaults to "Choose folder". Callers should set a verb that
+  // matches the upcoming action ("Move to folder", "Merge into folder").
+  title?: string;
+  // Optional second line under the title — useful for showing the source
+  // folder of a move / merge / compare to disambiguate from a generic pick.
+  subtitle?: string;
 };
 
-export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick, isFolderSelectable }: Props) {
+export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick, isFolderSelectable, title, subtitle }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -158,7 +164,16 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
           <Pressable onPress={onClose} accessibilityRole="button">
             <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
           </Pressable>
-          <ThemedText type="defaultSemiBold">Choose folder</ThemedText>
+          <View style={styles.headerTitleColumn}>
+            <ThemedText type="defaultSemiBold" numberOfLines={1}>
+              {title ?? 'Choose folder'}
+            </ThemedText>
+            {subtitle != null && subtitle !== '' && (
+              <ThemedText style={[styles.headerSubtitle, { color: colors.muted }]} numberOfLines={1}>
+                {subtitle}
+              </ThemedText>
+            )}
+          </View>
           <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
             <ThemedText
               style={{
@@ -201,7 +216,9 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
             ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
             ListEmptyComponent={
               <ThemedText style={[styles.empty, { color: colors.muted }]}>
-                No subfolders. Use "New folder" below or tap Select to use this folder.
+                {hideNewFolder
+                  ? `No subfolders. Tap ${confirmLabel ?? 'Select'} to use this folder.`
+                  : `No subfolders. Use "New folder" below or tap ${confirmLabel ?? 'Select'} to use this folder.`}
               </ThemedText>
             }
             renderItem={({ item }) => {
@@ -275,8 +292,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
+  },
+  headerTitleColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   breadcrumb: {
     flexDirection: 'row',

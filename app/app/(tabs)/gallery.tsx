@@ -946,6 +946,8 @@ export default function GalleryScreen() {
         onClose={() => setPickerVisible(false)}
         onPick={onPickFolder}
         initialPath={lastFolder}
+        title="Upload to folder"
+        confirmLabel="Upload here"
       />
 
       {/* dismissOnBackdrop=false + no-op onRequestClose so Android back

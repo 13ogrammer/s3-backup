@@ -1166,12 +1166,16 @@ export default function BrowseScreen() {
         visible={moveDestVisible}
         onClose={() => setMoveDestVisible(false)}
         onPick={runMove}
+        title="Move to folder"
+        confirmLabel="Move here"
         isFolderSelectable={(p) => !Array.from(selection.folders).some((src) => p.startsWith(src))}
       />
 
       <FolderPicker
         visible={comparePickerVisible}
         initialPath={''}
+        title="Compare with folder"
+        subtitle={folderAForCompare ? `Comparing ${basename(folderAForCompare.replace(/\/$/, ''))}` : undefined}
         confirmLabel="Compare"
         hideNewFolder
         validatePick={(b) => folderAForCompare ? validateCompareTarget(folderAForCompare, b) : null}
@@ -1189,6 +1193,8 @@ export default function BrowseScreen() {
       <FolderPicker
         visible={mergeDestVisible}
         initialPath={''}
+        title="Merge into folder"
+        subtitle={mergeSource ? `Merging ${basename(mergeSource.replace(/\/$/, ''))}` : undefined}
         confirmLabel="Merge here"
         hideNewFolder
         validatePick={(p) => mergeSource ? validateMergeTarget(mergeSource, p) : null}
