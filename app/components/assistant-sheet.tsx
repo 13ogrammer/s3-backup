@@ -173,7 +173,11 @@ export function AssistantSheet({ visible, onClose }: Props) {
           useNativeDriver: false,
         }).start();
       } else {
-        keyboardPad.setValue(e.endCoordinates.height);
+        // Android's adjustResize already shrinks the modal's visible area by
+        // the keyboard height — adding more padding would push the composer
+        // off-screen. The keyboard also covers the nav-bar area, so we drop
+        // the resting inset.
+        keyboardPad.setValue(0);
       }
     });
     const hide = Keyboard.addListener(hideEvent, (e) => {
