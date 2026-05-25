@@ -91,11 +91,14 @@ export async function runAutoBackupTick(): Promise<TickResult> {
         tags: { area: 'autoBackup', stage: 'permission' },
         extra: { status },
       });
-      await saveAutoBackupState({ lastRanAt: Date.now(), failureCount: state.failureCount + 1 });
+      await saveAutoBackupState({ lastRanAt: Date.now(), failureCount: state.failureCount + 1, autoBackupRunning: false });
       return { uploaded: 0, skippedLarge: 0, failed: 1 };
     }
     return empty;
   }
+
+  // Signal to the Dashboard that a tick is actively uploading.
+  await saveAutoBackupState({ autoBackupRunning: true });
 
   const since = new Date(state.lastCreatedAt ?? 0);
 
@@ -178,6 +181,7 @@ export async function runAutoBackupTick(): Promise<TickResult> {
     lastCreatedAt: newLastCreatedAt,
     failureCount: state.failureCount + failed,
     largeQueueCount: skippedLarge,
+    autoBackupRunning: false,
   });
 
   return { uploaded, skippedLarge, failed };

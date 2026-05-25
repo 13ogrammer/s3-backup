@@ -17,6 +17,7 @@ export type AutoBackupState = {
   lastCreatedAt: number | null;
   failureCount: number;
   largeQueueCount: number;
+  autoBackupRunning: boolean;
 };
 
 export const DEFAULT_AUTO_BACKUP_STATE: AutoBackupState = {
@@ -29,7 +30,23 @@ export const DEFAULT_AUTO_BACKUP_STATE: AutoBackupState = {
   lastCreatedAt: null,
   failureCount: 0,
   largeQueueCount: 0,
+  autoBackupRunning: false,
 };
+
+// A running tick that started more than 10 minutes ago is assumed stale
+// (e.g. background task was killed). Don't show the indicator in that case.
+export const AUTO_BACKUP_RUNNING_TTL_MS = 10 * 60 * 1000;
+
+// Returns true only when a tick is actively running and not stale.
+// lastRanAt === null means the first tick hasn't finished yet — treat as fresh.
+export function isAutoBackupRunningFresh(
+  state: AutoBackupState,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!state.autoBackupRunning) return false;
+  if (state.lastRanAt === null) return true;
+  return nowMs - state.lastRanAt < AUTO_BACKUP_RUNNING_TTL_MS;
+}
 
 const STATE_FILE = `${documentDirectory ?? ''}auto-backup-state.json`;
 
@@ -69,6 +86,7 @@ async function readState(): Promise<AutoBackupState> {
       lastCreatedAt: typeof obj.lastCreatedAt === 'number' ? obj.lastCreatedAt : null,
       failureCount: typeof obj.failureCount === 'number' ? obj.failureCount : 0,
       largeQueueCount: typeof obj.largeQueueCount === 'number' ? obj.largeQueueCount : 0,
+      autoBackupRunning: typeof obj.autoBackupRunning === 'boolean' ? obj.autoBackupRunning : false,
     };
   } catch (err) {
     console.warn('auto-backup-state read failed', err);

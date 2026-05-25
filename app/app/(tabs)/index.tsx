@@ -2,6 +2,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
+  AppStateStatus,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +17,7 @@ import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { api, type StorageStats } from '@/lib/api';
 import { loadActivity } from '@/lib/activityLog';
+import { isAutoBackupRunningFresh, loadAutoBackupState } from '@/lib/autoBackupState';
 import { formatBytes, detectMediaType } from '@/lib/format';
 import { loadPendingUploads } from '@/lib/uploadState';
 import { useUploadSessionActive } from '@/lib/uploadSession';
@@ -35,6 +38,30 @@ export default function DashboardScreen() {
 
   const [previewFiles, setPreviewFiles] = useState<PreviewFile[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+  const [backupRunning, setBackupRunning] = useState(false);
+
+  const loadBackupRunning = useCallback(async () => {
+    try {
+      const s = await loadAutoBackupState();
+      setBackupRunning(isAutoBackupRunningFresh(s));
+    } catch {
+      // Non-fatal — indicator simply won't show on error
+    }
+  }, []);
+
+  // Hydrate on mount
+  useEffect(() => {
+    loadBackupRunning();
+  }, [loadBackupRunning]);
+
+  // Re-hydrate when app returns to foreground (background tick may have flipped the flag)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') loadBackupRunning();
+    });
+    return () => sub.remove();
+  }, [loadBackupRunning]);
 
   const loadSyncStatus = useCallback(async () => {
     try {
@@ -66,7 +93,8 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       loadSyncStatus();
-    }, [loadSyncStatus]),
+      loadBackupRunning();
+    }, [loadSyncStatus, loadBackupRunning]),
   );
 
   const loadStats = useCallback(async (forceRefresh = false) => {
@@ -115,6 +143,20 @@ export default function DashboardScreen() {
             tintColor={colors.tint}
           />
         }>
+
+        {/* Backup-in-progress card — shown while a background tick is uploading */}
+        {backupRunning && (
+          <View
+            style={[
+              styles.backupRunningCard,
+              { backgroundColor: colors.accentSoft, borderColor: colors.tint },
+            ]}>
+            <ActivityIndicator color={colors.tint} size="small" />
+            <ThemedText style={[Type.bodyStrong, { color: colors.tint }]}>
+              Backing up…
+            </ThemedText>
+          </View>
+        )}
 
         {/* Sync card — only when there's something to act on */}
         {showSyncCard && (
@@ -409,6 +451,14 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     paddingBottom: Spacing.xxl,
     gap: Spacing.md,
+  },
+  backupRunningCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Spacing.lg,
   },
   syncCard: {
     borderRadius: Radius.lg,
