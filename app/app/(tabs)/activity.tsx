@@ -495,7 +495,6 @@ export default function ActivityScreen() {
                       key={entry.id}
                       entry={entry}
                       colors={colors}
-                      onRemove={() => onRemoveEntry(entry.id)}
                     />
                   );
                 }
@@ -505,7 +504,6 @@ export default function ActivityScreen() {
                       key={entry.id}
                       entry={entry}
                       colors={colors}
-                      onRemove={() => onRemoveEntry(entry.id)}
                     />
                   );
                 }
@@ -514,7 +512,6 @@ export default function ActivityScreen() {
                     key={entry.id}
                     entry={entry}
                     colors={colors}
-                    onRemove={() => onRemoveEntry(entry.id)}
                   />
                 );
               })}
@@ -814,10 +811,9 @@ function MoveRow({
 type UploadSuccessRowProps = {
   entry: ActivityUploadEntry;
   colors: (typeof Colors)['light'];
-  onRemove: () => void;
 };
 
-function UploadSuccessRow({ entry, colors, onRemove }: UploadSuccessRowProps) {
+function UploadSuccessRow({ entry, colors }: UploadSuccessRowProps) {
   const filename = entry.remoteKey.includes('/')
     ? entry.remoteKey.slice(entry.remoteKey.lastIndexOf('/') + 1)
     : entry.remoteKey;
@@ -833,15 +829,6 @@ function UploadSuccessRow({ entry, colors, onRemove }: UploadSuccessRowProps) {
           Uploaded · {new Date(entry.lastAt).toLocaleString()}
         </ThemedText>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onRemove}
-        style={({ pressed }) => [
-          styles.actionChip,
-          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-        ]}>
-        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
-      </Pressable>
     </View>
   );
 }
@@ -849,10 +836,9 @@ function UploadSuccessRow({ entry, colors, onRemove }: UploadSuccessRowProps) {
 type MoveSuccessRowProps = {
   entry: ActivityMoveEntry;
   colors: (typeof Colors)['light'];
-  onRemove: () => void;
 };
 
-function MoveSuccessRow({ entry, colors, onRemove }: MoveSuccessRowProps) {
+function MoveSuccessRow({ entry, colors }: MoveSuccessRowProps) {
   const name = entry.from.includes('/')
     ? entry.from.slice(entry.from.lastIndexOf('/') + 1) || entry.from
     : entry.from;
@@ -873,15 +859,6 @@ function MoveSuccessRow({ entry, colors, onRemove }: MoveSuccessRowProps) {
           {new Date(entry.lastAt).toLocaleString()}
         </ThemedText>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onRemove}
-        style={({ pressed }) => [
-          styles.actionChip,
-          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-        ]}>
-        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
-      </Pressable>
     </View>
   );
 }
@@ -889,16 +866,18 @@ function MoveSuccessRow({ entry, colors, onRemove }: MoveSuccessRowProps) {
 type AutoBackupRunRowProps = {
   entry: ActivityAutoBackupRunEntry;
   colors: (typeof Colors)['light'];
-  onRemove: () => void;
 };
 
-function AutoBackupRunRow({ entry, colors, onRemove }: AutoBackupRunRowProps) {
-  const iconColor = entry.status === 'failed' ? colors.danger : colors.success;
+function AutoBackupRunRow({ entry, colors }: AutoBackupRunRowProps) {
+  const failed = entry.status === 'failed';
+  const iconColor = failed ? colors.danger : colors.success;
   const parts: string[] = [];
   if (entry.uploadedCount > 0) parts.push(`${entry.uploadedCount} uploaded`);
   if (entry.skippedCount > 0) parts.push(`${entry.skippedCount} skipped`);
   if (entry.failedCount > 0) parts.push(`${entry.failedCount} failed`);
   const summary = parts.length > 0 ? parts.join(', ') : 'No new photos';
+  // Prefix failed runs so the error state is visible now that the per-row dismiss is gone.
+  const summaryText = failed ? `Run completed with errors · ${summary}` : summary;
 
   return (
     <View style={[styles.historyRow, { backgroundColor: colors.surface }]}>
@@ -907,22 +886,13 @@ function AutoBackupRunRow({ entry, colors, onRemove }: AutoBackupRunRowProps) {
         <ThemedText style={[Type.label, { color: colors.text }]}>
           Auto-backup run
         </ThemedText>
-        <ThemedText style={[Type.meta, { color: colors.muted }]}>
-          {summary}
+        <ThemedText style={[Type.meta, { color: failed ? colors.danger : colors.muted }]}>
+          {summaryText}
         </ThemedText>
         <ThemedText style={[Type.meta, { color: colors.muted }]}>
           {new Date(entry.completedAt).toLocaleString()}
         </ThemedText>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onRemove}
-        style={({ pressed }) => [
-          styles.actionChip,
-          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
-        ]}>
-        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
-      </Pressable>
     </View>
   );
 }
