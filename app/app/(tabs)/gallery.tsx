@@ -15,7 +15,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { DateFilterModal, type DateFilter } from '@/components/date-filter-modal';
 import { FolderPicker } from '@/components/folder-picker';
 import { ThemedText } from '@/components/themed-text';
@@ -68,6 +70,10 @@ export default function GalleryScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const { showAlert } = useAlert();
+  const insets = useSafeAreaInsets();
+  const { contentPaddingBottom, aboveFabBottom } = useAiFabClearance();
+  // How much to lift the bottom bar above where it naturally sits (at tab-bar level).
+  const bottomBarMargin = aboveFabBottom - (insets.bottom + TAB_BAR_CONTENT_HEIGHT);
 
   const [permission, requestPermission] = MediaLibrary.usePermissions({
     granularPermissions: ['photo', 'video'],
@@ -787,7 +793,7 @@ export default function GalleryScreen() {
         sections={sections}
         stickySectionHeadersEnabled={false}
         keyExtractor={(row, index) => row.find(Boolean)?.id ?? String(index)}
-        contentContainerStyle={{ padding: SPACING }}
+        contentContainerStyle={{ padding: SPACING, paddingBottom: contentPaddingBottom }}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
@@ -887,7 +893,7 @@ export default function GalleryScreen() {
       />
 
       {selectedCount > 0 && (
-        <View style={[styles.bottomBar, { backgroundColor: colors.background, borderColor: colors.icon }]}>
+        <View style={[styles.bottomBar, { backgroundColor: colors.background, borderColor: colors.icon, marginBottom: bottomBarMargin }]}>
           <View style={{ flex: 1 }}>
             <ThemedText type="defaultSemiBold">
               {selectedCount} selected{selectionBytes > 0 ? ` · ${formatBytes(selectionBytes)}` : ''}

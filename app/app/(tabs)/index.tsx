@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { useAiFabClearance } from '@/components/ai-fab';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
@@ -26,6 +27,7 @@ export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
+  const { contentPaddingBottom } = useAiFabClearance();
 
   const sessionActive = useUploadSessionActive();
   const [syncItemCount, setSyncItemCount] = useState(0);
@@ -135,7 +137,7 @@ export default function DashboardScreen() {
     <>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: contentPaddingBottom }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -449,7 +451,6 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xxl,
     gap: Spacing.md,
   },
   backupRunningCard: {

@@ -11,7 +11,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { ActionSheet } from '@/components/action-sheet';
 import { BottomSheet } from '@/components/bottom-sheet';
 import { FolderThumb } from '@/components/FolderThumb';
@@ -109,6 +111,10 @@ export default function BrowseScreen() {
   const { showAlert } = useAlert();
   const navigation = useNavigation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { contentPaddingBottom, aboveFabBottom } = useAiFabClearance();
+  // How much to lift the flow-layout action bar above where it naturally sits (tab-bar level).
+  const actionBarMargin = aboveFabBottom - (insets.bottom + TAB_BAR_CONTENT_HEIGHT);
 
   const { addJob } = useJobs();
   const [overflowVisible, setOverflowVisible] = useState(false);
@@ -991,14 +997,14 @@ export default function BrowseScreen() {
           numColumns={viewMode === 'grid' ? GRID_COLUMNS : 1}
           {...(viewMode === 'grid'
             ? {
-                contentContainerStyle: { padding: GRID_SPACING },
+                contentContainerStyle: { padding: GRID_SPACING, paddingBottom: contentPaddingBottom },
                 columnWrapperStyle: { gap: GRID_SPACING, marginBottom: GRID_SPACING },
               }
             : {
                 contentContainerStyle: {
                   paddingHorizontal: Spacing.lg,
                   paddingTop: Spacing.md,
-                  paddingBottom: Spacing.xl,
+                  paddingBottom: contentPaddingBottom,
                 },
                 ItemSeparatorComponent: () => <View style={{ height: Spacing.sm }} />,
               })}
@@ -1058,7 +1064,7 @@ export default function BrowseScreen() {
         <View
           style={[
             styles.actionBar,
-            { backgroundColor: colors.surface, ...Shadow.cardElevated },
+            { backgroundColor: colors.surface, ...Shadow.cardElevated, marginBottom: actionBarMargin },
           ]}>
           {singleSelected && (
             <Pressable
@@ -1163,7 +1169,7 @@ export default function BrowseScreen() {
       )}
 
       {snack && !busy && (
-        <View style={[styles.snackbar, { backgroundColor: colors.surfaceElevated }]}>
+        <View style={[styles.snackbar, { backgroundColor: colors.surfaceElevated, bottom: aboveFabBottom }]}>
           <ThemedText style={styles.snackbarText} numberOfLines={2}>
             {snack.message}
           </ThemedText>
@@ -1726,7 +1732,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xl + 8,
+    paddingBottom: Spacing.md,
   },
   actionButton: {
     flex: 1,
@@ -1755,7 +1761,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.lg,
     right: Spacing.lg,
-    bottom: Spacing.xl + 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,

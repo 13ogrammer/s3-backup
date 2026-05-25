@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -9,19 +8,16 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useJobs } from '@/lib/jobs';
 import { JobDetailsModal } from '@/components/job-details-modal';
 import type { JobRecord } from '@/lib/api';
-
-// This must match the height configured in app/(tabs)/_layout.tsx so the strip
-// sits flush above the tab bar without reshaping it.
-export const TAB_BAR_CONTENT_HEIGHT = 48;
+import { useAiFabClearance } from '@/components/ai-fab';
 
 const AUTO_DISMISS_DELAY_MS = 4000;
 
 export function JobsStrip() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const insets = useSafeAreaInsets();
   const { activeJobs, cancelJob, dismissJob, retryFailed } = useJobs();
   const [detailsJob, setDetailsJob] = useState<JobRecord | null>(null);
+  const { aboveFabBottom } = useAiFabClearance();
 
   // Auto-dismiss completed / cancelled jobs after a short dwell.
   useEffect(() => {
@@ -44,8 +40,6 @@ export function JobsStrip() {
 
   if (activeJobs.length === 0) return null;
 
-  const bottomOffset = insets.bottom + TAB_BAR_CONTENT_HEIGHT + 4;
-
   return (
     <>
       <View
@@ -53,7 +47,7 @@ export function JobsStrip() {
           styles.strip,
           {
             backgroundColor: colors.surfaceElevated,
-            bottom: bottomOffset,
+            bottom: aboveFabBottom,
             ...Shadow.cardElevated,
           },
         ]}>

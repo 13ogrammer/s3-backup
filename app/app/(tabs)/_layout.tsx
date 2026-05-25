@@ -4,15 +4,13 @@ import React, { useState } from 'react';
 import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AiFab } from '@/components/ai-fab';
+import { AiFab, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { AssistantSheet } from '@/components/assistant-sheet';
 import { HapticTab } from '@/components/haptic-tab';
 import { JobsStrip } from '@/components/jobs-strip';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const TAB_BAR_CONTENT_HEIGHT = 48;
 const TAB_ICON_SIZE = 22;
 const APP_NAME = Constants.expoConfig?.name ?? 'S3 Backup';
 

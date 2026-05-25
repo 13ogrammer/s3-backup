@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { useAiFabClearance } from '@/components/ai-fab';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -94,6 +95,7 @@ export default function ActivityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { showAlert } = useAlert();
+  const { contentPaddingBottom } = useAiFabClearance();
 
   const { addJob } = useJobs();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -390,7 +392,7 @@ export default function ActivityScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: Spacing.xl }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: contentPaddingBottom }}>
           {needsAttention && (
             <>
               <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
