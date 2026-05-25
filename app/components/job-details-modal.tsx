@@ -50,8 +50,10 @@ export function JobDetailsModal({ job, visible, onClose, onDismiss, onRetryFaile
       ? colors.danger
       : colors.muted;
 
+  const isMerge = job.kind === 'merge';
+
   return (
-    <ModalCard visible={visible} onRequestClose={onClose} title="Folder move">
+    <ModalCard visible={visible} onRequestClose={onClose} title={isMerge ? 'Folder merge' : 'Folder move'}>
       <View style={styles.section}>
         <ThemedText style={[Type.meta, { color: colors.muted }]}>From</ThemedText>
         <ThemedText style={[Type.label, { color: colors.text }]} numberOfLines={2}>
@@ -70,6 +72,16 @@ export function JobDetailsModal({ job, visible, onClose, onDismiss, onRetryFaile
           {statusLabel()}
           {job.total > 0 ? ` · ${job.moved} / ${job.total}` : ''}
         </ThemedText>
+        {isMerge && (job.renamed !== undefined || job.skipped !== undefined) && (
+          <ThemedText style={[Type.meta, { color: colors.muted, marginTop: 2 }]}>
+            {[
+              job.renamed !== undefined && job.renamed > 0 ? `${job.renamed} renamed` : null,
+              job.skipped !== undefined && job.skipped > 0 ? `${job.skipped} skipped` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </ThemedText>
+        )}
       </View>
 
       {job.error && (

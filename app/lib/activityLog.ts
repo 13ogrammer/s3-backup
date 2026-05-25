@@ -60,11 +60,11 @@ export type ActivityEntry =
   | ActivityMoveEntry
   | ActivityAutoBackupRunEntry;
 
-export type ActivityFile = { schemaVersion: 1 | 2 | 3; entries: ActivityEntry[] };
+export type ActivityFile = { schemaVersion: 1 | 2 | 3 | 4; entries: ActivityEntry[] };
 
 const ACTIVITY_FILE = `${documentDirectory ?? ''}activity-log.json`;
 const MAX_ENTRIES = 200;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 // 30-day retention policy: entries older than this are pruned on read.
 // Bounded retention prevents the log from growing unboundedly on devices
 // that accumulate entries over months without clearing them.
@@ -123,7 +123,7 @@ async function readEntries(): Promise<ActivityEntry[]> {
       return [];
     }
     const sv = (parsed as { schemaVersion: unknown }).schemaVersion;
-    if (sv !== 1 && sv !== 2 && sv !== 3) {
+    if (sv !== 1 && sv !== 2 && sv !== 3 && sv !== 4) {
       console.warn('activity-log: unknown schemaVersion', sv, '— starting fresh');
       return [];
     }

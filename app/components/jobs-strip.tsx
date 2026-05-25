@@ -101,6 +101,7 @@ function JobRow({
 
   const fromName = job.fromPrefix.replace(/\/$/, '').split('/').pop() ?? job.fromPrefix;
   const toName = job.toPrefix.replace(/\/$/, '').split('/').pop() ?? job.toPrefix;
+  const isMerge = job.kind === 'merge';
 
   let statusText: string;
   if (isCompleted) statusText = 'Complete';
@@ -115,7 +116,7 @@ function JobRow({
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}>
       <View style={{ flex: 1, gap: 2 }}>
         <ThemedText style={[Type.label, { color: colors.text }]} numberOfLines={1}>
-          {fromName} → {toName}
+          {isMerge ? 'Merging ' : ''}{fromName} → {toName}
         </ThemedText>
         <View style={styles.progressRow}>
           {isRunning && job.total > 0 && (
