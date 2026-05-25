@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAiFabClearance, TAB_BAR_CONTENT_HEIGHT } from '@/components/ai-fab';
 import { ActionSheet } from '@/components/action-sheet';
 import { BottomSheet } from '@/components/bottom-sheet';
+import { SelectionActionBar, type SelectionAction } from '@/components/selection-action-bar';
 import { FolderThumb } from '@/components/FolderThumb';
 import { FolderPicker } from '@/components/folder-picker';
 import { PreviewModal, type PreviewFile } from '@/components/preview-modal';
@@ -1120,51 +1121,26 @@ export default function BrowseScreen() {
       )}
 
       {selectionCount > 0 && (
-        <View
-          style={[
-            styles.actionBar,
-            { backgroundColor: colors.surface, ...Shadow.cardElevated, marginBottom: actionBarMargin },
-          ]}>
-          {singleSelected && (
-            <Pressable
-              onPress={() => setRenameVisible(true)}
-              style={({ pressed }) => [
-                styles.actionButton,
-                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
-              ]}>
-              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Rename</ThemedText>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => setMoveDestVisible(true)}
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Move…</ThemedText>
-          </Pressable>
-          {canCompare && (
-            <Pressable
-              onPress={() => {
-                const [folderA, folderB] = [...selection.folders].sort();
-                router.push({ pathname: '/compare', params: { a: folderA, b: folderB } });
-              }}
-              style={({ pressed }) => [
-                styles.actionButton,
-                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
-              ]}>
-              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Compare…</ThemedText>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={confirmDelete}
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: colors.danger, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <ThemedText style={{ color: '#fff', fontWeight: '600' }}>Delete</ThemedText>
-          </Pressable>
-        </View>
+        <SelectionActionBar
+          statusLabel={`${selectionCount} selected`}
+          actions={backupActions({
+            singleSelected: singleSelected !== null,
+            canCompare,
+            onRename: () => setRenameVisible(true),
+            onMove: () => setMoveDestVisible(true),
+            onCompare: () => {
+              const [folderA, folderB] = [...selection.folders].sort();
+              router.push({ pathname: '/compare', params: { a: folderA, b: folderB } });
+            },
+            onDelete: confirmDelete,
+          })}
+          onDismiss={() => {
+            setSelection(emptySelection());
+            setSelectionMode(false);
+          }}
+          dismissAccessibilityLabel="Exit selection mode"
+          style={{ marginBottom: actionBarMargin }}
+        />
       )}
 
       <PreviewModal
@@ -1640,6 +1616,54 @@ function renderGridTile({
   );
 }
 
+function backupActions({
+  singleSelected,
+  canCompare,
+  onRename,
+  onMove,
+  onCompare,
+  onDelete,
+}: {
+  singleSelected: boolean;
+  canCompare: boolean;
+  onRename: () => void;
+  onMove: () => void;
+  onCompare: () => void;
+  onDelete: () => void;
+}): SelectionAction[] {
+  const actions: SelectionAction[] = [];
+  if (singleSelected) {
+    actions.push({
+      key: 'rename',
+      icon: 'pencil',
+      accessibilityLabel: 'Rename',
+      onPress: onRename,
+    });
+  }
+  actions.push({
+    key: 'move',
+    icon: 'folder.badge.plus',
+    accessibilityLabel: 'Move to folder',
+    onPress: onMove,
+  });
+  if (canCompare) {
+    actions.push({
+      key: 'compare',
+      icon: 'square.on.square',
+      accessibilityLabel: 'Compare folders',
+      onPress: onCompare,
+    });
+  }
+  actions.push({
+    key: 'delete',
+    icon: 'trash',
+    accessibilityLabel: 'Delete',
+    onPress: onDelete,
+    tone: 'danger',
+  });
+  return actions;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
@@ -1804,19 +1828,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-  },
-  actionBar: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: Radius.md,
-    alignItems: 'center',
   },
   busyOverlay: {
     position: 'absolute',
