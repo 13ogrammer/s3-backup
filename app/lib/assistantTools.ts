@@ -1,5 +1,12 @@
+import * as MediaLibrary from 'expo-media-library';
+
 import { api } from './api';
+import type { JobRecord } from './api';
 import type { LLMToolDefinition } from './llm';
+import { loadActivity, type ActivityUploadEntry, type ActivityMoveEntry } from './activityLog';
+import { loadBackedUpMap } from './backedUpState';
+import { loadAutoBackupState } from './autoBackupState';
+import { loadPendingUploads } from './uploadState';
 
 export type ToolExecutor = (input: unknown) => Promise<unknown>;
 
@@ -256,15 +263,335 @@ const moveTool: AssistantTool = {
   },
 };
 
-export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool> = [
-  listObjectsTool,
-  getObjectMetadataTool,
-  getFolderPreviewTool,
-  getStorageStatsTool,
-  existsTool,
-  createFolderTool,
-  moveTool,
-] as const;
+// ---------------------------------------------------------------------------
+// Local-state read-only tools
+// These wrap in-memory/file state that is invisible to the bucket-scoped tools.
+// None of them use PENDING_ACTION_SENTINEL (all are read-only).
+// ---------------------------------------------------------------------------
+
+// get_recent_activity returns entries without localUri to avoid leaking
+// internal device paths into the LLM context.
+type RedactedUploadEntry = Omit<ActivityUploadEntry, 'localUri'>;
+type RedactedActivityEntry = RedactedUploadEntry | ActivityMoveEntry;
+
+const getRecentActivityTool: AssistantTool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'get_recent_activity',
+      description:
+        'Returns recent upload and move failures from the local activity log (the same source as the Activity tab). Successes are not tracked. Local file paths are redacted. Returns [] if the log is empty.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'number',
+            description: 'Max entries to return (default 20, max 100).',
+          },
+          since: {
+            type: 'string',
+            description: 'ISO 8601 timestamp. Only entries with lastAt >= this value are returned.',
+          },
+        },
+      },
+    },
+  },
+  execute: async (input) => {
+    try {
+      const { limit: rawLimit, since } = safeInput<{ limit?: number; since?: string }>(input);
+      const limit = Math.min(Math.max(1, rawLimit ?? 20), 100);
+      const sinceMs = since ? Date.parse(since) : null;
+
+      const all = await loadActivity();
+
+      let entries: RedactedActivityEntry[] = all.map((e) => {
+        if (e.kind === 'upload') {
+          // Strip localUri
+          const { localUri: _dropped, ...rest } = e;
+          return rest as RedactedUploadEntry;
+        }
+        return e as ActivityMoveEntry;
+      });
+
+      if (sinceMs !== null && !isNaN(sinceMs)) {
+        entries = entries.filter((e) => e.lastAt >= sinceMs);
+      }
+
+      const sliced = entries.slice(0, limit);
+      return { entries: sliced, total: entries.length };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'get_recent_activity failed' };
+    }
+  },
+};
+
+const getBackupStatusTool: AssistantTool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'get_backup_status',
+      description:
+        'Returns local backup status: device asset count, how many have been backed up, and auto-backup config + last-run info. Pure local state — does not call the S3 backend. Note: backedUpCount may overstate reality — deleted device assets are not pruned from the local map.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  execute: async (_input) => {
+    try {
+      const perm = await MediaLibrary.getPermissionsAsync();
+      if (!perm.granted) {
+        return { error: 'media_permission_not_granted' };
+      }
+
+      const [{ totalCount }, backedUpMap, autoState] = await Promise.all([
+        // first:1 is enough to read totalCount without paginating
+        MediaLibrary.getAssetsAsync({ first: 1 }),
+        loadBackedUpMap(),
+        loadAutoBackupState(),
+      ]);
+
+      const deviceAssetCount = totalCount;
+      const backedUpCount = Object.keys(backedUpMap).length;
+      const notBackedUpCount = Math.max(0, deviceAssetCount - backedUpCount);
+
+      const { lastRanAt, failureCount } = autoState;
+      let lastRunOutcome: 'success' | 'failure' | 'unknown';
+      if (lastRanAt === null) {
+        lastRunOutcome = 'unknown';
+      } else if (failureCount > 0) {
+        lastRunOutcome = 'failure';
+      } else {
+        lastRunOutcome = 'success';
+      }
+
+      return {
+        deviceAssetCount,
+        backedUpCount,
+        notBackedUpCount,
+        autoBackup: {
+          enabled: autoState.enabled,
+          mode: autoState.backupMode,
+          prefix: autoState.prefix,
+          lastRanAt,
+          lastRunOutcome,
+          failureCount,
+        },
+        caveat: 'backedUpCount may overstate reality — deleted device assets are not pruned from the local map.',
+      };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'get_backup_status failed' };
+    }
+  },
+};
+
+// get_active_jobs is built via factory so it can receive the in-memory jobs
+// snapshot from the React context without needing to re-read persisted JSON.
+function buildGetActiveJobsTool(getJobsSnapshot: () => JobRecord[]): AssistantTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_active_jobs',
+        description:
+          "Returns currently in-flight uploads (pending or paused) and active folder-move jobs with progress fractions. Use for 'what's running right now?' style questions.",
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    },
+    execute: async (_input) => {
+      try {
+        const [pendingUploads, jobRecords] = await Promise.all([
+          loadPendingUploads(),
+          Promise.resolve(getJobsSnapshot()),
+        ]);
+
+        const uploads = pendingUploads.map((u) => {
+          const uploadedBytes =
+            u.kind === 'multipart' ? u.completedParts.length * u.partSize : 0;
+          const progress = u.totalBytes > 0 ? uploadedBytes / u.totalBytes : 0;
+          return {
+            remoteKey: u.remoteKey,
+            kind: u.kind,
+            contentType: u.contentType,
+            totalBytes: u.totalBytes,
+            uploadedBytes,
+            progress,
+            updatedAt: u.updatedAt,
+          };
+        });
+
+        const moveJobs = jobRecords.map((r) => ({
+          jobId: r.jobId,
+          fromPrefix: r.fromPrefix,
+          toPrefix: r.toPrefix,
+          status: r.status,
+          total: r.total,
+          moved: r.moved,
+          progress: r.total > 0 ? r.moved / r.total : 0,
+          failedCount: r.failed.length,
+        }));
+
+        return { uploads, moveJobs };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : 'get_active_jobs failed' };
+      }
+    },
+  };
+}
+
+const getDeviceInventoryTool: AssistantTool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'get_device_inventory',
+      description:
+        "Aggregate counts and sizes of media on the device, grouped by year, month, or media type. No asset URIs leave the device. Sizes may be null when the OS doesn't expose fileSize (common on Android, also iCloud-offloaded iOS assets). Slow on large libraries; do not call repeatedly.",
+      parameters: {
+        type: 'object',
+        properties: {
+          groupBy: {
+            type: 'string',
+            enum: ['year', 'month', 'type'],
+            description: 'How to group the results.',
+          },
+          since: {
+            type: 'string',
+            description: 'ISO 8601 timestamp. Only assets created at or after this date.',
+          },
+        },
+        required: ['groupBy'],
+      },
+    },
+  },
+  execute: async (input) => {
+    try {
+      const { groupBy, since } = safeInput<{
+        groupBy: 'year' | 'month' | 'type';
+        since?: string;
+      }>(input);
+
+      const perm = await MediaLibrary.getPermissionsAsync();
+      if (!perm.granted) {
+        return { error: 'media_permission_not_granted' };
+      }
+
+      const sinceMs = since ? Date.parse(since) : null;
+      const createdAfter =
+        sinceMs !== null && !isNaN(sinceMs) ? new Date(sinceMs) : undefined;
+
+      // Paginate with cursor until done.
+      type Bucket = { count: number; sizeBytes: number | null; hasMissingSize: boolean };
+      const buckets = new Map<string, Bucket>();
+      let cursor: string | undefined;
+      let totalCount = 0;
+      let totalSize: number | null = 0;
+      let hasMissingTotal = false;
+
+      do {
+        const page = await MediaLibrary.getAssetsAsync({
+          first: 1000,
+          after: cursor,
+          ...(createdAfter ? { createdAfter } : {}),
+        });
+
+        for (const asset of page.assets) {
+          totalCount += 1;
+
+          // fileSize is not in the published Asset type but is present at runtime
+          // on some platforms — same cast pattern as autoBackupTask.ts.
+          const size = typeof (asset as { fileSize?: number }).fileSize === 'number'
+            ? (asset as { fileSize?: number }).fileSize!
+            : null;
+          if (size === null) {
+            hasMissingTotal = true;
+          } else if (totalSize !== null) {
+            totalSize += size;
+          }
+
+          let key: string;
+          if (groupBy === 'type') {
+            key = asset.mediaType;
+          } else {
+            const d = new Date(asset.creationTime);
+            const year = d.getFullYear().toString();
+            const month = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            key = groupBy === 'year' ? year : month;
+          }
+
+          const existing = buckets.get(key);
+          if (!existing) {
+            buckets.set(key, {
+              count: 1,
+              sizeBytes: size,
+              hasMissingSize: size === null,
+            });
+          } else {
+            existing.count += 1;
+            if (size === null) {
+              existing.hasMissingSize = true;
+              // Once we have a missing size, the aggregate is unreliable — null it.
+              existing.sizeBytes = null;
+            } else if (existing.sizeBytes !== null) {
+              existing.sizeBytes += size;
+            }
+          }
+        }
+
+        cursor = page.hasNextPage ? page.endCursor : undefined;
+      } while (cursor);
+
+      if (hasMissingTotal) totalSize = null;
+
+      const sortedBuckets = Array.from(buckets.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, { count, sizeBytes }]) => ({ key, count, sizeBytes }));
+
+      return {
+        groupBy,
+        buckets: sortedBuckets,
+        total: { count: totalCount, sizeBytes: totalSize },
+      };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'get_device_inventory failed' };
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Factory — builds the full tool list with injected deps.
+// Called with { getJobsSnapshot: () => [] } at module load so ASSISTANT_TOOLS
+// (used by FORBIDDEN_TOOL_NAMES guard and TOOL_NAMES) still works statically.
+// ---------------------------------------------------------------------------
+
+export type AssistantToolDeps = {
+  getJobsSnapshot: () => JobRecord[];
+};
+
+export function buildAssistantTools(
+  deps: AssistantToolDeps,
+): ReadonlyArray<AssistantTool> {
+  return [
+    listObjectsTool,
+    getObjectMetadataTool,
+    getFolderPreviewTool,
+    getStorageStatsTool,
+    existsTool,
+    createFolderTool,
+    moveTool,
+    getRecentActivityTool,
+    getBackupStatusTool,
+    buildGetActiveJobsTool(deps.getJobsSnapshot),
+    getDeviceInventoryTool,
+  ] as const;
+}
+
+export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool> = buildAssistantTools({
+  getJobsSnapshot: () => [],
+});
 
 export const TOOL_NAMES: ReadonlySet<string> = new Set(
   ASSISTANT_TOOLS.map((t) => t.definition.function.name),
