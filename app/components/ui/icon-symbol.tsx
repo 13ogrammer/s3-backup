@@ -52,6 +52,7 @@ const MAPPING = {
   'ellipsis': 'more-vert',
   'video.fill': { mci: 'video' },
   'doc': { mci: 'file-outline' },
+  'clock': { mci: 'clock-outline' },
 } as IconMapping;
 
 /**
