@@ -108,6 +108,12 @@ function validateCompareTarget(a: string, b: string): string | null {
   return null;
 }
 
+function validateMergeTarget(src: string, dest: string): string | null {
+  if (dest === src) return 'Pick a different folder';
+  if (dest.startsWith(src)) return "Can't merge a folder into itself or a descendant";
+  return null;
+}
+
 export default function BrowseScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -143,6 +149,8 @@ export default function BrowseScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [moveDestVisible, setMoveDestVisible] = useState(false);
+  const [mergeDestVisible, setMergeDestVisible] = useState(false);
+  const [mergeSource, setMergeSource] = useState<string | null>(null);
   const [comparePickerVisible, setComparePickerVisible] = useState(false);
   const [folderAForCompare, setFolderAForCompare] = useState<string | null>(null);
   const [renameVisible, setRenameVisible] = useState(false);
@@ -191,6 +199,7 @@ export default function BrowseScreen() {
   const selectionCount = selection.files.size + selection.folders.size;
   const selectionActive = selectionMode || selectionCount > 0;
   const canCompare = selection.folders.size === 2 && selection.files.size === 0;
+  const canMerge = selection.folders.size === 1 && selection.files.size === 0;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -836,68 +845,30 @@ export default function BrowseScreen() {
         await recordMoveSuccess({ from: prefix, to: dest, itemKind: 'folder' }).catch(() => undefined);
       } catch (err) {
         if (total === 1 && isUserActionableError(err)) {
-          // Destination folder exists — for a single-folder selection, offer
-          // merge (content-level collision resolution) in addition to rename.
-          setBusy('Checking for conflicts…');
-          let report: CollisionReport | null = null;
-          try {
-            report = await detectCollisions(prefix, dest);
-          } catch {
-            // If pre-check fails, fall back to the rename-only path.
-          }
+          // Destination folder exists — offer rename-and-move only.
+          // Intentional merges are now reached via the dedicated Merge action.
           setBusy(null);
-
-          if (report && report.total > 0) {
-            // Content collisions detected — show merge policy picker.
-            const policy = await promptMergePolicy(prefix, dest, report);
-            setMergePolicyModal(null);
-            if (policy === null) {
-              // User cancelled — clean up selection and bail.
-              setSelection(emptySelection());
-              setSelectionMode(false);
-              return;
-            }
-            // Enqueue merge job with chosen policy.
-            setBusy('Merging…');
-            try {
-              const mergeRes = await api.mergeFolder(prefix, dest, policy);
-              await addJob(mergeRes.jobId, { fromPrefix: prefix, toPrefix: dest, kind: 'merge', policy });
-              movedFolders.push({ from: prefix, to: dest });
-              await recordMergeFolderSuccess({ from: prefix, to: dest, policy }).catch(() => undefined);
-            } catch (mergeErr) {
-              captureApiError(mergeErr);
-              await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(mergeErr) }).catch(() => undefined);
-              failed.push({ src: prefix, message: mergeErr instanceof Error ? mergeErr.message : 'failed' });
-            } finally {
-              setBusy(null);
-            }
-          } else {
-            // No content collisions (or pre-check failed) — fall back to rename.
-            const suggestion = suggestRenameForCollision(folderName);
-            showAlert('Destination already exists', err.message, [
-              {
-                text: 'Cancel',
-                style: 'cancel',
-                onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
+          const suggestion = suggestRenameForCollision(folderName);
+          showAlert('Destination already exists', err.message, [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => { setSelection(emptySelection()); setSelectionMode(false); },
+            },
+            {
+              text: 'Rename and Move',
+              onPress: () => {
+                setRenameInitialOverride(suggestion);
+                setCollisionMoveDest(destPrefix);
+                setRenameVisible(true);
               },
-              {
-                text: 'Rename and Move',
-                onPress: () => {
-                  setRenameInitialOverride(suggestion);
-                  // Capture the original move destination — runRename will move
-                  // the folder into destPrefix with the new name.
-                  setCollisionMoveDest(destPrefix);
-                  setRenameVisible(true);
-                },
-              },
-            ]);
-            return;
-          }
-        } else {
-          captureApiError(err);
-          await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
-          failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
+            },
+          ]);
+          return;
         }
+        captureApiError(err);
+        await recordMoveFailure({ from: prefix, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
+        failed.push({ src: prefix, message: err instanceof Error ? err.message : 'failed' });
       }
       done += 1;
       setBusy(`Moving ${done} of ${total}…`);
@@ -948,6 +919,54 @@ export default function BrowseScreen() {
       );
     } finally {
       setBusy(null);
+    }
+  }
+
+  function onTapMerge() {
+    const src = Array.from(selection.folders)[0];
+    if (!src) return;
+    setMergeSource(src);
+    setMergeDestVisible(true);
+  }
+
+  async function runMerge(dest: string) {
+    setMergeDestVisible(false);
+    if (mergeSource == null) return;
+
+    let report: CollisionReport;
+    setBusy('Checking for conflicts…');
+    try {
+      report = await detectCollisions(mergeSource, dest);
+    } catch {
+      report = { total: 0, samples: [], truncated: false };
+    }
+    setBusy(null);
+
+    const policy = await promptMergePolicy(mergeSource, dest, report);
+    setMergePolicyModal(null);
+
+    if (policy === null) {
+      setSelection(emptySelection());
+      setSelectionMode(false);
+      setMergeSource(null);
+      return;
+    }
+
+    setBusy('Merging…');
+    try {
+      const res = await api.mergeFolder(mergeSource, dest, policy);
+      await addJob(res.jobId, { fromPrefix: mergeSource, toPrefix: dest, kind: 'merge', policy });
+      await recordMergeFolderSuccess({ from: mergeSource, to: dest, policy }).catch(() => undefined);
+    } catch (err) {
+      captureApiError(err);
+      await recordMoveFailure({ from: mergeSource, to: dest, itemKind: 'folder', ...fromErr(err) }).catch(() => undefined);
+      showAlert('Merge failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setBusy(null);
+      setSelection(emptySelection());
+      setSelectionMode(false);
+      setMergeSource(null);
+      await load(path, 'refresh');
     }
   }
 
@@ -1125,8 +1144,10 @@ export default function BrowseScreen() {
           statusLabel={`${selectionCount} selected`}
           actions={backupActions({
             singleSelected: singleSelected !== null,
+            canMerge,
             canCompare,
             onRename: () => setRenameVisible(true),
+            onMerge: onTapMerge,
             onMove: () => setMoveDestVisible(true),
             onCompare: () => {
               const [folderA, folderB] = [...selection.folders].sort();
@@ -1173,6 +1194,17 @@ export default function BrowseScreen() {
         }}
       />
 
+      <FolderPicker
+        visible={mergeDestVisible}
+        initialPath={''}
+        confirmLabel="Merge here"
+        hideNewFolder
+        validatePick={(p) => mergeSource ? validateMergeTarget(mergeSource, p) : null}
+        isFolderSelectable={(p) => mergeSource ? validateMergeTarget(mergeSource, p) === null : true}
+        onClose={() => { setMergeDestVisible(false); setMergeSource(null); }}
+        onPick={runMerge}
+      />
+
       <RenameModal
         visible={renameVisible}
         title={
@@ -1196,6 +1228,7 @@ export default function BrowseScreen() {
       {mergePolicyModal && (
         <MergePolicyModal
           visible
+          mode="intentional"
           fromPrefix={mergePolicyModal.fromPrefix}
           toPrefix={mergePolicyModal.toPrefix}
           report={mergePolicyModal.report}
@@ -1617,15 +1650,19 @@ function renderGridTile({
 
 function backupActions({
   singleSelected,
+  canMerge,
   canCompare,
   onRename,
+  onMerge,
   onMove,
   onCompare,
   onDelete,
 }: {
   singleSelected: boolean;
+  canMerge: boolean;
   canCompare: boolean;
   onRename: () => void;
+  onMerge: () => void;
   onMove: () => void;
   onCompare: () => void;
   onDelete: () => void;
@@ -1637,6 +1674,14 @@ function backupActions({
       icon: 'pencil',
       accessibilityLabel: 'Rename',
       onPress: onRename,
+    });
+  }
+  if (canMerge) {
+    actions.push({
+      key: 'merge',
+      icon: 'arrow.triangle.merge',
+      accessibilityLabel: 'Merge into folder',
+      onPress: onMerge,
     });
   }
   actions.push({
