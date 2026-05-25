@@ -27,6 +27,7 @@ import {
   removeActivityEntry,
   removeUploadEntryByKey,
   toReason,
+  type ActivityAutoBackupRunEntry,
   type ActivityEntry,
   type ActivityMoveEntry,
   type ActivityUploadEntry,
@@ -38,6 +39,56 @@ import {
   type PendingUpload,
 } from '@/lib/uploadState';
 import { setUploadSessionActive, useUploadSessionActive } from '@/lib/uploadSession';
+
+// ---------------------------------------------------------------------------
+// Day-label helper for History grouping
+// ---------------------------------------------------------------------------
+
+function dayLabel(timestampMs: number): string {
+  const d = new Date(timestampMs);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  ) {
+    return 'Today';
+  }
+  if (
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate()
+  ) {
+    return 'Yesterday';
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+type HistoryRow =
+  | { type: 'dayHeader'; label: string }
+  | { type: 'entry'; entry: ActivityUploadEntry | ActivityMoveEntry | ActivityAutoBackupRunEntry };
+
+function buildHistoryRows(
+  entries: Array<ActivityUploadEntry | ActivityMoveEntry | ActivityAutoBackupRunEntry>,
+): HistoryRow[] {
+  const rows: HistoryRow[] = [];
+  let lastLabel = '';
+  for (const entry of entries) {
+    const label = dayLabel(entry.lastAt);
+    if (label !== lastLabel) {
+      rows.push({ type: 'dayHeader', label });
+      lastLabel = label;
+    }
+    rows.push({ type: 'entry', entry });
+  }
+  return rows;
+}
 
 export default function ActivityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -64,10 +115,15 @@ export default function ActivityScreen() {
       for (const p of pending) byKey.set(p.remoteKey, p);
       setPendingByKey(byKey);
 
+      // Only check localUri existence for entries that actually have one.
       const uploadEntries = loaded.filter((e): e is ActivityUploadEntry => e.kind === 'upload');
       const statusMap = new Map<string, boolean>();
       await Promise.all(
         uploadEntries.map(async (e) => {
+          if (!e.localUri) {
+            statusMap.set(e.remoteKey, false);
+            return;
+          }
           try {
             const info = await getInfoAsync(e.localUri);
             statusMap.set(e.remoteKey, info.exists);
@@ -95,7 +151,19 @@ export default function ActivityScreen() {
   const uploadFailed = entries.filter(
     (e): e is ActivityUploadEntry => e.kind === 'upload' && e.status === 'failed',
   );
-  const moveFailed = entries.filter((e): e is ActivityMoveEntry => e.kind === 'move');
+  const moveFailed = entries.filter(
+    (e): e is ActivityMoveEntry => e.kind === 'move' && e.status === 'failed',
+  );
+
+  // History: successful uploads, successful moves, and all auto-backup runs.
+  const historyEntries = entries.filter(
+    (e): e is ActivityUploadEntry | ActivityMoveEntry | ActivityAutoBackupRunEntry =>
+      (e.kind === 'upload' && e.status === 'success') ||
+      (e.kind === 'move' && e.status === 'success') ||
+      e.kind === 'autoBackupRun',
+  );
+
+  const historyRows = buildHistoryRows(historyEntries);
 
   async function onResumeUpload(entry: ActivityUploadEntry) {
     if (busy || sessionActive) return;
@@ -111,12 +179,14 @@ export default function ActivityScreen() {
       await removeUploadEntryByKey(entry.remoteKey);
       await refresh();
     } catch (err) {
-      await recordUploadFailure({
-        remoteKey: entry.remoteKey,
-        localUri: entry.localUri,
-        sizeBytes: entry.sizeBytes,
-        ...fromErr(err),
-      }).catch(() => undefined);
+      if (entry.localUri) {
+        await recordUploadFailure({
+          remoteKey: entry.remoteKey,
+          localUri: entry.localUri,
+          sizeBytes: entry.sizeBytes,
+          ...fromErr(err),
+        }).catch(() => undefined);
+      }
       await refresh();
       showAlert('Resume failed', toReason(err));
     } finally {
@@ -208,12 +278,14 @@ export default function ActivityScreen() {
             await resumeUpload(pending);
             await removeUploadEntryByKey(entry.remoteKey).catch(() => undefined);
           } catch (err) {
-            await recordUploadFailure({
-              remoteKey: entry.remoteKey,
-              localUri: entry.localUri,
-              sizeBytes: entry.sizeBytes,
-              ...fromErr(err),
-            }).catch(() => undefined);
+            if (entry.localUri) {
+              await recordUploadFailure({
+                remoteKey: entry.remoteKey,
+                localUri: entry.localUri,
+                sizeBytes: entry.sizeBytes,
+                ...fromErr(err),
+              }).catch(() => undefined);
+            }
             throw err;
           }
         },
@@ -253,8 +325,9 @@ export default function ActivityScreen() {
   }
 
   const isBusy = busy !== null;
-  const needsAttention =
-    uploadFailed.length > 0 || moveFailed.length > 0;
+  const needsAttention = uploadFailed.length > 0 || moveFailed.length > 0;
+  const hasHistory = historyEntries.length > 0;
+  const isEmpty = !needsAttention && !hasHistory;
 
   return (
     <ThemedView style={styles.container}>
@@ -310,7 +383,7 @@ export default function ActivityScreen() {
         </View>
       )}
 
-      {!needsAttention ? (
+      {isEmpty ? (
         <View style={[styles.center, { flex: 1 }]}>
           <ThemedText style={[Type.body, { color: colors.muted, textAlign: 'center' }]}>
             You're all caught up.{'\n'}Failed uploads and moves will show up here.
@@ -318,79 +391,133 @@ export default function ActivityScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: Spacing.xl }}>
-          {/* Section header */}
-          <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
-            <ThemedText style={[Type.label, { color: colors.muted }]}>
-              NEEDS ATTENTION
-            </ThemedText>
-          </View>
+          {needsAttention && (
+            <>
+              <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
+                <ThemedText style={[Type.label, { color: colors.muted }]}>
+                  NEEDS ATTENTION
+                </ThemedText>
+              </View>
 
-          {uploadFailed.map((item) => (
-            <UploadRow
-              key={item.id}
-              entry={item}
-              sourceExists={liveLocalUriStatus.get(item.remoteKey) ?? false}
-              hasPending={pendingByKey.has(item.remoteKey)}
-              busy={busy === item.remoteKey}
-              sessionActive={sessionActive}
-              colors={colors}
-              expanded={expandedId === item.id}
-              onToggleExpand={() =>
-                setExpandedId((prev) => (prev === item.id ? null : item.id))
-              }
-              onResume={() => onResumeUpload(item)}
-              onRemove={() => onRemoveUpload(item)}
-              onCopyDetails={() => {
-                const lines = [
-                  'Failure details',
-                  '---------------',
-                  'Type: upload',
-                  `Reason: ${item.reason ?? '(no reason)'}`,
-                  ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
-                  ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
-                  `Attempts: ${item.attempts}`,
-                  `Last attempt: ${new Date(item.lastAt).toISOString()}`,
-                  `Remote key: ${item.remoteKey}`,
-                ];
-                Clipboard.setStringAsync(lines.join('\n')).then(() => {
-                  showAlert('Copied', 'Failure details copied to clipboard.');
-                }).catch(() => undefined);
-              }}
-            />
-          ))}
+              {uploadFailed.map((item) => (
+                <UploadRow
+                  key={item.id}
+                  entry={item}
+                  sourceExists={liveLocalUriStatus.get(item.remoteKey) ?? false}
+                  hasPending={pendingByKey.has(item.remoteKey)}
+                  busy={busy === item.remoteKey}
+                  sessionActive={sessionActive}
+                  colors={colors}
+                  expanded={expandedId === item.id}
+                  onToggleExpand={() =>
+                    setExpandedId((prev) => (prev === item.id ? null : item.id))
+                  }
+                  onResume={() => onResumeUpload(item)}
+                  onRemove={() => onRemoveUpload(item)}
+                  onCopyDetails={() => {
+                    const lines = [
+                      'Failure details',
+                      '---------------',
+                      'Type: upload',
+                      `Reason: ${item.reason ?? '(no reason)'}`,
+                      ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
+                      ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
+                      `Attempts: ${item.attempts}`,
+                      `Last attempt: ${new Date(item.lastAt).toISOString()}`,
+                      `Remote key: ${item.remoteKey}`,
+                    ];
+                    Clipboard.setStringAsync(lines.join('\n')).then(() => {
+                      showAlert('Copied', 'Failure details copied to clipboard.');
+                    }).catch(() => undefined);
+                  }}
+                />
+              ))}
 
-          {moveFailed.map((item) => (
-            <MoveRow
-              key={item.id}
-              entry={item}
-              busy={busy === item.id}
-              sessionActive={sessionActive}
-              colors={colors}
-              expanded={expandedId === item.id}
-              onToggleExpand={() =>
-                setExpandedId((prev) => (prev === item.id ? null : item.id))
-              }
-              onRetry={() => onRetryMove(item)}
-              onRemove={() => onRemoveEntry(item.id)}
-              onCopyDetails={() => {
-                const lines = [
-                  'Failure details',
-                  '---------------',
-                  'Type: move',
-                  `Reason: ${item.reason ?? '(no reason)'}`,
-                  ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
-                  ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
-                  `Attempts: ${item.attempts}`,
-                  `Last attempt: ${new Date(item.lastAt).toISOString()}`,
-                  `From: ${item.from}`,
-                  `To: ${item.to}`,
-                ];
-                Clipboard.setStringAsync(lines.join('\n')).then(() => {
-                  showAlert('Copied', 'Failure details copied to clipboard.');
-                }).catch(() => undefined);
-              }}
-            />
-          ))}
+              {moveFailed.map((item) => (
+                <MoveRow
+                  key={item.id}
+                  entry={item}
+                  busy={busy === item.id}
+                  sessionActive={sessionActive}
+                  colors={colors}
+                  expanded={expandedId === item.id}
+                  onToggleExpand={() =>
+                    setExpandedId((prev) => (prev === item.id ? null : item.id))
+                  }
+                  onRetry={() => onRetryMove(item)}
+                  onRemove={() => onRemoveEntry(item.id)}
+                  onCopyDetails={() => {
+                    const lines = [
+                      'Failure details',
+                      '---------------',
+                      'Type: move',
+                      `Reason: ${item.reason ?? '(no reason)'}`,
+                      ...(item.failureStatus != null ? [`Status: ${item.failureStatus}`] : []),
+                      ...(item.failureRequestId != null ? [`Request ID: ${item.failureRequestId}`] : []),
+                      `Attempts: ${item.attempts}`,
+                      `Last attempt: ${new Date(item.lastAt).toISOString()}`,
+                      `From: ${item.from}`,
+                      `To: ${item.to}`,
+                    ];
+                    Clipboard.setStringAsync(lines.join('\n')).then(() => {
+                      showAlert('Copied', 'Failure details copied to clipboard.');
+                    }).catch(() => undefined);
+                  }}
+                />
+              ))}
+            </>
+          )}
+
+          {hasHistory && (
+            <>
+              <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
+                <ThemedText style={[Type.label, { color: colors.muted }]}>
+                  HISTORY
+                </ThemedText>
+              </View>
+
+              {historyRows.map((row, idx) => {
+                if (row.type === 'dayHeader') {
+                  return (
+                    <View key={`day-${idx}`} style={styles.dayHeader}>
+                      <ThemedText style={[Type.meta, { color: colors.muted }]}>
+                        {row.label}
+                      </ThemedText>
+                    </View>
+                  );
+                }
+                const { entry } = row;
+                if (entry.kind === 'upload') {
+                  return (
+                    <UploadSuccessRow
+                      key={entry.id}
+                      entry={entry}
+                      colors={colors}
+                      onRemove={() => onRemoveEntry(entry.id)}
+                    />
+                  );
+                }
+                if (entry.kind === 'move') {
+                  return (
+                    <MoveSuccessRow
+                      key={entry.id}
+                      entry={entry}
+                      colors={colors}
+                      onRemove={() => onRemoveEntry(entry.id)}
+                    />
+                  );
+                }
+                return (
+                  <AutoBackupRunRow
+                    key={entry.id}
+                    entry={entry}
+                    colors={colors}
+                    onRemove={() => onRemoveEntry(entry.id)}
+                  />
+                );
+              })}
+            </>
+          )}
         </ScrollView>
       )}
     </ThemedView>
@@ -678,6 +805,126 @@ function MoveRow({
   );
 }
 
+// ---------------------------------------------------------------------------
+// History row components — muted palette, distinct icons
+// ---------------------------------------------------------------------------
+
+type UploadSuccessRowProps = {
+  entry: ActivityUploadEntry;
+  colors: (typeof Colors)['light'];
+  onRemove: () => void;
+};
+
+function UploadSuccessRow({ entry, colors, onRemove }: UploadSuccessRowProps) {
+  const filename = entry.remoteKey.includes('/')
+    ? entry.remoteKey.slice(entry.remoteKey.lastIndexOf('/') + 1)
+    : entry.remoteKey;
+
+  return (
+    <View style={[styles.historyRow, { backgroundColor: colors.surface }]}>
+      <IconSymbol name="checkmark.circle" size={18} color={colors.success} style={styles.historyIcon} />
+      <View style={{ flex: 1, gap: Spacing.xs }}>
+        <ThemedText style={[Type.label, { color: colors.text }]} numberOfLines={1}>
+          {filename}
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]}>
+          Uploaded · {new Date(entry.lastAt).toLocaleString()}
+        </ThemedText>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRemove}
+        style={({ pressed }) => [
+          styles.actionChip,
+          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
+        ]}>
+        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
+      </Pressable>
+    </View>
+  );
+}
+
+type MoveSuccessRowProps = {
+  entry: ActivityMoveEntry;
+  colors: (typeof Colors)['light'];
+  onRemove: () => void;
+};
+
+function MoveSuccessRow({ entry, colors, onRemove }: MoveSuccessRowProps) {
+  const name = entry.from.includes('/')
+    ? entry.from.slice(entry.from.lastIndexOf('/') + 1) || entry.from
+    : entry.from;
+
+  const label = entry.itemKind === 'folder' ? 'Folder move started' : 'Moved';
+
+  return (
+    <View style={[styles.historyRow, { backgroundColor: colors.surface }]}>
+      <IconSymbol name="arrow.right.circle" size={18} color={colors.success} style={styles.historyIcon} />
+      <View style={{ flex: 1, gap: Spacing.xs }}>
+        <ThemedText style={[Type.label, { color: colors.text }]} numberOfLines={1}>
+          {name}
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]} numberOfLines={1}>
+          {label} → {entry.to}
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]}>
+          {new Date(entry.lastAt).toLocaleString()}
+        </ThemedText>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRemove}
+        style={({ pressed }) => [
+          styles.actionChip,
+          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
+        ]}>
+        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
+      </Pressable>
+    </View>
+  );
+}
+
+type AutoBackupRunRowProps = {
+  entry: ActivityAutoBackupRunEntry;
+  colors: (typeof Colors)['light'];
+  onRemove: () => void;
+};
+
+function AutoBackupRunRow({ entry, colors, onRemove }: AutoBackupRunRowProps) {
+  const iconColor = entry.status === 'failed' ? colors.danger : colors.success;
+  const parts: string[] = [];
+  if (entry.uploadedCount > 0) parts.push(`${entry.uploadedCount} uploaded`);
+  if (entry.skippedCount > 0) parts.push(`${entry.skippedCount} skipped`);
+  if (entry.failedCount > 0) parts.push(`${entry.failedCount} failed`);
+  const summary = parts.length > 0 ? parts.join(', ') : 'No new photos';
+
+  return (
+    <View style={[styles.historyRow, { backgroundColor: colors.surface }]}>
+      <IconSymbol name="icloud.and.arrow.up" size={18} color={iconColor} style={styles.historyIcon} />
+      <View style={{ flex: 1, gap: Spacing.xs }}>
+        <ThemedText style={[Type.label, { color: colors.text }]}>
+          Auto-backup run
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]}>
+          {summary}
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]}>
+          {new Date(entry.completedAt).toLocaleString()}
+        </ThemedText>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRemove}
+        style={({ pressed }) => [
+          styles.actionChip,
+          { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 },
+        ]}>
+        <ThemedText style={[Type.label, { color: colors.muted }]}>Remove</ThemedText>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
@@ -702,6 +949,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     marginTop: Spacing.md,
   },
+  dayHeader: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -711,6 +963,19 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     marginHorizontal: Spacing.md,
     marginTop: Spacing.sm,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  historyIcon: {
+    flexShrink: 0,
   },
   rowActions: {
     gap: Spacing.xs,

@@ -3,7 +3,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { api } from './api';
 import type { JobRecord } from './api';
 import type { LLMToolDefinition } from './llm';
-import { loadActivity, type ActivityUploadEntry, type ActivityMoveEntry } from './activityLog';
+import { loadActivity, type ActivityUploadEntry, type ActivityMoveEntry, type ActivityAutoBackupRunEntry } from './activityLog';
 import { loadBackedUpMap } from './backedUpState';
 import { loadAutoBackupState } from './autoBackupState';
 import { loadPendingUploads } from './uploadState';
@@ -272,7 +272,7 @@ const moveTool: AssistantTool = {
 // get_recent_activity returns entries without localUri to avoid leaking
 // internal device paths into the LLM context.
 type RedactedUploadEntry = Omit<ActivityUploadEntry, 'localUri'>;
-type RedactedActivityEntry = RedactedUploadEntry | ActivityMoveEntry;
+type RedactedActivityEntry = RedactedUploadEntry | ActivityMoveEntry | ActivityAutoBackupRunEntry;
 
 const getRecentActivityTool: AssistantTool = {
   definition: {
@@ -280,7 +280,7 @@ const getRecentActivityTool: AssistantTool = {
     function: {
       name: 'get_recent_activity',
       description:
-        'Returns recent upload and move failures from the local activity log (the same source as the Activity tab). Successes are not tracked. Local file paths are redacted. Returns [] if the log is empty.',
+        'Returns recent activity from the local activity log (the same source as the Activity tab). Includes successful uploads, successful moves, auto-backup runs, and failures. Local file paths are redacted. Returns [] if the log is empty.',
       parameters: {
         type: 'object',
         properties: {
@@ -306,11 +306,11 @@ const getRecentActivityTool: AssistantTool = {
 
       let entries: RedactedActivityEntry[] = all.map((e) => {
         if (e.kind === 'upload') {
-          // Strip localUri
+          // Strip localUri to avoid leaking internal device paths into LLM context.
           const { localUri: _dropped, ...rest } = e;
           return rest as RedactedUploadEntry;
         }
-        return e as ActivityMoveEntry;
+        return e as ActivityMoveEntry | ActivityAutoBackupRunEntry;
       });
 
       if (sinceMs !== null && !isNaN(sinceMs)) {

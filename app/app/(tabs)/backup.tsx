@@ -31,7 +31,7 @@ import { getAssistantMutationVersion, setAssistantContextPrefix } from '@/lib/as
 import { useJobs } from '@/lib/jobs';
 import { loadConfig } from '@/lib/config';
 import { basename, dirname, formatBytes, splitPathSegments } from '@/lib/format';
-import { fromErr, recordMoveFailure, toReason } from '@/lib/activityLog';
+import { fromErr, recordMoveFailure, recordMoveSuccess, toReason } from '@/lib/activityLog';
 import { captureApiError } from '@/lib/sentry';
 
 const THUMB_SIZE = 56;
@@ -304,6 +304,8 @@ export default function BrowseScreen() {
                 .map((e: { key: string; reason: string }) => `• ${e.key}: ${e.reason}`)
                 .join('\n'),
           );
+        } else {
+          await recordMoveSuccess({ from: singleSelected.key, to: dest, itemKind: 'file' }).catch(() => undefined);
         }
         setSelection(emptySelection());
         setSelectionMode(false);
@@ -331,6 +333,7 @@ export default function BrowseScreen() {
       const fromPrefix = singleSelected.prefix;
       const res = await api.moveFolder(fromPrefix, dest);
       await addJob(res.jobId, { fromPrefix, toPrefix: dest });
+      await recordMoveSuccess({ from: fromPrefix, to: dest, itemKind: 'folder' }).catch(() => undefined);
       setBusy(null);
       setSelection(emptySelection());
       setSelectionMode(false);
@@ -762,6 +765,7 @@ export default function BrowseScreen() {
         } else {
           totalMoved += res.moved;
           movedFiles.push({ from: key, to: dest });
+          await recordMoveSuccess({ from: key, to: dest, itemKind: 'file' }).catch(() => undefined);
         }
       } catch (err) {
         if (total === 1 && isUserActionableError(err)) {
@@ -804,6 +808,7 @@ export default function BrowseScreen() {
         const res = await api.moveFolder(prefix, dest);
         await addJob(res.jobId, { fromPrefix: prefix, toPrefix: dest });
         movedFolders.push({ from: prefix, to: dest });
+        await recordMoveSuccess({ from: prefix, to: dest, itemKind: 'folder' }).catch(() => undefined);
       } catch (err) {
         if (total === 1 && isUserActionableError(err)) {
           // Destination folder exists — user-actionable. Skip Sync log + Sentry; the alert carries the message.

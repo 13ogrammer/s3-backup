@@ -44,7 +44,7 @@ import {
   removePendingUpload,
   type PendingUpload,
 } from '@/lib/uploadState';
-import { fromErr, recordUploadFailure } from '@/lib/activityLog';
+import { fromErr, recordUploadFailure, recordUploadSuccess } from '@/lib/activityLog';
 import { captureApiError } from '@/lib/sentry';
 import { setUploadSessionActive } from '@/lib/uploadSession';
 
@@ -480,6 +480,10 @@ export default function GalleryScreen() {
               return undefined;
             });
             await uploadAsset(localUri, key, contentType, mediaKind, undefined, metadata);
+            await recordUploadSuccess({
+              remoteKey: key,
+              sizeBytes: fileSizeCacheRef.current.get(asset.id) ?? 0,
+            }).catch(() => undefined);
             try {
               await recordBackedUp(asset.id, key);
             } catch (err) {

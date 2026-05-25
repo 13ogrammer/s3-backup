@@ -6,6 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { loadBackedUpMap, recordBackedUp } from './backedUpState';
 import { loadConfig } from './config';
 import { loadAutoBackupState, saveAutoBackupState } from './autoBackupState';
+import { recordAutoBackupRun } from './activityLog';
 import { addBreadcrumb, captureException, initSentry } from './sentry';
 import { uploadFileBackground } from './upload';
 
@@ -63,6 +64,7 @@ export async function runAutoBackupTick(): Promise<TickResult> {
   initSentry();
   addBreadcrumb({ category: 'autoBackup', message: 'tick start', level: 'info' });
 
+  const startedAt = Date.now();
   const empty: TickResult = { uploaded: 0, skippedLarge: 0, failed: 0 };
 
   const state = await loadAutoBackupState();
@@ -183,6 +185,17 @@ export async function runAutoBackupTick(): Promise<TickResult> {
     largeQueueCount: skippedLarge,
     autoBackupRunning: false,
   });
+
+  const completedAt = Date.now();
+  await recordAutoBackupRun({
+    startedAt,
+    completedAt,
+    uploadedCount: uploaded,
+    failedCount: failed,
+    skippedCount: skippedLarge,
+    // Failed only when there were failures and nothing succeeded.
+    status: uploaded === 0 && failed > 0 ? 'failed' : 'success',
+  }).catch((err) => console.warn('recordAutoBackupRun failed', err));
 
   return { uploaded, skippedLarge, failed };
 }
