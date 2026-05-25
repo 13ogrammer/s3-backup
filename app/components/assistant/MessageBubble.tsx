@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { renderInlineMarkdown } from './inlineMarkdown';
 
 type Props = {
   role: 'user' | 'assistant';
@@ -29,7 +30,12 @@ export function MessageBubble({ role, text }: Props) {
             Type.body,
             isUser ? { color: colors.onAccent } : { color: colors.text },
           ]}>
-          {text}
+          {isUser
+            ? text
+            : renderInlineMarkdown(text, {
+                color: colors.text,
+                codeBg: colors.codeSurface,
+              })}
         </ThemedText>
       </View>
     </View>
