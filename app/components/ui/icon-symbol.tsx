@@ -14,7 +14,7 @@ type IconMappingValue =
   | { mci: MaterialCommunityIconName };
 
 type IconMapping = Record<SymbolViewProps['name'], IconMappingValue>;
-type IconSymbolName = keyof typeof MAPPING;
+export type IconSymbolName = keyof typeof MAPPING;
 
 /**
  * Add your SF Symbols to MaterialIcons (or MaterialCommunityIcons) mappings here.
@@ -56,6 +56,10 @@ const MAPPING = {
   'checkmark.circle': { mci: 'check-circle-outline' },
   'arrow.right.circle': { mci: 'arrow-right-circle-outline' },
   'icloud.and.arrow.up': { mci: 'cloud-upload-outline' },
+  'trash': 'delete-outline',
+  'pencil': 'edit',
+  'folder.badge.plus': { mci: 'folder-move-outline' },
+  'square.on.square': { mci: 'compare' },
 } as IconMapping;
 
 /**
