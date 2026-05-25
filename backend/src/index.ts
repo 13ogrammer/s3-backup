@@ -23,6 +23,7 @@ import { folderPreview } from './handlers/folderPreview.js';
 import { stats } from './handlers/stats.js';
 import { head } from './handlers/head.js';
 import { getMoveJob, cancelMoveJob, JobNotFoundError, InvalidJobIdError } from './handlers/moveJob.js';
+import { mergeFolder } from './handlers/merge.js';
 
 export type RequestContext = {
   requestId: string;
@@ -50,6 +51,7 @@ const routes: Record<string, Route> = {
   'POST /head': head,
   'POST /move-job': getMoveJob,
   'POST /move-job-cancel': cancelMoveJob,
+  'POST /merge-folder': mergeFolder,
 };
 
 export const handler = async (
