@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -14,6 +15,15 @@ import { ModalCard } from '@/components/ui/modal-card';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type BackupMode } from '@/lib/autoBackupState';
+import { validatePrefix } from '@/lib/prefixValidation';
+
+export type AutoBackupModeModalConfirmResult = {
+  mode: BackupMode;
+  customStartDate: number | null;
+  // Sanitised prefix from validatePrefix. Always present.
+  // Mode-switch callers (includePrefix=false) ignore — it echoes initialPrefix.
+  prefix: string;
+};
 
 export type AutoBackupModeModalProps = {
   visible: boolean;
@@ -21,7 +31,14 @@ export type AutoBackupModeModalProps = {
   initialMode?: BackupMode;
   /** Pre-selected date for 'fromDate' mode re-open. */
   initialCustomDate?: number | null;
-  onConfirm: (result: { mode: BackupMode; customStartDate: number | null }) => void;
+  /**
+   * When true, renders inline "Folder prefix" field below the date-picker block.
+   * First-enable only. Defaults to false.
+   */
+  includePrefix?: boolean;
+  /** Initial value for the inline prefix field. settings.tsx passes autoBackupState.prefix. */
+  initialPrefix?: string;
+  onConfirm: (result: AutoBackupModeModalConfirmResult) => void;
   /** Called only when user taps the explicit Cancel button. */
   onCancel: () => void;
 };
@@ -40,10 +57,20 @@ function tenYearsAgo(): Date {
   return d;
 }
 
+function todayDateString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function AutoBackupModeModal({
   visible,
   initialMode,
   initialCustomDate,
+  includePrefix = false,
+  initialPrefix = '',
   onConfirm,
   onCancel,
 }: AutoBackupModeModalProps) {
@@ -55,6 +82,7 @@ export function AutoBackupModeModal({
   const [fromDate, setFromDate] = useState<Date>(
     initialCustomDate != null ? new Date(initialCustomDate) : new Date(),
   );
+  const [prefixDraft, setPrefixDraft] = useState<string>(initialPrefix);
 
   // Sync internal state when the modal is opened (visibility flip).
   const [lastVisible, setLastVisible] = useState(visible);
@@ -63,11 +91,16 @@ export function AutoBackupModeModal({
     if (visible) {
       setSelectedMode(initialMode);
       setFromDate(initialCustomDate != null ? new Date(initialCustomDate) : new Date());
+      setPrefixDraft(initialPrefix);
     }
   }
 
   const today = new Date();
   const minDate = tenYearsAgo();
+
+  // Derive per render — no extra state needed.
+  const prefixValidation = includePrefix ? validatePrefix(prefixDraft) : null;
+  const prefixOk = !includePrefix || prefixValidation!.ok;
 
   function openAndroidDatePicker() {
     DateTimePickerAndroid.open({
@@ -83,16 +116,22 @@ export function AutoBackupModeModal({
 
   function handleConfirm() {
     if (!selectedMode) return;
+    if (includePrefix && !prefixValidation!.ok) return;
+
+    const prefixOut =
+      includePrefix && prefixValidation!.ok ? prefixValidation!.value : initialPrefix;
+
     if (selectedMode === 'fromDate') {
-      onConfirm({ mode: 'fromDate', customStartDate: midnightLocal(fromDate) });
+      onConfirm({ mode: 'fromDate', customStartDate: midnightLocal(fromDate), prefix: prefixOut });
     } else if (selectedMode === 'newOnly') {
-      onConfirm({ mode: 'newOnly', customStartDate: null });
+      onConfirm({ mode: 'newOnly', customStartDate: null, prefix: prefixOut });
     } else {
-      onConfirm({ mode: 'all', customStartDate: null });
+      onConfirm({ mode: 'all', customStartDate: null, prefix: prefixOut });
     }
   }
 
-  const confirmEnabled = selectedMode !== undefined;
+  const modeOk = selectedMode !== undefined;
+  const confirmEnabled = modeOk && prefixOk;
 
   const fromDateLabel = fromDate.toLocaleDateString(undefined, {
     day: '2-digit',
@@ -246,6 +285,55 @@ export function AutoBackupModeModal({
         </View>
       )}
 
+      {/* Prefix block — only rendered when includePrefix is true (first-enable path) */}
+      {includePrefix && (
+        <View
+          style={[
+            styles.prefixSection,
+            { borderTopColor: colors.border },
+          ]}>
+          <ThemedText style={[Type.label, { color: colors.muted }]}>Folder prefix</ThemedText>
+          <TextInput
+            value={prefixDraft}
+            onChangeText={setPrefixDraft}
+            placeholder="auto/"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[
+              styles.prefixInput,
+              {
+                color: colors.text,
+                backgroundColor: colors.surfaceMuted,
+                borderColor: prefixValidation && !prefixValidation.ok ? colors.danger : colors.border,
+              },
+            ]}
+          />
+          {prefixValidation && !prefixValidation.ok ? (
+            <ThemedText style={[Type.meta, { color: colors.danger }]}>
+              {prefixValidation.error}
+            </ThemedText>
+          ) : (
+            <View
+              style={[
+                styles.prefixPreview,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+              ]}>
+              <ThemedText style={[Type.meta, { color: colors.muted }]}>Preview</ThemedText>
+              <ThemedText
+                style={[Type.meta, { color: colors.text, fontWeight: '600' }]}
+                numberOfLines={2}>
+                {prefixValidation && prefixValidation.ok
+                  ? (prefixValidation.value
+                    ? `${prefixValidation.value}${todayDateString()}/IMG_0001.jpg`
+                    : `${todayDateString()}/IMG_0001.jpg`)
+                  : `${todayDateString()}/IMG_0001.jpg`}
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Actions */}
       <View style={styles.actions}>
         <Pressable
@@ -304,6 +392,24 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     gap: Spacing.sm,
+  },
+  prefixSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  prefixInput: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: 16,
+  },
+  prefixPreview: {
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    gap: Spacing.xs,
   },
   actions: {
     flexDirection: 'row',

@@ -17,7 +17,10 @@ import {
   View,
 } from 'react-native';
 
-import { AutoBackupModeModal } from '@/components/auto-backup-mode-modal';
+import {
+  AutoBackupModeModal,
+  type AutoBackupModeModalConfirmResult,
+} from '@/components/auto-backup-mode-modal';
 import { AutoBackupPrefixModal } from '@/components/auto-backup-prefix-modal';
 import { QrScannerModal } from '@/components/qr-scanner-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -190,6 +193,7 @@ export default function SettingsScreen() {
   async function onModeChosenFirstEnable(result: {
     mode: BackupMode;
     customStartDate: number | null;
+    prefix: string;
   }) {
     setModeModalVisible(false);
     const lastCreatedAt =
@@ -199,11 +203,14 @@ export default function SettingsScreen() {
           ? Date.now()
           : result.customStartDate;
 
+    // Atomic write: all 5 fields in a single save so the first tick sees the
+    // correct prefix and doesn't land under the stale default.
     const next = await saveAutoBackupState({
       enabled: true,
       backupMode: result.mode,
       customStartDate: result.customStartDate,
       lastCreatedAt,
+      prefix: result.prefix,
     });
     setAutoBackupState(next);
     await registerAutoBackup();
@@ -218,7 +225,7 @@ export default function SettingsScreen() {
 
   // Dispatch to the correct handler based on whether this is a first-enable
   // or a post-enable mode switch.
-  function onModeConfirm(result: { mode: BackupMode; customStartDate: number | null }) {
+  function onModeConfirm(result: AutoBackupModeModalConfirmResult) {
     if (modeModalIsFirstEnable) {
       onModeChosenFirstEnable(result);
     } else {
@@ -236,6 +243,7 @@ export default function SettingsScreen() {
   async function onModeSwitched(result: {
     mode: BackupMode;
     customStartDate: number | null;
+    prefix: string; // includePrefix is false on this path; result.prefix is the echoed initialPrefix and is intentionally ignored.
   }) {
     setModeModalVisible(false);
     const currentMode = autoBackupState.backupMode;
@@ -928,6 +936,8 @@ export default function SettingsScreen() {
         visible={modeModalVisible}
         initialMode={modeModalIsFirstEnable ? undefined : autoBackupState.backupMode}
         initialCustomDate={modeModalIsFirstEnable ? null : autoBackupState.customStartDate}
+        includePrefix={modeModalIsFirstEnable}
+        initialPrefix={autoBackupState.prefix}
         onConfirm={onModeConfirm}
         onCancel={onModeChooserCancel}
       />
