@@ -1196,7 +1196,6 @@ export default function BrowseScreen() {
             trailing: FILTER_LABELS[filter],
             onPress: () => setFilterSheetVisible(true),
           },
-          { label: 'Sync', onPress: () => router.push('/(tabs)/activity') },
           { label: 'Find duplicates', onPress: () => router.push('/duplicates') },
         ]}
       />
