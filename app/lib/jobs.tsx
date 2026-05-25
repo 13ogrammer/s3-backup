@@ -14,7 +14,7 @@ import React, {
   useState,
 } from 'react';
 import { api } from './api';
-import type { JobRecord } from './api';
+import type { JobRecord, MergePolicy } from './api';
 
 // Persisted job id list lives in documentDirectory so it survives app kills.
 const JOBS_FILE = `${documentDirectory ?? ''}s3backup-jobs-v1.json`;
@@ -31,7 +31,7 @@ type JobsState = {
 export type JobsContextValue = {
   activeJobs: JobRecord[];
   allJobs: JobRecord[];
-  addJob: (jobId: string, meta: { fromPrefix: string; toPrefix: string }) => Promise<void>;
+  addJob: (jobId: string, meta: { fromPrefix: string; toPrefix: string; kind?: JobRecord['kind']; policy?: MergePolicy }) => Promise<void>;
   cancelJob: (jobId: string) => Promise<void>;
   dismissJob: (jobId: string) => void;
   retryFailed: (jobId: string) => Promise<string | null>;
@@ -226,11 +226,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   }, [state.activeJobIds]);
 
   const addJob = useCallback(
-    async (jobId: string, meta: { fromPrefix: string; toPrefix: string }) => {
+    async (jobId: string, meta: { fromPrefix: string; toPrefix: string; kind?: JobRecord['kind']; policy?: MergePolicy }) => {
       const now = new Date().toISOString();
+      const kind = meta.kind ?? 'folder-move';
       const optimistic: JobRecord = {
         jobId,
-        kind: 'folder-move',
+        kind,
         fromPrefix: meta.fromPrefix,
         toPrefix: meta.toPrefix,
         status: 'queued',
@@ -239,6 +240,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         failed: [],
         startedAt: now,
         updatedAt: now,
+        ...(meta.policy ? { policy: meta.policy } : {}),
+        ...(kind === 'merge' ? { renamed: 0, skipped: 0 } : {}),
       };
       updateRecord(optimistic);
       // Immediately fetch the real record from the backend.

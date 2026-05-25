@@ -69,7 +69,7 @@ export type JobStatus =
 
 export type JobRecord = {
   jobId: string;
-  kind: 'folder-move';
+  kind: 'folder-move' | 'merge';
   fromPrefix: string;
   toPrefix: string;
   status: JobStatus;
@@ -82,9 +82,14 @@ export type JobRecord = {
   completedAt?: string;
   error?: string;
   retryOf?: string;
+  policy?: MergePolicy;
+  renamed?: number;
+  skipped?: number;
 };
 
 export type MoveJobAcceptedResponse = { jobId: string; status: 'queued' };
+
+export type MergePolicy = 'replace' | 'keepBoth' | 'skip';
 
 export type FolderTooLargeErrorBody = {
   error: 'folder-too-large';
@@ -243,6 +248,8 @@ export const api = {
     call<MoveJobAcceptedResponse>('/move', { kind: 'folder-keys', fromPrefix, toPrefix, keys, retryOfJobId: jobId }),
   moveFolderKeys: (fromPrefix: string, toPrefix: string, keys: string[]) =>
     call<MoveJobAcceptedResponse>('/move', { kind: 'folder-keys', fromPrefix, toPrefix, keys }),
+  mergeFolder: (fromPrefix: string, toPrefix: string, policy: MergePolicy) =>
+    call<MoveJobAcceptedResponse>('/merge-folder', { fromPrefix, toPrefix, policy }),
   getDerivedUrl: (key: string, tier: DerivedTier) =>
     call<GetDerivedUrlResponse | GetDerivedUrlError>('/get-derived-url', { key, tier }),
   folderPreview: (prefix: string) =>
