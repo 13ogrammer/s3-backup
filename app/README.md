@@ -44,6 +44,26 @@ Profiles in `eas.json`:
 | `preview` | release `.apk` (Android) or signed `.ipa` (iOS), internal distribution; versionCode auto-incremented per build | Smoke test before release; sideload on a device. |
 | `production` | release build with auto-incremented version, ready to submit | App Store / Play Store submission. |
 
+### Sentry (error reporting)
+
+`EXPO_PUBLIC_SENTRY_DSN` is required for error reporting in `preview` and
+`production` builds. The DSN is inlined at bundle time — if the variable is
+absent from the EAS environment, `initSentry()` short-circuits silently:
+`failureCount` still increments, but no events reach Sentry at all.
+
+Add it as an EAS secret (never commit the real value):
+
+```bash
+eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value <your-dsn>
+```
+
+The `eas.json` `preview` and `production` profiles already include an empty
+`EXPO_PUBLIC_SENTRY_DSN: ""` placeholder so EAS reads the variable from
+secrets; the real value must come from the EAS dashboard or the command above.
+
+For the Sentry auth token needed for source-map uploads, see the note in
+`CLAUDE.md` — same pattern, separate secret.
+
 Build commands:
 
 ```bash

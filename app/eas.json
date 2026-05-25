@@ -27,11 +27,17 @@
         "simulator": false
       },
       "autoIncrement": true,
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": ""
+      }
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": ""
+      }
     }
   },
   "submit": {
