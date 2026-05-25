@@ -6,7 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { loadBackedUpMap, recordBackedUp } from './backedUpState';
 import { loadConfig } from './config';
 import { loadAutoBackupState, saveAutoBackupState } from './autoBackupState';
-import { captureException } from './sentry';
+import { addBreadcrumb, captureException, initSentry } from './sentry';
 import { uploadFileBackground } from './upload';
 
 export const AUTO_BACKUP_TASK = 'AUTO_BACKUP_TASK';
@@ -60,6 +60,9 @@ type TickResult = { uploaded: number; skippedLarge: number; failed: number };
 // Fail-closed: early-exit on paused, missing config, no Wi-Fi, or denied
 // permission without advancing lastCreatedAt so the next tick retries.
 export async function runAutoBackupTick(): Promise<TickResult> {
+  initSentry();
+  addBreadcrumb({ category: 'autoBackup', message: 'tick start', level: 'info' });
+
   const empty: TickResult = { uploaded: 0, skippedLarge: 0, failed: 0 };
 
   const state = await loadAutoBackupState();

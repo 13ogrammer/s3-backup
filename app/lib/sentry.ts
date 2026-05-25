@@ -12,7 +12,10 @@ function resolveEnvironment(): string {
   return Updates.channel ?? 'unknown';
 }
 
+let _sentryInitialized = false;
+
 export function initSentry(): void {
+  if (_sentryInitialized) return;
   const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
   if (!dsn) return;
   Sentry.init({
@@ -22,6 +25,7 @@ export function initSentry(): void {
     enableAutoSessionTracking: true,
     tracesSampleRate: 0,
   });
+  _sentryInitialized = true;
 }
 
 export function addBreadcrumb(b: {
