@@ -79,13 +79,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="sparkles" color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          href: null,
-        }}
-      />
     </Tabs>
       {/* Rendered AFTER Tabs so it paints on top — sibling z-order beats
        *  zIndex on Android. JobsStrip carries its own absolute positioning. */}

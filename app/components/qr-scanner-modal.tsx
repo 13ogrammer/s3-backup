@@ -144,10 +144,7 @@ export function QrScannerModal({ visible, onClose, onScanned }: QrScannerModalPr
                 styles.hintText,
                 { color: '#fff', marginTop: Spacing.lg },
               ]}>
-              Point at the QR code from{'\n'}
-              <ThemedText style={{ color: '#fff', fontWeight: '400' }}>
-                npm run qr
-              </ThemedText>
+              Point at the QR code from your setup page
             </ThemedText>
           </View>
         ) : null}
@@ -171,8 +168,7 @@ export function QrScannerModal({ visible, onClose, onScanned }: QrScannerModalPr
                 Type.body,
                 { color: colors.muted, textAlign: 'center', marginTop: Spacing.md },
               ]}>
-              Allow camera access to scan the QR code printed by{' '}
-              <ThemedText style={{ color: colors.text, fontWeight: '600' }}>npm run qr</ThemedText>.
+              Allow camera access to scan the QR code from your setup page.
             </ThemedText>
             {permission?.canAskAgain ? (
               <Pressable
