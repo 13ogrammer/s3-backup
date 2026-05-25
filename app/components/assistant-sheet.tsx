@@ -152,8 +152,14 @@ export function AssistantSheet({ visible, onClose }: Props) {
   //
   // The keyboard's reported endCoordinates.height is measured from the bottom
   // of the screen. In a pageSheet modal there's no tab bar to subtract, so we
-  // use the raw keyboard height.
-  const keyboardPad = useRef(new Animated.Value(0)).current;
+  // use the raw keyboard height. Floor: the system nav-bar inset on Android
+  // (the Modal uses navigationBarTranslucent so content draws behind it).
+  const restingPad = Platform.OS === 'android' ? insets.bottom : 0;
+  const keyboardPad = useRef(new Animated.Value(restingPad)).current;
+
+  useEffect(() => {
+    keyboardPad.setValue(restingPad);
+  }, [keyboardPad, restingPad]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -179,14 +185,14 @@ export function AssistantSheet({ visible, onClose }: Props) {
           useNativeDriver: false,
         }).start();
       } else {
-        keyboardPad.setValue(0);
+        keyboardPad.setValue(restingPad);
       }
     });
     return () => {
       show.remove();
       hide.remove();
     };
-  }, [keyboardPad]);
+  }, [keyboardPad, restingPad]);
 
   // On visible flip false→true: load contextPrefix, privacyAcked, refresh provider,
   // run session reset check.
