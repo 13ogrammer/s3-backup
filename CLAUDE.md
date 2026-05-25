@@ -26,21 +26,23 @@ for the user-facing pitch.
 ```
 s3-backup/
 ├── app/        Expo (React Native, TypeScript). iOS + Android.
-├── backend/    AWS Lambda + API Gateway via SAM.
-├── docs/       Architecture, monetisation, backlog.
+├── backend/    AWS Lambda + API Gateway via SAM, plus SQS worker.
+├── docs/       Architecture, monetisation, deployment.
 └── CLAUDE.md   This file (must stay at root).
 ```
 
 App-side highlights:
-- `app/app/(tabs)/` — three tabs: Gallery / Browse / Settings.
-- `app/components/` — themed primitives, modals (preview, folder picker, rename), `ZoomableImage`.
-- `app/lib/` — `api.ts`, `config.ts`, `upload.ts`, `format.ts`.
+- `app/app/(tabs)/` — four tabs: Dashboard (`index.tsx`), Gallery, Backup (cloud-side bucket browser / reorganise), Assistant. Settings sits in the tabs folder but is `href: null` and reached via the gear icon on Dashboard.
+- `app/app/` top-level (outside `(tabs)`) — `sync.tsx`, `compare.tsx`, `duplicates.tsx`, `about.tsx`.
+- `app/components/` — themed primitives, modals (preview, folder picker, rename, QR scanner, auto-backup mode + prefix, search, date filter, job details), `JobsStrip` for async-job progress, `assistant/` (chat UI parts), `ui/` (alert modal + provider, icon symbols, modal card), `ZoomableImage`.
+- `app/lib/` — cross-cutting client logic: `api.ts`, `config.ts`, upload/auto-backup state (`upload.ts`, `uploadSession.ts`, `uploadState.ts`, `autoBackupState.ts`, `autoBackupTask.ts`), `activityLog.ts`, async-job tracking (`jobs.tsx`), assistant (`assistantActions.ts`, `assistantConfig.ts`, `assistantTools.ts`, `llm.ts`), plus helpers (`format.ts`, `compare.ts`, `duplicates.ts`, `gallerySections.ts`, etc.).
 - `app/constants/theme.ts` — `Colors` / `Radius` / `Spacing` / `Shadow` / `Type`. Use these, not raw hex.
 
 Backend-side highlights:
-- `backend/src/index.ts` — single Lambda router for all routes.
-- `backend/src/handlers/` — `list`, `signUpload`, `signDownload`, `del`, `move`.
-- `backend/src/dev-server.ts` — thin Node `http` wrapper for local dev.
+- `backend/src/index.ts` — single Lambda router for all API routes.
+- `backend/src/handlers/` — `list`, `signUpload`, `signDownload`, `del`, `exists`, `head`, `move`, `moveJob`, `multipart`, `restore`, `getDerivedUrl`, `folderPreview`, `stats`.
+- `backend/src/worker.ts` + `jobs.ts` + `sqs.ts` — SQS-backed async worker for folder-move jobs. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §"Async folder-move jobs".
+- `backend/src/dev-server.ts` + `dev-poller.ts` — Node `http` wrapper + SQS poller for local dev parity with the worker.
 
 ## Conventions (apply on every change)
 
@@ -89,7 +91,7 @@ ECONNREFUSED. The `.env.example` flags this.
 ### Derived asset trees at `.thumbnails/` and `.previews/`
 Two parallel derived-asset trees mirror the bucket's folder structure:
 
-- `.thumbnails/<stripped-key>.thumb.jpg` — 320 px JPEG for Browse tiles
+- `.thumbnails/<stripped-key>.thumb.jpg` — 320 px JPEG for Backup-tab tiles
 - `.previews/<stripped-key>.preview.jpg` — 1920 px JPEG for PreviewModal
 
 Both are generated on demand by the Lambda (`/get-derived-url`) on first
@@ -126,15 +128,15 @@ empty band above the close button on Android.
 A global gitignore is in play. If you want workspace settings tracked,
 `git add -f`.
 
-### Sentry plugin in `app.json` has placeholder slugs
-The `@sentry/react-native/expo` plugin entry in `app/app.json` uses
-`"<your-sentry-org>"` and `"<your-sentry-project>"` as literal placeholder
-strings. Before running `eas build` for a real project, replace them with
-your actual Sentry org and project slugs. Also create the auth-token EAS
-secret (`eas secret:create --scope project --name SENTRY_AUTH_TOKEN --value
-<token>`) — do **not** commit it or add it to `eas.json`. Without these two
-steps, source-map upload silently skips and stack traces will be
-unsymbolicated.
+### Sentry setup (forks only)
+The `@sentry/react-native/expo` plugin in `app/app.json` is wired to this
+project's Sentry org/project. If you fork the repo and want your own crash
+reports, replace the `organization` / `project` values and create an EAS
+secret with `eas secret:create --scope project --name SENTRY_AUTH_TOKEN
+--value <token>` — do **not** commit it or add it to `eas.json`. Without
+that secret, source-map upload silently skips and stack traces will be
+unsymbolicated. EAS builds also require `EXPO_PUBLIC_SENTRY_DSN` to be
+set (see [`app/README.md`](./app/README.md)).
 
 ## Working on a new task
 
