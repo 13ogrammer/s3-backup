@@ -39,9 +39,14 @@ type Props = {
   // Optional second line under the title — useful for showing the source
   // folder of a move / merge / compare to disambiguate from a generic pick.
   subtitle?: string;
+  // Flat-pick mode: tap a folder row to pick it directly (no drill-down, no
+  // confirm button). Used by Merge where the destination is always a sibling
+  // top-level folder. `validatePick`, `confirmLabel`, and `hideNewFolder` are
+  // ignored in this mode.
+  pickOnRowTap?: boolean;
 };
 
-export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick, isFolderSelectable, title, subtitle }: Props) {
+export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLabel, hideNewFolder, validatePick, isFolderSelectable, title, subtitle, pickOnRowTap }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -174,35 +179,41 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
               </ThemedText>
             )}
           </View>
-          <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
-            <ThemedText
-              style={{
-                color: colors.tint,
-                fontWeight: '600',
-                fontSize: 16,
-                opacity: validationError ? 0.35 : 1,
-              }}>
-              {confirmLabel ?? 'Select'}
-            </ThemedText>
-          </Pressable>
+          {pickOnRowTap ? (
+            <View style={styles.headerRightPlaceholder} />
+          ) : (
+            <Pressable onPress={pickHere} disabled={!!validationError} accessibilityRole="button">
+              <ThemedText
+                style={{
+                  color: colors.tint,
+                  fontWeight: '600',
+                  fontSize: 16,
+                  opacity: validationError ? 0.35 : 1,
+                }}>
+                {confirmLabel ?? 'Select'}
+              </ThemedText>
+            </Pressable>
+          )}
         </View>
-        {validationError && (
+        {validationError && !pickOnRowTap && (
           <View style={[styles.errorBanner, { backgroundColor: colors.danger }]}>
             <ThemedText style={styles.errorText}>{validationError}</ThemedText>
           </View>
         )}
 
-        <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
-          {path !== '' && (
-            <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
-              <IconSymbol name="chevron.left" size={20} color={colors.tint} />
-              <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
-            </Pressable>
-          )}
-          <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
-            /{path || '(root)'}
-          </ThemedText>
-        </View>
+        {!pickOnRowTap && (
+          <View style={[styles.breadcrumb, { backgroundColor: colors.surface }]}>
+            {path !== '' && (
+              <Pressable onPress={goUp} style={styles.upButton} accessibilityRole="button" hitSlop={8}>
+                <IconSymbol name="chevron.left" size={20} color={colors.tint} />
+                <ThemedText style={{ color: colors.tint, fontWeight: '500' }}>Up</ThemedText>
+              </Pressable>
+            )}
+            <ThemedText style={[styles.pathText, { color: colors.muted }]} numberOfLines={1}>
+              /{path || '(root)'}
+            </ThemedText>
+          </View>
+        )}
 
         {loading ? (
           <View style={styles.center}>
@@ -216,16 +227,18 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
             ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
             ListEmptyComponent={
               <ThemedText style={[styles.empty, { color: colors.muted }]}>
-                {hideNewFolder
-                  ? `No subfolders. Tap ${confirmLabel ?? 'Select'} to use this folder.`
-                  : `No subfolders. Use "New folder" below or tap ${confirmLabel ?? 'Select'} to use this folder.`}
+                {pickOnRowTap
+                  ? 'No folders available.'
+                  : hideNewFolder
+                    ? `No subfolders. Tap ${confirmLabel ?? 'Select'} to use this folder.`
+                    : `No subfolders. Use "New folder" below or tap ${confirmLabel ?? 'Select'} to use this folder.`}
               </ThemedText>
             }
             renderItem={({ item }) => {
               const selectable = isFolderSelectable ? isFolderSelectable(item) : true;
               return (
                 <Pressable
-                  onPress={selectable ? () => goInto(item) : undefined}
+                  onPress={selectable ? () => (pickOnRowTap ? onPick(item) : goInto(item)) : undefined}
                   disabled={!selectable}
                   accessibilityState={{ disabled: !selectable }}
                   style={({ pressed }) => [
@@ -241,7 +254,7 @@ export function FolderPicker({ visible, onClose, onPick, initialPath, confirmLab
           />
         )}
 
-        {!hideNewFolder && (
+        {!hideNewFolder && !pickOnRowTap && (
           <View
             style={[
               styles.newFolderRow,
@@ -303,6 +316,9 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  headerRightPlaceholder: {
+    width: 44,
   },
   breadcrumb: {
     flexDirection: 'row',

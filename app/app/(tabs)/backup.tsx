@@ -1195,9 +1195,7 @@ export default function BrowseScreen() {
         initialPath={''}
         title="Merge into folder"
         subtitle={mergeSource ? `Merging ${basename(mergeSource.replace(/\/$/, ''))}` : undefined}
-        confirmLabel="Merge here"
-        hideNewFolder
-        validatePick={(p) => mergeSource ? validateMergeTarget(mergeSource, p) : null}
+        pickOnRowTap
         isFolderSelectable={(p) => mergeSource ? validateMergeTarget(mergeSource, p) === null : true}
         onClose={() => { setMergeDestVisible(false); setMergeSource(null); }}
         onPick={runMerge}
