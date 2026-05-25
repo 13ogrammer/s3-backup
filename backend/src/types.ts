@@ -63,6 +63,14 @@ export type MoveResponse = {
 
 export type MoveJobAcceptedResponse = { jobId: string; status: 'queued' };
 
+export type MergePolicy = 'replace' | 'keepBoth' | 'skip';
+
+export type MergeFolderRequest = {
+  fromPrefix: string;
+  toPrefix: string;
+  policy: MergePolicy;
+};
+
 export type FolderTooLargeError = {
   error: 'folder-too-large';
   code: 'folder-too-large';
@@ -81,7 +89,7 @@ export type JobStatus =
 
 export type JobRecord = {
   jobId: string;
-  kind: 'folder-move';
+  kind: 'folder-move' | 'merge';
   fromPrefix: string;
   toPrefix: string;
   status: JobStatus;
@@ -94,6 +102,9 @@ export type JobRecord = {
   completedAt?: string;
   error?: string;
   retryOf?: string;
+  policy?: MergePolicy;
+  renamed?: number;
+  skipped?: number;
 };
 
 export type MoveJobMessage = {
@@ -101,6 +112,9 @@ export type MoveJobMessage = {
   fromPrefix: string;
   toPrefix: string;
   keys?: string[];
+  // undefined means 'folder-move' for back-compat with in-flight messages
+  kind?: 'folder-move' | 'merge';
+  policy?: MergePolicy;
 };
 
 export type MoveJobGetRequest = { jobId: string };

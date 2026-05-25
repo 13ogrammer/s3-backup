@@ -70,7 +70,7 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
 
     const jobId = crypto.randomUUID();
     const retryOf = typeof body.retryOfJobId === 'string' ? body.retryOfJobId : undefined;
-    const record = createJobRecord(jobId, fromPrefix, toPrefix, keys.length, retryOf);
+    const record = createJobRecord(jobId, fromPrefix, toPrefix, keys.length, { retryOf });
     await writeJob(record);
 
     await enqueueMoveJob({ jobId, fromPrefix, toPrefix, keys });
@@ -98,7 +98,7 @@ export async function move(body: MoveRequest, ctx: RequestContext): Promise<Move
   }
 
   const jobId = crypto.randomUUID();
-  const record = createJobRecord(jobId, fromPrefix, toPrefix, counts.total);
+  const record = createJobRecord(jobId, fromPrefix, toPrefix, counts.total, {});
   await writeJob(record);
 
   await enqueueMoveJob({ jobId, fromPrefix, toPrefix });

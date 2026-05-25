@@ -1,6 +1,6 @@
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { BUCKET, s3 } from './s3.js';
-import type { JobRecord, JobStatus, MoveFailure } from './types.js';
+import type { JobRecord, JobStatus, MergePolicy, MoveFailure } from './types.js';
 
 function jobKey(jobId: string): string {
   return `.cache/jobs/${jobId}.json`;
@@ -37,12 +37,13 @@ export function createJobRecord(
   fromPrefix: string,
   toPrefix: string,
   total: number,
-  retryOf?: string,
+  options?: { retryOf?: string; kind?: JobRecord['kind']; policy?: MergePolicy },
 ): JobRecord {
   const now = new Date().toISOString();
+  const kind = options?.kind ?? 'folder-move';
   return {
     jobId,
-    kind: 'folder-move',
+    kind,
     fromPrefix,
     toPrefix,
     status: 'queued',
@@ -51,7 +52,9 @@ export function createJobRecord(
     failed: [],
     startedAt: now,
     updatedAt: now,
-    ...(retryOf ? { retryOf } : {}),
+    ...(options?.retryOf ? { retryOf: options.retryOf } : {}),
+    ...(options?.policy ? { policy: options.policy } : {}),
+    ...(kind === 'merge' ? { renamed: 0, skipped: 0 } : {}),
   };
 }
 
