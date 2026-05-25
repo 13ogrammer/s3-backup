@@ -978,7 +978,7 @@ function galleryActions(
   return [
     {
       key: 'upload',
-      icon: 'arrow.up',
+      icon: 'icloud.and.arrow.up',
       accessibilityLabel: 'Upload selected items',
       onPress: onUpload,
     },

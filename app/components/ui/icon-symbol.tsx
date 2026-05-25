@@ -58,8 +58,8 @@ const MAPPING = {
   'icloud.and.arrow.up': { mci: 'cloud-upload-outline' },
   'trash': 'delete-outline',
   'pencil': 'edit',
-  'folder.badge.plus': { mci: 'folder-move-outline' },
-  'square.on.square': { mci: 'compare' },
+  'tray.and.arrow.down': { mci: 'tray-arrow-down' },
+  'rectangle.split.2x1': { mci: 'view-split-horizontal' },
 } as IconMapping;
 
 /**

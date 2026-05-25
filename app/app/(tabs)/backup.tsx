@@ -1641,14 +1641,14 @@ function backupActions({
   }
   actions.push({
     key: 'move',
-    icon: 'folder.badge.plus',
+    icon: 'tray.and.arrow.down',
     accessibilityLabel: 'Move to folder',
     onPress: onMove,
   });
   if (canCompare) {
     actions.push({
       key: 'compare',
-      icon: 'square.on.square',
+      icon: 'rectangle.split.2x1',
       accessibilityLabel: 'Compare folders',
       onPress: onCompare,
     });
