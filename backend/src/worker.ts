@@ -4,7 +4,7 @@ import { createLogger } from './logger.js';
 import { readJob, writeJob, setTerminalStatus, updateProgress } from './jobs.js';
 import { BUCKET, s3, sanitizePrefix } from './s3.js';
 import { invalidateAncestors } from './folderCountsCache.js';
-import { moveOneObject, existsInBucket } from './handlers/__shared/moveOps.js';
+import { moveOneObject, mergeOneObject, KEEP_BOTH_CAP } from './handlers/__shared/moveOps.js';
 import { mapWithConcurrency } from './concurrency.js';
 import type { MoveJobMessage, MoveFailure } from './types.js';
 
@@ -33,25 +33,28 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
 
   const fromPrefix = sanitizePrefix(record.fromPrefix);
   const toPrefix = sanitizePrefix(record.toPrefix);
+  const isMerge = msg.kind === 'merge';
 
   // Collect keys to process — either from the message (explicit key list for
   // folder-keys / retry-failed) or by walking the source prefix.
   let keys: string[];
   if (msg.keys && msg.keys.length > 0) {
-    // folder-keys mode: caller picked specific keys. Per-item moveOneObject
-    // handles destination collisions into JobRecord.failed[]; do NOT reject
-    // the whole job because the destination prefix has other content.
+    // folder-keys mode: caller picked specific keys. Per-item mergeOneObject /
+    // moveOneObject handles collisions; do NOT reject the whole job because the
+    // destination prefix has other content.
     keys = msg.keys;
   } else {
-    // Full-folder mode: refuse if destination has any existing content, since
-    // the source is moved wholesale and silent overwrites would be data loss.
-    const destCheck = await s3.send(
-      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: toPrefix, MaxKeys: 1 }),
-    );
-    if (destCheck.Contents && destCheck.Contents.length > 0) {
-      await setTerminalStatus(record, 'failed', 'destination occupied');
-      log.warn('destination occupied, aborting', { jobId: msg.jobId, toPrefix });
-      return;
+    if (!isMerge) {
+      // Full-folder move: refuse if destination has any existing content, since
+      // the source is moved wholesale and silent overwrites would be data loss.
+      const destCheck = await s3.send(
+        new ListObjectsV2Command({ Bucket: BUCKET, Prefix: toPrefix, MaxKeys: 1 }),
+      );
+      if (destCheck.Contents && destCheck.Contents.length > 0) {
+        await setTerminalStatus(record, 'failed', 'destination occupied');
+        log.warn('destination occupied, aborting', { jobId: msg.jobId, toPrefix });
+        return;
+      }
     }
 
     keys = [];
@@ -78,6 +81,8 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
   }
 
   let moved = 0;
+  let renamed = 0;
+  let skipped = 0;
   const failed: MoveFailure[] = [];
   let pendingFlush = 0;
 
@@ -98,8 +103,15 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
     await mapWithConcurrency(batch, WORKER_PARALLELISM, async (key) => {
       const newKey = toPrefix + key.slice(fromPrefix.length);
       try {
-        await moveOneObject(key, newKey);
-        moved += 1;
+        if (isMerge) {
+          const result = await mergeOneObject(key, newKey, msg.policy!, { keepBothCap: KEEP_BOTH_CAP });
+          moved += 1;
+          if (result.outcome === 'renamed') renamed += 1;
+          if (result.outcome === 'skipped') skipped += 1;
+        } else {
+          await moveOneObject(key, newKey);
+          moved += 1;
+        }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         log.warn('item move failed', { key, reason });
@@ -111,6 +123,7 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
     if (pendingFlush >= PROGRESS_FLUSH_INTERVAL) {
       record.moved = moved;
       record.failed = failed;
+      if (isMerge) { record.renamed = renamed; record.skipped = skipped; }
       await updateProgress(record, moved, [...failed]);
       pendingFlush = 0;
     }
@@ -119,6 +132,7 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
   // Final terminal write.
   record.moved = moved;
   record.failed = failed;
+  if (isMerge) { record.renamed = renamed; record.skipped = skipped; }
   const terminalStatus = failed.length > 0 ? 'completed-with-errors' : 'completed';
   await setTerminalStatus(record, terminalStatus);
 
