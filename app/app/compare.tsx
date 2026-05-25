@@ -142,6 +142,17 @@ export default function CompareScreen() {
 
       const diff = diffFolders(prefixA, prefixB, scanA, scanB);
       setResult(diff);
+      // Seed thumbCache with previewUrls from /list responses to avoid
+      // a redundant signed-URL round-trip for files already in view.
+      setThumbCache((prev) => {
+        const seed = new Map(prev);
+        for (const f of [...scanA.files, ...scanB.files]) {
+          if (f.previewUrl && !seed.has(f.key)) {
+            seed.set(f.key, f.previewUrl);
+          }
+        }
+        return seed;
+      });
       setScanState('done');
     } catch (err) {
       if (controller.signal.aborted) {
@@ -584,8 +595,8 @@ export default function CompareScreen() {
 
   // ---- Render helpers ----
 
-  function renderThumb(key: string, kind: 'image' | 'video' | 'other') {
-    const thumbUrl = thumbCache.get(key);
+  function renderThumb(key: string, kind: 'image' | 'video' | 'other', previewUrl?: string) {
+    const thumbUrl = thumbCache.get(key) ?? previewUrl;
     if (!thumbUrl && kind !== 'other') ensureThumb(key, kind);
     return (
       <View style={[styles.thumbSlot, { backgroundColor: colors.surfaceMuted }]}>
@@ -756,7 +767,7 @@ export default function CompareScreen() {
           <View style={[styles.sideLabel, { backgroundColor: colors.accentSoft }]}>
             <ThemedText style={[Type.meta, { color: colors.tint, fontWeight: '600' }]}>A</ThemedText>
           </View>
-          {renderThumb(pair.a.key, pair.a.kind)}
+          {renderThumb(pair.a.key, pair.a.kind, pair.a.previewUrl)}
           <ThemedText style={[Type.meta, { color: colors.text, flex: 1 }]} numberOfLines={2}>
             {pair.a.key}
           </ThemedText>
@@ -766,7 +777,7 @@ export default function CompareScreen() {
           <View style={[styles.sideLabel, { backgroundColor: colors.surfaceMuted }]}>
             <ThemedText style={[Type.meta, { color: colors.muted, fontWeight: '600' }]}>B</ThemedText>
           </View>
-          {renderThumb(pair.b.key, pair.b.kind)}
+          {renderThumb(pair.b.key, pair.b.kind, pair.b.previewUrl)}
           <ThemedText style={[Type.meta, { color: colors.text, flex: 1 }]} numberOfLines={2}>
             {pair.b.key}
           </ThemedText>
@@ -911,7 +922,7 @@ export default function CompareScreen() {
                 Shadow.card,
               ]}>
               <View style={styles.sideRow}>
-                {renderThumb(f.key, f.kind)}
+                {renderThumb(f.key, f.kind, f.previewUrl)}
                 <ThemedText style={[Type.meta, { color: colors.text, flex: 1 }]} numberOfLines={2}>
                   {f.key}
                 </ThemedText>

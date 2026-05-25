@@ -108,6 +108,17 @@ export default function DuplicatesScreen() {
       if (!cancelledRef.current) {
         const found = groupByEtag(allFiles);
         setGroups(found);
+        // Seed thumbCache with any previewUrl values already returned by /list
+        // so we skip a redundant signed-URL round-trip on first render.
+        setThumbCache((prev) => {
+          const seed = new Map(prev);
+          for (const f of allFiles) {
+            if (f.previewUrl && !seed.has(f.key)) {
+              seed.set(f.key, f.previewUrl);
+            }
+          }
+          return seed;
+        });
         setScanState('done');
       } else {
         setScanState('idle');
@@ -359,10 +370,7 @@ export default function DuplicatesScreen() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: Spacing.sm }}>
         <View style={styles.thumbStrip}>
           {group.files.map((f) => {
-            const thumbUrl = thumbCache.get(f.key);
-            if (!thumbUrl) {
-              ensureThumb(f.key, f.kind);
-            }
+            const thumbUrl = thumbCache.get(f.key) ?? f.previewUrl;
             return (
               <View key={f.key} style={[styles.thumbSlot, { backgroundColor: colors.surfaceMuted }]}>
                 {thumbUrl ? (
