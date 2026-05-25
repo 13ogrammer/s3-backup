@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -29,6 +29,155 @@ type GroupDecision =
   | { kind: 'keep-oldest' }
   | { kind: 'manual'; keepKey: string };
 
+// ---------- Module-scope memoised card component ----------
+
+type GroupCardProps = {
+  group: DuplicateGroup;
+  decision: GroupDecision | undefined;
+  applying: boolean;
+  thumbCache: Map<string, string>;
+  colors: typeof Colors.light;
+  onSetDecision: (groupId: string, d: GroupDecision) => void;
+  onPickManual: (group: DuplicateGroup) => void;
+  onConfirmApply: (group: DuplicateGroup) => void;
+};
+
+const THUMB_SIZE = 56;
+
+const GroupCard = React.memo(function GroupCard({
+  group,
+  decision,
+  applying,
+  thumbCache,
+  colors,
+  onSetDecision,
+  onPickManual,
+  onConfirmApply,
+}: GroupCardProps) {
+  const name = basename(group.files[0]!.key);
+
+  return (
+    <View style={[dupStyles.card, { backgroundColor: colors.surface }, Shadow.card]}>
+      <View style={dupStyles.cardHeader}>
+        <ThemedText style={[Type.bodyStrong, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+          {name}
+        </ThemedText>
+        <ThemedText style={[Type.meta, { color: colors.muted }]}>
+          {group.files.length} copies · save {formatBytes(group.recoverableBytes)}
+        </ThemedText>
+      </View>
+
+      {/* Thumb strip stays a horizontal ScrollView — groups are 2–10 items */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: Spacing.sm }}>
+        <View style={dupStyles.thumbStrip}>
+          {group.files.map((f) => {
+            const thumbUrl = thumbCache.get(f.key) ?? f.previewUrl;
+            return (
+              <View key={f.key} style={[dupStyles.thumbSlot, { backgroundColor: colors.surfaceMuted }]}>
+                {thumbUrl ? (
+                  <Image
+                    source={{ uri: thumbUrl }}
+                    style={dupStyles.thumbImg}
+                    contentFit="cover"
+                    recyclingKey={f.key}
+                  />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color={colors.muted} />
+                )}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      <View style={{ marginTop: Spacing.xs }}>
+        {group.files.map((f) => (
+          <View key={f.key} style={dupStyles.fileRow}>
+            <ThemedText style={[Type.meta, { color: colors.muted, flex: 1 }]} numberOfLines={1}>
+              {f.key}
+            </ThemedText>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              {formatBytes(f.size)}
+            </ThemedText>
+          </View>
+        ))}
+      </View>
+
+      <View style={dupStyles.actionRow}>
+        <Pressable
+          onPress={() => onSetDecision(group.id, { kind: 'keep-newest' })}
+          style={({ pressed }) => [
+            dupStyles.actionChip,
+            {
+              backgroundColor: decision?.kind === 'keep-newest' ? colors.tint : colors.surfaceMuted,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}>
+          <ThemedText
+            style={[Type.meta, { color: decision?.kind === 'keep-newest' ? colors.onAccent : colors.text }]}>
+            Keep newest
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => onSetDecision(group.id, { kind: 'keep-oldest' })}
+          style={({ pressed }) => [
+            dupStyles.actionChip,
+            {
+              backgroundColor: decision?.kind === 'keep-oldest' ? colors.tint : colors.surfaceMuted,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}>
+          <ThemedText
+            style={[Type.meta, { color: decision?.kind === 'keep-oldest' ? colors.onAccent : colors.text }]}>
+          Keep oldest
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => onPickManual(group)}
+          style={({ pressed }) => [
+            dupStyles.actionChip,
+            {
+              backgroundColor: decision?.kind === 'manual' ? colors.tint : colors.surfaceMuted,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}>
+          <ThemedText
+            style={[Type.meta, { color: decision?.kind === 'manual' ? colors.onAccent : colors.text }]}>
+            Pick manually
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => onSetDecision(group.id, { kind: 'skip' })}
+          style={({ pressed }) => [
+            dupStyles.actionChip,
+            {
+              backgroundColor: decision?.kind === 'skip' ? colors.accentSoft : colors.surfaceMuted,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}>
+          <ThemedText style={[Type.meta, { color: colors.tint }]}>Skip</ThemedText>
+        </Pressable>
+      </View>
+
+      {decision && decision.kind !== 'skip' && (
+        <Pressable
+          onPress={() => onConfirmApply(group)}
+          disabled={applying}
+          style={({ pressed }) => [
+            dupStyles.applyButton,
+            { backgroundColor: colors.danger, opacity: pressed || applying ? 0.7 : 1 },
+          ]}>
+          <ThemedText style={[Type.label, { color: colors.onAccent, fontWeight: '600' }]}>
+            Apply — delete duplicates
+          </ThemedText>
+        </Pressable>
+      )}
+    </View>
+  );
+});
+
+// ---------- Screen ----------
+
 export default function DuplicatesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -50,6 +199,10 @@ export default function DuplicatesScreen() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const cancelledRef = useRef(false);
+
+  // Mirror for stable onViewableItemsChanged callback (avoids stale closure).
+  const thumbCacheRef = useRef<Map<string, string>>(thumbCache);
+  thumbCacheRef.current = thumbCache;
 
   const pendingGroups = groups.filter((g) => {
     const d = decisions.get(g.id);
@@ -133,17 +286,17 @@ export default function DuplicatesScreen() {
     cancelledRef.current = true;
   }
 
-  function setDecision(groupId: string, decision: GroupDecision) {
+  const handleSetDecision = useCallback((groupId: string, decision: GroupDecision) => {
     setDecisions((prev) => {
       const next = new Map(prev);
       next.set(groupId, decision);
       return next;
     });
-  }
+  }, []);
 
   function ensureThumb(key: string, kind: 'image' | 'video' | 'other') {
     if (kind === 'other') return;
-    if (thumbCache.has(key)) return;
+    if (thumbCacheRef.current.has(key)) return;
     api
       .getDerivedUrl(key, 'thumbnail')
       .then((res) => {
@@ -223,41 +376,51 @@ export default function DuplicatesScreen() {
     }
   }
 
-  function confirmApplyGroup(group: DuplicateGroup) {
-    const decision = decisions.get(group.id);
-    if (!decision || decision.kind === 'skip') {
-      showAlert('No action selected', 'Choose Keep newest, Keep oldest, or Pick manually first.');
-      return;
-    }
+  const handleConfirmApply = useCallback((group: DuplicateGroup) => {
+    setDecisions((prev) => {
+      const decision = prev.get(group.id);
+      if (!decision || decision.kind === 'skip') {
+        showAlert('No action selected', 'Choose Keep newest, Keep oldest, or Pick manually first.');
+        return prev;
+      }
 
-    let { discard } = decision.kind === 'keep-newest'
-      ? pickKeepers(group, 'newest')
-      : decision.kind === 'keep-oldest'
-      ? pickKeepers(group, 'oldest')
-      : { discard: group.files.filter((f) => f.key !== (decision as { keepKey: string }).keepKey) };
+      let { discard } = decision.kind === 'keep-newest'
+        ? pickKeepers(group, 'newest')
+        : decision.kind === 'keep-oldest'
+        ? pickKeepers(group, 'oldest')
+        : { discard: group.files.filter((f) => f.key !== (decision as { keepKey: string }).keepKey) };
 
-    const bytes = discard.reduce((acc, f) => acc + f.size, 0);
+      const bytes = discard.reduce((acc, f) => acc + f.size, 0);
+      showAlert(
+        'Delete duplicates?',
+        `This will permanently delete ${discard.length} file(s) (${formatBytes(bytes)}). S3 versioning recommended.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => runApplyGroup(group, decision),
+          },
+        ],
+      );
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAlert]);
+
+  const handlePickManual = useCallback((group: DuplicateGroup) => {
+    const options = group.files.map((f) => ({
+      text: `Keep: ${basename(f.key)} (${new Date(f.lastModified).toLocaleDateString()})`,
+      onPress: () => handleSetDecision(group.id, { kind: 'manual', keepKey: f.key }),
+    }));
     showAlert(
-      'Delete duplicates?',
-      `This will permanently delete ${discard.length} file(s) (${formatBytes(bytes)}). S3 versioning recommended.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => runApplyGroup(group, decision),
-        },
-      ],
+      'Pick which file to keep',
+      'All others in this group will be deleted.',
+      [...options, { text: 'Cancel', style: 'cancel' as const }],
     );
-  }
+  }, [showAlert, handleSetDecision]);
 
   function confirmBatchApply() {
-    const actionable = pendingGroups.filter((g) => {
-      const d = decisions.get(g.id);
-      return d && d.kind !== 'skip';
-    });
-
-    // For groups with no explicit decision, default to keep-newest.
     const toProcess = pendingGroups.map((g) => ({
       group: g,
       decision: decisions.get(g.id) ?? ({ kind: 'keep-newest' } as GroupDecision),
@@ -363,168 +526,56 @@ export default function DuplicatesScreen() {
     ]);
   }
 
-  // ---- Render helpers ----
+  // extraData invalidates memoised cards when decisions, thumbCache, or applying change.
+  const extraData = useMemo(
+    () => ({ decisions, thumbCache, applying }),
+    [decisions, thumbCache, applying],
+  );
 
-  function renderThumbStrip(group: DuplicateGroup) {
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: Spacing.sm }}>
-        <View style={styles.thumbStrip}>
-          {group.files.map((f) => {
-            const thumbUrl = thumbCache.get(f.key) ?? f.previewUrl;
-            return (
-              <View key={f.key} style={[styles.thumbSlot, { backgroundColor: colors.surfaceMuted }]}>
-                {thumbUrl ? (
-                  <Image
-                    source={{ uri: thumbUrl }}
-                    style={styles.thumbImg}
-                    contentFit="cover"
-                    recyclingKey={f.key}
-                  />
-                ) : (
-                  <Ionicons name="image-outline" size={22} color={colors.muted} />
-                )}
-              </View>
-            );
-          })}
-        </View>
-      </ScrollView>
-    );
-  }
+  const renderGroupCard = useCallback(
+    ({ item: group }: { item: DuplicateGroup }) => (
+      <GroupCard
+        group={group}
+        decision={decisions.get(group.id)}
+        applying={applying}
+        thumbCache={thumbCache}
+        colors={colors}
+        onSetDecision={handleSetDecision}
+        onPickManual={handlePickManual}
+        onConfirmApply={handleConfirmApply}
+      />
+    ),
+    // decisions / thumbCache / applying are in extraData so FlatList re-renders;
+    // we include them here so each card receives the correct current values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [extraData, colors, handleSetDecision, handlePickManual, handleConfirmApply],
+  );
 
-  function renderGroupCard({ item: group }: { item: DuplicateGroup }) {
-    const decision = decisions.get(group.id);
-    const name = basename(group.files[0]!.key);
+  // ---- Viewability-driven lazy thumb fetch ----
 
-    return (
-      <View style={[styles.card, { backgroundColor: colors.surface }, Shadow.card]}>
-        <View style={styles.cardHeader}>
-          <ThemedText style={[Type.bodyStrong, { color: colors.text, flex: 1 }]} numberOfLines={1}>
-            {name}
-          </ThemedText>
-          <ThemedText style={[Type.meta, { color: colors.muted }]}>
-            {group.files.length} copies · save {formatBytes(group.recoverableBytes)}
-          </ThemedText>
-        </View>
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 10 }).current;
 
-        {renderThumbStrip(group)}
-
-        <View style={{ marginTop: Spacing.xs }}>
-          {group.files.map((f) => (
-            <View key={f.key} style={styles.fileRow}>
-              <ThemedText style={[Type.meta, { color: colors.muted, flex: 1 }]} numberOfLines={1}>
-                {f.key}
-              </ThemedText>
-              <ThemedText style={[Type.meta, { color: colors.muted }]}>
-                {formatBytes(f.size)}
-              </ThemedText>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={() => setDecision(group.id, { kind: 'keep-newest' })}
-            style={({ pressed }) => [
-              styles.actionChip,
-              {
-                backgroundColor:
-                  decision?.kind === 'keep-newest' ? colors.tint : colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}>
-            <ThemedText
-              style={[
-                Type.meta,
-                { color: decision?.kind === 'keep-newest' ? colors.onAccent : colors.text },
-              ]}>
-              Keep newest
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => setDecision(group.id, { kind: 'keep-oldest' })}
-            style={({ pressed }) => [
-              styles.actionChip,
-              {
-                backgroundColor:
-                  decision?.kind === 'keep-oldest' ? colors.tint : colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}>
-            <ThemedText
-              style={[
-                Type.meta,
-                { color: decision?.kind === 'keep-oldest' ? colors.onAccent : colors.text },
-              ]}>
-              Keep oldest
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => showManualPicker(group)}
-            style={({ pressed }) => [
-              styles.actionChip,
-              {
-                backgroundColor:
-                  decision?.kind === 'manual' ? colors.tint : colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}>
-            <ThemedText
-              style={[
-                Type.meta,
-                { color: decision?.kind === 'manual' ? colors.onAccent : colors.text },
-              ]}>
-              Pick manually
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => setDecision(group.id, { kind: 'skip' })}
-            style={({ pressed }) => [
-              styles.actionChip,
-              {
-                backgroundColor:
-                  decision?.kind === 'skip' ? colors.accentSoft : colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}>
-            <ThemedText style={[Type.meta, { color: colors.tint }]}>Skip</ThemedText>
-          </Pressable>
-        </View>
-
-        {decision && decision.kind !== 'skip' && (
-          <Pressable
-            onPress={() => confirmApplyGroup(group)}
-            disabled={applying}
-            style={({ pressed }) => [
-              styles.applyButton,
-              { backgroundColor: colors.danger, opacity: pressed || applying ? 0.7 : 1 },
-            ]}>
-            <ThemedText style={[Type.label, { color: colors.onAccent, fontWeight: '600' }]}>
-              Apply — delete duplicates
-            </ThemedText>
-          </Pressable>
-        )}
-      </View>
-    );
-  }
-
-  function showManualPicker(group: DuplicateGroup) {
-    const options = group.files.map((f) => ({
-      text: `Keep: ${basename(f.key)} (${new Date(f.lastModified).toLocaleDateString()})`,
-      onPress: () => setDecision(group.id, { kind: 'manual', keepKey: f.key }),
-    }));
-    showAlert(
-      'Pick which file to keep',
-      'All others in this group will be deleted.',
-      [...options, { text: 'Cancel', style: 'cancel' as const }],
-    );
-  }
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: Array<{ item: DuplicateGroup }> }) => {
+      for (const { item: group } of viewableItems) {
+        for (const f of group.files) {
+          if (f.kind === 'other') continue;
+          if (thumbCacheRef.current.has(f.key) || f.previewUrl) continue;
+          ensureThumb(f.key, f.kind);
+        }
+      }
+    },
+    // ensureThumb is stable (no deps). thumbCacheRef is a ref, always current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // ---- Main render ----
 
   if (auditVisible) {
     return (
-      <ThemedView style={styles.container}>
-        <View style={styles.auditHeader}>
+      <ThemedView style={dupStyles.container}>
+        <View style={dupStyles.auditHeader}>
           <Pressable onPress={() => setAuditVisible(false)} hitSlop={8}>
             <Ionicons name="arrow-back" size={22} color={colors.tint} />
           </Pressable>
@@ -536,11 +587,11 @@ export default function DuplicatesScreen() {
           </Pressable>
         </View>
         {auditLoading ? (
-          <View style={styles.center}>
+          <View style={dupStyles.center}>
             <ActivityIndicator />
           </View>
         ) : auditEntries.length === 0 ? (
-          <View style={styles.center}>
+          <View style={dupStyles.center}>
             <ThemedText style={{ color: colors.muted }}>No entries yet.</ThemedText>
           </View>
         ) : (
@@ -549,7 +600,7 @@ export default function DuplicatesScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl }}
             renderItem={({ item }) => (
-              <View style={[styles.auditEntry, { backgroundColor: colors.surface }]}>
+              <View style={[dupStyles.auditEntry, { backgroundColor: colors.surface }]}>
                 <ThemedText style={[Type.meta, { color: colors.muted }]}>
                   {new Date(item.at).toLocaleString()} · {item.strategy}
                 </ThemedText>
@@ -568,9 +619,9 @@ export default function DuplicatesScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={dupStyles.container}>
       {/* Versioning advisory banner — always shown */}
-      <View style={[styles.banner, { backgroundColor: colors.accentSoft }]}>
+      <View style={[dupStyles.banner, { backgroundColor: colors.accentSoft }]}>
         <Ionicons name="shield-checkmark-outline" size={16} color={colors.tint} />
         <ThemedText style={[Type.meta, { color: colors.tint, flex: 1 }]}>
           Enable S3 versioning before deleting — it lets you restore files if you change your mind.
@@ -578,24 +629,24 @@ export default function DuplicatesScreen() {
       </View>
 
       {scanState === 'idle' && (
-        <View style={styles.center}>
+        <View style={dupStyles.center}>
           <Pressable
             onPress={startScan}
             style={({ pressed }) => [
-              styles.scanButton,
+              dupStyles.scanButton,
               { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
             ]}>
             <Ionicons name="search" size={20} color={colors.onAccent} />
             <ThemedText style={[Type.bodyStrong, { color: colors.onAccent }]}>Scan bucket</ThemedText>
           </Pressable>
-          <Pressable onPress={openAuditLog} style={styles.auditLink}>
+          <Pressable onPress={openAuditLog} style={dupStyles.auditLink}>
             <ThemedText style={[Type.label, { color: colors.muted }]}>View audit log</ThemedText>
           </Pressable>
         </View>
       )}
 
       {scanState === 'scanning' && (
-        <View style={styles.center}>
+        <View style={dupStyles.center}>
           <ActivityIndicator size="large" color={colors.tint} />
           <ThemedText style={[Type.body, { color: colors.text, marginTop: Spacing.md }]}>
             Scanning…
@@ -603,18 +654,18 @@ export default function DuplicatesScreen() {
           <ThemedText style={[Type.meta, { color: colors.muted, marginTop: Spacing.xs }]}>
             {progress.filesScanned} files scanned · page {progress.pagesFetched}
           </ThemedText>
-          <Pressable onPress={cancelScan} style={styles.auditLink}>
+          <Pressable onPress={cancelScan} style={dupStyles.auditLink}>
             <ThemedText style={[Type.label, { color: colors.danger }]}>Cancel</ThemedText>
           </Pressable>
         </View>
       )}
 
       {scanState === 'error' && (
-        <View style={styles.center}>
+        <View style={dupStyles.center}>
           <ThemedText style={{ color: colors.danger }}>{scanError}</ThemedText>
           <Pressable
             onPress={startScan}
-            style={({ pressed }) => [styles.retryButton, { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 }]}>
+            style={({ pressed }) => [dupStyles.retryButton, { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 }]}>
             <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Retry</ThemedText>
           </Pressable>
         </View>
@@ -623,7 +674,7 @@ export default function DuplicatesScreen() {
       {scanState === 'done' && (
         <>
           {/* Summary header */}
-          <View style={[styles.summaryBar, { backgroundColor: colors.surfaceMuted }]}>
+          <View style={[dupStyles.summaryBar, { backgroundColor: colors.surfaceMuted }]}>
             <View style={{ flex: 1 }}>
               {pendingGroups.length === 0 ? (
                 <ThemedText style={[Type.bodyStrong, { color: colors.text }]}>No duplicates found</ThemedText>
@@ -657,12 +708,15 @@ export default function DuplicatesScreen() {
               keyExtractor={(g) => g.id}
               contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxl }}
               renderItem={renderGroupCard}
+              extraData={extraData}
+              viewabilityConfig={viewabilityConfig}
+              onViewableItemsChanged={onViewableItemsChanged}
               ListHeaderComponent={
                 <Pressable
                   onPress={confirmBatchApply}
                   disabled={applying}
                   style={({ pressed }) => [
-                    styles.batchButton,
+                    dupStyles.batchButton,
                     { backgroundColor: colors.danger, opacity: applying || pressed ? 0.7 : 1 },
                   ]}>
                   <ThemedText style={[Type.bodyStrong, { color: colors.onAccent }]}>
@@ -681,12 +735,12 @@ export default function DuplicatesScreen() {
           )}
 
           {pendingGroups.length === 0 && (
-            <View style={styles.center}>
+            <View style={dupStyles.center}>
               <Ionicons name="checkmark-circle-outline" size={48} color={colors.tint} />
               <ThemedText style={[Type.body, { color: colors.muted, marginTop: Spacing.sm }]}>
                 {groups.length === 0 ? 'No duplicates found in this bucket.' : 'All duplicates resolved.'}
               </ThemedText>
-              <Pressable onPress={openAuditLog} style={styles.auditLink}>
+              <Pressable onPress={openAuditLog} style={dupStyles.auditLink}>
                 <ThemedText style={[Type.label, { color: colors.muted }]}>View audit log</ThemedText>
               </Pressable>
             </View>
@@ -694,9 +748,10 @@ export default function DuplicatesScreen() {
         </>
       )}
 
+      {/* Overlay rendered AFTER FlatList so last-paint wins on Android */}
       {applying && (
-        <View style={styles.busyOverlay}>
-          <ThemedView style={styles.busyCard}>
+        <View style={dupStyles.busyOverlay}>
+          <ThemedView style={dupStyles.busyCard}>
             <ActivityIndicator />
             <ThemedText>Deleting duplicates…</ThemedText>
           </ThemedView>
@@ -706,9 +761,7 @@ export default function DuplicatesScreen() {
   );
 }
 
-const THUMB_SIZE = 56;
-
-const styles = StyleSheet.create({
+const dupStyles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
   banner: {
