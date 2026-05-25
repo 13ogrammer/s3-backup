@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -36,7 +36,7 @@ import {
 } from '@/lib/assistantConfig';
 import { executeCreateFolder, executeMove } from '@/lib/assistantActions';
 import { LLMError, postChat, type LLMMessage } from '@/lib/llm';
-import { ASSISTANT_TOOLS, isPendingAction, TOOL_NAMES } from '@/lib/assistantTools';
+import { buildAssistantTools, isPendingAction, TOOL_NAMES } from '@/lib/assistantTools';
 import { useJobs } from '@/lib/jobs';
 import {
   abortRef,
@@ -68,10 +68,20 @@ function uid(): string {
 function buildSystemPrompt(contextPrefix: string | null): string {
   const base =
     "You are a helpful assistant for an S3 backup app. You can answer questions about the user's S3 bucket using the tools provided. You can create folders and move files or folders for the user. You cannot delete anything — deletion is not an available tool. All mutations require explicit user approval in the chat before they run; if the user rejects a proposed action, suggest a different approach or stop. Never propose deletion as a workaround.";
+
+  const localStateNote =
+    "\n\nYou also have access to local app state via four read-only tools: " +
+    "(1) get_recent_activity — recent upload/move failures from the on-device activity log (what failed last night?); " +
+    "(2) get_backup_status — device asset count, how many are backed up, and auto-backup config/last-run outcome (how many photos haven't been backed up?); " +
+    "(3) get_active_jobs — in-flight uploads and active folder-move jobs with progress (what's running right now?); " +
+    "(4) get_device_inventory — aggregated counts and sizes of device media grouped by year, month, or type. " +
+    "IMPORTANT: for any question about backup history, upload failures, jobs, or what remains on the device, use these local-state tools — do NOT fan out list_objects calls to answer them.";
+
+  const full = base + localStateNote;
   if (contextPrefix) {
-    return `${base}\n\nThe user is currently browsing the folder: "${contextPrefix}". Use this as the default context scope for queries unless instructed otherwise.`;
+    return `${full}\n\nThe user is currently browsing the folder: "${contextPrefix}". Use this as the default context scope for queries unless instructed otherwise.`;
   }
-  return base;
+  return full;
 }
 
 function parseToolArguments(raw: string): unknown {
@@ -135,7 +145,20 @@ export function AssistantSheet({ visible, onClose }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const { addJob } = useJobs();
+  const { addJob, allJobs } = useJobs();
+
+  // Keep a ref so the tools executor always reads the current snapshot even
+  // though the tools array is memoised once (avoids re-building all tool defs).
+  const allJobsRef = useRef(allJobs);
+  useEffect(() => { allJobsRef.current = allJobs; }, [allJobs]);
+
+  // Build tools once, injecting the jobs snapshot via ref so get_active_jobs
+  // always sees the live in-memory records rather than re-loading from disk.
+  const tools = useMemo(
+    () => buildAssistantTools({ getJobsSnapshot: () => allJobsRef.current }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const [provider, setProvider] = useState<SavedProvider | null>(null);
   const [privacyAcked, setPrivacyAcked] = useState(false);
@@ -258,7 +281,7 @@ export function AssistantSheet({ visible, onClose }: Props) {
   ) {
     const currentProvider = provider!;
     const system = buildSystemPrompt(contextPrefix);
-    const toolDefs = ASSISTANT_TOOLS.map((t) => t.definition);
+    const toolDefs = tools.map((t) => t.definition);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -352,7 +375,7 @@ export function AssistantSheet({ visible, onClose }: Props) {
 
         for (const call of resp.toolCalls) {
           const parsedArgs = parseToolArguments(call.arguments);
-          const tool = ASSISTANT_TOOLS.find((t) => t.definition.function.name === call.name);
+          const tool = tools.find((t) => t.definition.function.name === call.name);
 
           if (!tool || !TOOL_NAMES.has(call.name)) {
             const unknownCard: ChatMessage = {
