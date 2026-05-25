@@ -44,6 +44,10 @@ export type ActivityFile = { schemaVersion: 1 | 2; entries: ActivityEntry[] };
 const ACTIVITY_FILE = `${documentDirectory ?? ''}activity-log.json`;
 const MAX_ENTRIES = 200;
 const SCHEMA_VERSION = 2;
+// 30-day retention policy: failures older than this are pruned on read.
+// Bounded retention prevents the log from growing unboundedly on devices
+// that accumulate failures over months without clearing them.
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 let writeChain: Promise<unknown> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -120,7 +124,10 @@ async function writeEntries(entries: ActivityEntry[]): Promise<void> {
 export function loadActivity(): Promise<ActivityEntry[]> {
   return serialize(async () => {
     const entries = await readEntries();
-    return [...entries].reverse();
+    const cutoff = Date.now() - RETENTION_MS;
+    const kept = entries.filter((e) => e.lastAt >= cutoff);
+    if (kept.length !== entries.length) await writeEntries(kept);
+    return [...kept].reverse();
   });
 }
 

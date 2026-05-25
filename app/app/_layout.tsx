@@ -62,7 +62,6 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="settings" options={{ headerShown: false }} />
             <Stack.Screen name="about" options={{ title: 'About', headerBackTitle: 'Settings' }} />
-            <Stack.Screen name="sync" options={{ title: 'Sync', headerBackTitle: 'Dashboard' }} />
             <Stack.Screen name="duplicates" options={{ title: 'Find duplicates', headerBackTitle: 'Settings' }} />
             <Stack.Screen name="compare" options={{ title: 'Compare folders', headerBackTitle: 'Browse' }} />
           </Stack>

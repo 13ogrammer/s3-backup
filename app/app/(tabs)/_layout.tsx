@@ -83,11 +83,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={TAB_ICON_SIZE} name="clock" color={color} />,
         }}
       />
-      {/* assistant is kept hidden so deep-links don't 404 until step 10 removes it */}
-      <Tabs.Screen
-        name="assistant"
-        options={{ href: null }}
-      />
     </Tabs>
       {/* Rendered AFTER Tabs so they paint on top — sibling z-order beats
        *  zIndex on Android. JobsStrip and AiFab carry their own absolute positioning. */}
