@@ -19,7 +19,7 @@ import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { healthCheck } from '@/lib/api';
-import { loadConfig, saveConfig } from '@/lib/config';
+import { clearConfig, loadConfig, saveConfig } from '@/lib/config';
 import { parseQrPayload } from '@/lib/qr-config';
 
 export default function ConnectionScreen() {
@@ -82,6 +82,25 @@ export default function ConnectionScreen() {
 
   function onScanQr() {
     setScannerVisible(true);
+  }
+
+  function onClear() {
+    showAlert(
+      'Clear settings?',
+      'This removes the backend URL and bootstrap token from this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearConfig();
+            setBackendUrl('');
+            setBootstrapToken('');
+          },
+        },
+      ],
+    );
   }
 
   async function applyQrConfig(raw: string) {
@@ -221,6 +240,15 @@ export default function ConnectionScreen() {
               <ThemedText style={[styles.buttonText, { color: colors.tint }]}>Test</ThemedText>
             </Pressable>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClear}
+            style={styles.clearButton}>
+            <ThemedText style={{ color: colors.danger, fontWeight: '500' }}>
+              Clear stored settings
+            </ThemedText>
+          </Pressable>
         </ThemedView>
       </ScrollView>
 
@@ -269,4 +297,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { fontWeight: '600', fontSize: 15 },
+  clearButton: { marginTop: Spacing.xl, alignItems: 'center', paddingVertical: 8 },
 });

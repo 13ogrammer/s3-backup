@@ -4,33 +4,13 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useAlert } from '@/components/ui/alert-provider';
 import { Colors, Radius, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { clearConfig } from '@/lib/config';
 
 export default function SettingsIndex() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
-  const { showAlert } = useAlert();
-
-  function onClear() {
-    showAlert(
-      'Clear settings?',
-      'This removes the backend URL and bootstrap token from this device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            await clearConfig();
-          },
-        },
-      ],
-    );
-  }
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -106,15 +86,6 @@ export default function SettingsIndex() {
             <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </Pressable>
         </View>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={onClear}
-          style={styles.clearButton}>
-          <ThemedText style={{ color: colors.danger, fontWeight: '500' }}>
-            Clear stored settings
-          </ThemedText>
-        </Pressable>
       </ThemedView>
     </ScrollView>
   );
@@ -140,5 +111,4 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   navRowIcon: { width: 20 },
-  clearButton: { marginTop: Spacing.xl, alignItems: 'center', paddingVertical: 8 },
 });
