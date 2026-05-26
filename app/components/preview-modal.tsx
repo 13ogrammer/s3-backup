@@ -414,7 +414,6 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                     : item.kind === 'video'
                     ? videoDisplayUrl
                     : entry?.originalUrl;
-                const isPendingPreview = item.kind === 'video' && pendingTranscodeJobs.has(item.key);
                 return (
                   <PreviewSlide
                     file={item}
@@ -430,7 +429,6 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                     panelOpen={panelOpen}
                     panelProgress={panelProgress}
                     panelHeight={panelHeight}
-                    isPendingPreview={isPendingPreview}
                   />
                 );
               }}
@@ -574,8 +572,6 @@ type SlideProps = {
   panelOpen: boolean;
   panelProgress: SharedValue<number>;
   panelHeight: number;
-  /** True while a video preview is being generated asynchronously. */
-  isPendingPreview?: boolean;
 };
 
 function PreviewSlide({
@@ -592,7 +588,6 @@ function PreviewSlide({
   panelOpen,
   panelProgress,
   panelHeight,
-  isPendingPreview,
 }: SlideProps) {
   const filename = basename(file.key);
 
@@ -635,16 +630,7 @@ function PreviewSlide({
             <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
           )}
           {file.kind === 'video' && displayUrl && (
-            <>
-              <VideoSlide uri={displayUrl} isActive={isActive} bottomInset={bottomInset} />
-              {isPendingPreview && (
-                <View style={styles.generatingPill} pointerEvents="none">
-                  <ThemedText style={[Type.meta, styles.generatingPillText]}>
-                    Generating preview…
-                  </ThemedText>
-                </View>
-              )}
-            </>
+            <VideoSlide uri={displayUrl} isActive={isActive} bottomInset={bottomInset} />
           )}
           {displayUrl && file.kind === 'other' && (
             <ThemedView style={styles.noPreview}>
@@ -714,18 +700,6 @@ const styles = StyleSheet.create({
   },
   slide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
-  generatingPill: {
-    position: 'absolute',
-    bottom: Spacing.xl,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-  },
-  generatingPillText: {
-    color: '#fff',
-  },
   noPreview: {
     margin: Spacing.xl,
     padding: Spacing.xl,
