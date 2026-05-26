@@ -36,15 +36,16 @@ files) escape the 29 s API Gateway timeout by going async — see
 | Mobile language | TypeScript | strict, `noUncheckedIndexedAccess`. |
 | Backend runtime | Node.js 20, ARM64 Lambda | Bundled with esbuild via SAM `BuildMethod: makefile` (needed to ship sharp's native binary). 1024 MB / 29 s. |
 | API surface | HTTP API Gateway, single Lambda router | All routes go through `backend/src/index.ts`. |
-| Async jobs | **SQS-backed worker Lambda** (`MoveWorker`, 15 min timeout, reserved concurrency 4) | Folder moves >29 s run as jobs; producer returns 202, worker drains the queue. See "Async folder-move jobs" below. |
+| Async jobs | **SQS-backed worker Lambdas** (`MoveWorker` + `TranscodeWorker`) | Folder moves >29 s and video preview generation run as jobs; producer returns 202/pending, workers drain their respective queues. See "Async folder-move jobs" and "Async video preview transcoding" below. |
 | Auth (v1) | Single bootstrap token, `timingSafeEqual` compare | Linear S3B-8 ("Rotatable / per-device auth tokens") tracks the replacement plan. |
 | Local S3 emulator | **MinIO** via docker-compose | LocalStack went paid in v2026.03 — don't reach for it. |
-| Local SQS emulator | **ElasticMQ** via docker-compose | SQS-compatible, Apache 2.0, sibling container to MinIO. Dev-server auto-creates the queue + DLQ on startup. |
+| Local SQS emulator | **ElasticMQ** via docker-compose | SQS-compatible, Apache 2.0, sibling container to MinIO. Dev-server auto-creates both queue pairs on startup. |
 | Local backend dev | Node `http` wrapper around the Lambda handler, `tsx watch` | `backend/src/dev-server.ts`. |
 | Upload UX | `expo-image-picker` (system picker) | Inline gallery grid is blocked in Expo Go on Android — see [`CLAUDE.md`](../CLAUDE.md#gotchas). |
 | Image thumbnails | On-demand via Lambda (`/get-derived-url`), cached in `.thumbnails/` | Backend list returns the thumb URL when present; Browse lazy-fetches via `/get-derived-url` on first view. |
 | Image previews | On-demand via Lambda (`/get-derived-url`), cached in `.previews/` | PreviewModal fetches a 1920px JPEG for full-screen display; Download always uses the original signed URL. |
 | Video thumbnails | Client-side at upload time via `expo-video-thumbnails`, cached in `.thumbnails/` | Frame extracted at 1 s, resized to 320 px; Lambda never sees the video bytes. Pre-existing videos can be back-filled via `backend/scripts/backfill-video-thumbs.ts`. |
+| Video previews | Async on first open via `TranscodeWorker` Lambda + SQS, cached in `.previews/` | 720p H.264/AAC MP4 at ~1 Mbps. `/get-derived-url` returns `{ status:'pending' }` on first request; PreviewModal plays original while waiting, then hot-swaps. |
 | Preview | `expo-image` + `expo-video` + custom `ZoomableImage` for pinch | Adjacent files prefetched on index change. |
 
 ## Endpoints
@@ -71,13 +72,17 @@ All POST routes require `Authorization: Bearer <BOOTSTRAP_TOKEN>` except `GET /h
 
 ## Derived asset trees
 
-Three derived/cache trees live alongside originals in the bucket:
+Four derived/cache trees live alongside originals in the bucket:
 
 | Tree | Prefix | Size | Purpose |
 |---|---|---|---|
 | Thumbnails | `.thumbnails/` | ~30–50 KB | Browse grid and list row icons |
-| Previews | `.previews/` | ~50–300 KB | Full-screen in-app view (PreviewModal) |
+| Image previews | `.previews/<key>.preview.jpg` | ~50–300 KB | Full-screen in-app view (PreviewModal) for images |
+| Video previews | `.previews/<key>.preview.mp4` | ~5–80 MB | Low-bitrate 720p preview for PreviewModal video slides |
 | Stats cache | `.cache/` | ~10–50 KB | Cached `/stats` response (TTL 1 hour, `stats.json`) |
+
+Both image and video previews live in the `.previews/` tree but use different
+extensions, keeping them addressable by the same prefix operations (del/move).
 
 ### Path convention
 
@@ -89,6 +94,8 @@ photos/2025/IMG_001.heic  →  .thumbnails/photos/2025/IMG_001.thumb.jpg
                           →  .previews/photos/2025/IMG_001.preview.jpg
 IMG_002.jpg               →  .thumbnails/IMG_002.thumb.jpg
                           →  .previews/IMG_002.preview.jpg
+videos/2025/clip.mov      →  .thumbnails/videos/2025/clip.thumb.jpg  (client-side at upload)
+                          →  .previews/videos/2025/clip.preview.mp4  (async on first open)
 ```
 
 Trade-off: if `IMG_001.jpg` and `IMG_001.heic` coexist in the same
@@ -120,7 +127,7 @@ HEIC without libheif will return `{ url: null, error: 'unsupported_format' }`;
 the app degrades gracefully (placeholder icon / no resize attempt for unsupported
 formats).
 
-### Client-side generation for videos (S3B-30)
+### Client-side generation for video thumbnails (S3B-30)
 
 Video thumbnails are generated **client-side at upload time** rather than
 via Lambda. This keeps video bytes off the backend entirely, consistent with
@@ -144,6 +151,12 @@ Browse behaviour for videos:
 
 Pre-existing videos (uploaded before S3B-30) have no sidecar. Use the
 operator backfill script to generate them (see below).
+
+### Async on-demand generation for video previews (S3B-33)
+
+Video preview MP4s are generated lazily on first open via an async Lambda
+(`TranscodeWorker`) rather than synchronously. See "Async video preview
+transcoding" below for the full producer/worker/polling flow.
 
 ### Helpers
 
@@ -304,6 +317,85 @@ deployed Lambda, just no cold start. The shim does *not* perfectly
 mimic AWS SQS (no real per-message retry semantics outside redrive,
 no separate poller process) but is faithful enough that visibility
 timeouts and DLQ behaviour are exercised on every dev run.
+
+## Async video preview transcoding (S3B-33)
+
+First-open of a video in `PreviewModal` triggers on-demand transcoding via a
+dedicated `TranscodeWorker` Lambda and its own SQS queue. Same shape as the
+folder-move async pattern — producer returns a pending indicator immediately,
+worker runs with a 15-minute budget.
+
+### Components
+
+```
+Client tap (video in PreviewModal)
+└─► POST /get-derived-url { key, tier:'preview' }
+    └─► ApiFn:
+        ├─► classifyKey === 'video' && tier === 'preview'
+        ├─► HEAD .previews/<key>.preview.mp4
+        │     ├─ hit  → sign URL → { url, generated:false }
+        │     └─ miss
+        │         ├─► read .cache/jobs/by-key/<sha256(key)>.json
+        │         │     ├─ live jobId? → return { status:'pending', jobId }
+        │         │     └─ none/terminal → enqueue fresh job
+        │         ├─► createTranscodeJobRecord + writeJob
+        │         ├─► writeActiveTranscodeJobId (dedupe pointer)
+        │         └─► enqueueTranscodeJob(VideoTranscodeQueue)
+        │                           ▼
+        │              return { status:'pending', jobId, tier:'preview' }
+        │
+        │                  TranscodeWorker Lambda (SQS event source)
+        │                  ├─► HEAD short-circuit (already exists → mark completed)
+        │                  ├─► GetObject stream → /tmp/<jobId>/in.<ext>
+        │                  ├─► spawn ffmpeg → /tmp/<jobId>/out.mp4
+        │                  │     scale max 1280 wide, libx264 veryfast crf=28
+        │                  │     aac 96k, -movflags +faststart
+        │                  ├─► PUT .previews/<key>.preview.mp4 (video/mp4)
+        │                  ├─► setTerminalStatus('completed')
+        │                  ├─► clearActiveTranscodeJobId
+        │                  └─► rm -rf /tmp/<jobId>/ in finally
+        │
+        └─► app: addJob({ kind:'video-transcode', key })
+               → JobsStrip shows "Generating preview · <filename>"
+               → PreviewModal plays original URL while waiting
+               → on job completed: re-fetch getDerivedUrl → hot-swap to preview MP4
+```
+
+### TranscodeWorker sizing
+
+| Setting | Value | Reason |
+|---|---|---|
+| `Timeout` | 900 s | 15-minute ceiling; very long videos may DLQ |
+| `MemorySize` | 3008 MB | Headroom for ffmpeg 4K frame buffers |
+| `EphemeralStorage` | 4096 MB | /tmp must hold original + output simultaneously |
+| `ReservedConcurrentExecutions` | 2 | Cap cost and S3 PUT rates |
+| `VisibilityTimeout` | 950 s | Must exceed worker timeout |
+
+Note: videos longer than ~90 min at high bitrate may hit the 15-minute Lambda
+ceiling and land in the DLQ. This is an acceptable v1 limitation. Future: split
+long jobs into segments, or use AWS MediaConvert for very large files.
+
+### ffmpeg binary
+
+The Lambda uses a **vendored static ARM64 ffmpeg binary** (not a Lambda layer)
+placed at `backend/bin/ffmpeg-arm64` and bundled into the artifact at
+`bin/ffmpeg`. The binary is gitignored — run `backend/scripts/fetch-ffmpeg.sh`
+once to download it before `sam build`. The binary is from johnvansickle.com
+(GPL v2); acceptable for self-hosted BYO-AWS deployment.
+
+### Failure handling
+
+ffmpeg crash, S3 PUT failure, or missing source → `setTerminalStatus('failed')`.
+The client's `JobsContext` stops polling and `PreviewModal` stays on `originalUrl`.
+No toast for v1. A user can trigger a retry by closing and reopening the modal
+(which calls `/get-derived-url` again and enqueues a new job).
+
+### Local dev
+
+The dev-server creates both `folder-move-queue` and `video-transcode-queue` in
+ElasticMQ on startup and starts a long-polling consumer for each. `FFMPEG_PATH`
+must be set in `backend/.env` pointing to a local ffmpeg binary (e.g. from
+`brew install ffmpeg` on macOS). See `backend/README.md`.
 
 ## Observability
 

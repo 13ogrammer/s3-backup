@@ -82,18 +82,32 @@ no AWS bill.
 > replacement; ElasticMQ (SoftwareMill, Apache 2.0) is its SQS
 > counterpart and the AWS SDK works against it unchanged.
 
-The dev-server auto-creates `folder-move-queue` + `folder-move-dlq` on
-startup with a redrive policy (`maxReceiveCount: 1`) and visibility
-timeout matching the production SAM template. A built-in long-polling
-consumer dispatches each message to the worker handler in the same
-Node process — same code path as the deployed Lambda, just no cold
-start.
+The dev-server auto-creates `folder-move-queue`, `folder-move-dlq`,
+`video-transcode-queue`, and `video-transcode-dlq` on startup with a redrive
+policy (`maxReceiveCount: 1`) and visibility timeout matching the production SAM
+template. A built-in long-polling consumer dispatches each message to the
+appropriate worker handler in the same Node process — same code path as the
+deployed Lambda, just no cold start.
 
 ### Prereqs
 
 - Node 20+
 - Docker Desktop (for MinIO only — the backend itself does not run in Docker)
 - AWS CLI v2
+- **ffmpeg** — required for local video preview generation via `TranscodeWorker`
+
+  Install via Homebrew (macOS):
+  ```bash
+  brew install ffmpeg
+  ```
+  Then set `FFMPEG_PATH` in `backend/.env`:
+  ```
+  FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
+  ```
+  If `FFMPEG_PATH` is not set, the TranscodeWorker falls back to
+  `/var/task/bin/ffmpeg` (the vendored Lambda binary) which will not exist
+  locally. The dev-server logs a clear error on the first transcode job if the
+  binary is missing.
 
 ### One-time setup
 
