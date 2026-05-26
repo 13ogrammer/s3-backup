@@ -6,7 +6,7 @@ import {
 import { classifyKey } from '../../mediaType.js';
 import { BUCKET, s3 } from '../../s3.js';
 import { thumbKey } from '../../thumbs.js';
-import { previewKey } from '../../previews.js';
+import { previewKey, videoPreviewKey } from '../../previews.js';
 import type { MergePolicy } from '../../types.js';
 
 export const KEEP_BOTH_CAP = Number(process.env.KEEP_BOTH_CAP ?? 99);
@@ -74,6 +74,13 @@ export async function moveOneObject(fromKey: string, toKey: string): Promise<voi
         await deleteObject(previewFrom);
       }
     }
+    if (fromKind === 'video') {
+      const videoPreviewFrom = videoPreviewKey(fromKey);
+      if (await existsInBucket(videoPreviewFrom)) {
+        await copyObject(videoPreviewFrom, videoPreviewKey(toKey));
+        await deleteObject(videoPreviewFrom);
+      }
+    }
   } catch (err) {
     // Original is at its new home; derived will be regenerated on next view.
     console.warn('[move] derived-asset move failed for', fromKey, err);
@@ -139,6 +146,13 @@ export async function mergeOneObject(
           await deleteObject(previewFrom);
         }
       }
+      if (fromKind === 'video') {
+        const videoPreviewFrom = videoPreviewKey(fromKey);
+        if (await existsInBucket(videoPreviewFrom)) {
+          await copyObject(videoPreviewFrom, videoPreviewKey(toKey));
+          await deleteObject(videoPreviewFrom);
+        }
+      }
     } catch (err) {
       console.warn('[merge/replace] derived-asset move failed for', fromKey, err);
     }
@@ -158,6 +172,10 @@ export async function mergeOneObject(
         if (fromKind === 'image') {
           const previewFrom = previewKey(fromKey);
           if (await existsInBucket(previewFrom)) await deleteObject(previewFrom);
+        }
+        if (fromKind === 'video') {
+          const videoPreviewFrom = videoPreviewKey(fromKey);
+          if (await existsInBucket(videoPreviewFrom)) await deleteObject(videoPreviewFrom);
         }
       } catch (err) {
         console.warn('[merge/skip] derived-asset delete failed for', fromKey, err);
@@ -193,6 +211,13 @@ export async function mergeOneObject(
       if (await existsInBucket(previewFrom)) {
         await copyObject(previewFrom, previewKey(renamedKey));
         await deleteObject(previewFrom);
+      }
+    }
+    if (fromKind === 'video') {
+      const videoPreviewFrom = videoPreviewKey(fromKey);
+      if (await existsInBucket(videoPreviewFrom)) {
+        await copyObject(videoPreviewFrom, videoPreviewKey(renamedKey));
+        await deleteObject(videoPreviewFrom);
       }
     }
   } catch (err) {

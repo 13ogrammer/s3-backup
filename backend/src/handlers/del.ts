@@ -3,7 +3,7 @@ import { classifyKey } from '../mediaType.js';
 import { invalidateAncestors } from '../folderCountsCache.js';
 import { BUCKET, s3, sanitizeKey, sanitizePrefix } from '../s3.js';
 import { thumbKey, thumbPrefix } from '../thumbs.js';
-import { previewKey, previewPrefix } from '../previews.js';
+import { previewKey, previewPrefix, videoPreviewKey } from '../previews.js';
 import type { DeleteRequest, DeleteResponse } from '../types.js';
 import type { RequestContext } from '../index.js';
 
@@ -27,9 +27,12 @@ export async function del(body: DeleteRequest, ctx: RequestContext): Promise<Del
     if (kind === 'image' || kind === 'video') {
       allKeys.add(thumbKey(k));
     }
-    // Preview assets are only generated for images.
     if (kind === 'image') {
       allKeys.add(previewKey(k));
+    }
+    // Video previews are generated on-demand as .preview.mp4 by TranscodeWorker.
+    if (kind === 'video') {
+      allKeys.add(videoPreviewKey(k));
     }
   }
 
