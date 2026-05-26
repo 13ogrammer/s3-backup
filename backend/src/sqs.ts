@@ -1,5 +1,5 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import type { MoveJobMessage } from './types.js';
+import type { MoveJobMessage, TranscodeJobMessage } from './types.js';
 
 // In production the SDK resolves AWS endpoints + creds from the environment.
 // In local dev we override the endpoint via AWS_SQS_ENDPOINT_URL (e.g.
@@ -24,16 +24,31 @@ export function sqsClient(): SQSClient {
   return _sqsClient;
 }
 
-function getQueueUrl(): string {
+function getFolderMoveQueueUrl(): string {
   const url = process.env.FOLDER_MOVE_QUEUE_URL;
   if (!url) throw new Error('FOLDER_MOVE_QUEUE_URL is not set');
+  return url;
+}
+
+function getVideoTranscodeQueueUrl(): string {
+  const url = process.env.VIDEO_TRANSCODE_QUEUE_URL;
+  if (!url) throw new Error('VIDEO_TRANSCODE_QUEUE_URL is not set');
   return url;
 }
 
 export async function enqueueMoveJob(msg: MoveJobMessage): Promise<void> {
   await sqsClient().send(
     new SendMessageCommand({
-      QueueUrl: getQueueUrl(),
+      QueueUrl: getFolderMoveQueueUrl(),
+      MessageBody: JSON.stringify(msg),
+    }),
+  );
+}
+
+export async function enqueueTranscodeJob(msg: TranscodeJobMessage): Promise<void> {
+  await sqsClient().send(
+    new SendMessageCommand({
+      QueueUrl: getVideoTranscodeQueueUrl(),
       MessageBody: JSON.stringify(msg),
     }),
   );
