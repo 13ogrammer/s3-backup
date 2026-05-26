@@ -16,3 +16,6 @@ Thumbs.db
 
 # Build output
 *.tsbuildinfo
+
+# Vendored ffmpeg binary downloaded by backend/scripts/fetch-ffmpeg.sh
+backend/bin/

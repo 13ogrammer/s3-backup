@@ -10,7 +10,7 @@ if (!process.env.AWS_SQS_ENDPOINT_URL) {
   process.env.AWS_SQS_ENDPOINT_URL = 'http://localhost:9324';
 }
 
-import { ensureQueues, startPoller } from './dev-poller.js';
+import { ensureQueues, startFolderMovePoller, startTranscodePoller } from './dev-poller.js';
 import type { handler as ApiHandler } from './index.js';
 
 let requestCounter = 0;
@@ -44,9 +44,16 @@ function lanIp(): string | undefined {
 }
 
 async function main(): Promise<void> {
-  const { mainUrl: folderMoveQueueUrl, dlqUrl: folderMoveDlqUrl } = await ensureQueues();
+  const {
+    folderMove: { mainUrl: folderMoveQueueUrl, dlqUrl: folderMoveDlqUrl },
+    videoTranscode: { mainUrl: videoTranscodeQueueUrl, dlqUrl: videoTranscodeDlqUrl },
+  } = await ensureQueues();
+
   process.env.FOLDER_MOVE_QUEUE_URL = folderMoveQueueUrl;
-  startPoller(folderMoveQueueUrl);
+  process.env.VIDEO_TRANSCODE_QUEUE_URL = videoTranscodeQueueUrl;
+
+  startFolderMovePoller(folderMoveQueueUrl);
+  startTranscodePoller(videoTranscodeQueueUrl);
 
   const { handler } = await import('./index.js');
 
@@ -105,9 +112,11 @@ async function main(): Promise<void> {
     console.log(`  Health check: curl ${apiUrl}/health`);
     console.log(`  Bucket:       ${process.env.BUCKET_NAME ?? '(not set)'}`);
     console.log(`  S3 endpoint:  ${process.env.S3_ENDPOINT_URL ?? '(real AWS)'}`);
-    console.log(`  SQS endpoint: ${process.env.AWS_SQS_ENDPOINT_URL ?? '(real AWS)'}`);
-    console.log(`  SQS queue:    ${folderMoveQueueUrl}`);
-    console.log(`  SQS DLQ:      ${folderMoveDlqUrl}`);
+    console.log(`  SQS endpoint:       ${process.env.AWS_SQS_ENDPOINT_URL ?? '(real AWS)'}`);
+    console.log(`  folder-move queue:  ${folderMoveQueueUrl}`);
+    console.log(`  folder-move DLQ:    ${folderMoveDlqUrl}`);
+    console.log(`  transcode queue:    ${videoTranscodeQueueUrl}`);
+    console.log(`  transcode DLQ:      ${videoTranscodeDlqUrl}`);
     console.log(`  Auth token:   ${token ? '(set)' : '(NOT SET)'}`);
     console.log(`${sep}`);
 

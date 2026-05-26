@@ -67,3 +67,28 @@ build-MoveWorker:
 		--omit=dev \
 		--foreground-scripts \
 		sharp
+
+# TranscodeWorker bundles transcodeWorker.ts and copies the vendored ffmpeg
+# static binary into bin/ffmpeg inside the Lambda artifact. The binary is
+# downloaded by backend/scripts/fetch-ffmpeg.sh (run once, or on CI).
+# If the binary is absent the Makefile prints a clear error and exits.
+build-TranscodeWorker:
+	$(ESBUILD) handlers/transcodeWorker.ts \
+		--bundle \
+		--platform=node \
+		--target=node20 \
+		--format=esm \
+		--minify \
+		--external:@aws-sdk/* \
+		--outfile=$(ARTIFACTS_DIR)/transcodeWorker.mjs
+
+	@if [ ! -f ../bin/ffmpeg-arm64 ]; then \
+		echo ""; \
+		echo "ERROR: vendored ffmpeg binary not found at backend/bin/ffmpeg-arm64"; \
+		echo "Run: bash backend/scripts/fetch-ffmpeg.sh"; \
+		echo ""; \
+		exit 1; \
+	fi
+	mkdir -p $(ARTIFACTS_DIR)/bin
+	cp ../bin/ffmpeg-arm64 $(ARTIFACTS_DIR)/bin/ffmpeg
+	chmod +x $(ARTIFACTS_DIR)/bin/ffmpeg

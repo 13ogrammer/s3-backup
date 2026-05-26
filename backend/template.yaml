@@ -131,6 +131,20 @@ Resources:
     Properties:
       MessageRetentionPeriod: 1209600  # 14 days
 
+  VideoTranscodeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      # VisibilityTimeout must exceed TranscodeWorker timeout (900 s) + buffer.
+      VisibilityTimeout: 950
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt VideoTranscodeDLQ.Arn
+        maxReceiveCount: 1
+
+  VideoTranscodeDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600  # 14 days
+
   ApiFn:
     Type: AWS::Serverless::Function
     Metadata:
@@ -141,6 +155,7 @@ Resources:
       Environment:
         Variables:
           FOLDER_MOVE_QUEUE_URL: !Ref FolderMoveQueue
+          VIDEO_TRANSCODE_QUEUE_URL: !Ref VideoTranscodeQueue
       Policies:
         - Statement:
             - Sid: BucketAccess
@@ -166,7 +181,9 @@ Resources:
               Effect: Allow
               Action:
                 - sqs:SendMessage
-              Resource: !GetAtt FolderMoveQueue.Arn
+              Resource:
+                - !GetAtt FolderMoveQueue.Arn
+                - !GetAtt VideoTranscodeQueue.Arn
       Events:
         ApiRoute:
           Type: HttpApi
@@ -222,6 +239,50 @@ Resources:
                 - sqs:GetQueueAttributes
                 - sqs:ChangeMessageVisibility
               Resource: !GetAtt FolderMoveQueue.Arn
+
+  TranscodeWorker:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: src/
+      Handler: transcodeWorker.handler
+      # 15-minute ceiling; very long videos (>~2 h) may hit this and DLQ.
+      # Acceptable v1 limitation — documented in ARCHITECTURE.md.
+      Timeout: 900
+      # 3 GB RAM to give ffmpeg headroom for 4K source frames.
+      MemorySize: 3008
+      # 4 GB ephemeral storage for downloading original + writing preview in /tmp.
+      EphemeralStorage:
+        Size: 4096
+      # Limit concurrent transcode invocations to avoid excessive S3/Lambda cost spikes.
+      ReservedConcurrentExecutions: 2
+      Events:
+        SqsTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt VideoTranscodeQueue.Arn
+            BatchSize: 1
+      Policies:
+        - Statement:
+            - Sid: BucketAccess
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:HeadObject
+              Resource:
+                - !Sub
+                  - 'arn:aws:s3:::${B}/*'
+                  - B: !If [CreateBucket, !Ref BackupBucket, !Ref BucketName]
+            - Sid: SqsWorkerAccess
+              Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+                - sqs:ChangeMessageVisibility
+              Resource: !GetAtt VideoTranscodeQueue.Arn
 
   Api:
     Type: AWS::Serverless::HttpApi
