@@ -72,7 +72,7 @@ export default function DashboardScreen() {
         loadPendingUploads(),
       ]);
       const failedOrPending = activityEntries.filter(
-        (e) => e.kind === 'upload' || e.kind === 'move',
+        (e) => (e.kind === 'upload' || e.kind === 'move') && e.status !== 'success',
       );
       const total = failedOrPending.length + pendingUploads.length;
       setSyncItemCount(total);
