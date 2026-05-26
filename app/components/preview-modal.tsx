@@ -2,9 +2,11 @@
 // navigationBarTranslucent with safe-area padding) and does NOT use the
 // ModalCard shell. S3B-41 scoped ModalCard to card-style overlays only.
 import {
+  createDownloadResumable,
+  deleteAsync,
   documentDirectory,
   downloadAsync,
-  deleteAsync,
+  type DownloadResumable,
 } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
@@ -61,6 +63,22 @@ const PANEL_OPEN_FRACTION = 0.5;
 // Swipe threshold to trigger open/close (px).
 const SWIPE_THRESHOLD = 50;
 
+// Videos at or above this byte size are gated: stream is blocked and the user
+// must explicitly download to local storage before playback. Avoids stalls on
+// large files over flaky cellular connections.
+const LARGE_VIDEO_THRESHOLD_BYTES = 150 * 1024 * 1024;
+
+// Buffer tuning applied to every VideoPlayer instance. Values are materially
+// larger than defaults (iOS default: 0 s forward buffer; Android default: 20 s).
+// waitsToMinimizeStalling is iOS-only; prioritizeTimeOverSizeThreshold is
+// Android-only — expo-video ignores fields that don't apply to the platform.
+const VIDEO_BUFFER_OPTIONS = {
+  preferredForwardBufferDuration: 60,
+  waitsToMinimizeStalling: true,
+  minBufferForPlayback: 5,
+  prioritizeTimeOverSizeThreshold: true,
+} as const;
+
 export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -87,6 +105,15 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   // Session-scoped cache for /head responses. Cleared alongside urls on reopen.
   const [headCache, setHeadCache] = useState<Map<string, HeadEntry>>(new Map());
 
+  // Local file URIs for large videos that the user has downloaded this session.
+  // Keyed by the S3 key. Cleared on modal close / reopen so temp files are deleted.
+  const [localVideoUris, setLocalVideoUris] = useState<Map<string, string>>(new Map());
+
+  // Per-key download-trigger counters. Bumped by the "Play offline" menu item to
+  // instruct the active LargeVideoPrompt to kick off a download even when the CTA
+  // was never tapped directly.
+  const [triggerDownloadCounters, setTriggerDownloadCounters] = useState<Map<string, number>>(new Map());
+
   // 0 = closed (panel below screen, slides at natural position), 1 = open.
   const panelProgress = useSharedValue(0);
 
@@ -96,6 +123,19 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   // Download always uses the original signed URL.
   const currentDownloadUrl = currentEntry?.originalUrl;
 
+  // Derive size-gate info for the current slide so the menu can decide whether
+  // to show "Play offline".
+  const currentHeadEntry = current ? headCache.get(current.key) : undefined;
+  const currentSizeBytes =
+    currentHeadEntry?.status === 'ok' ? currentHeadEntry.data.sizeBytes : undefined;
+  const currentPreviewUrl = currentEntry?.previewUrl;
+  const isCurrentSlideOfflineEligible =
+    current?.kind === 'video' &&
+    currentHeadEntry?.status === 'ok' &&
+    currentPreviewUrl == null &&
+    currentSizeBytes != null &&
+    currentSizeBytes >= LARGE_VIDEO_THRESHOLD_BYTES;
+
   function openPanel() {
     panelProgress.value = withTiming(1, { duration: 300 });
     setPanelOpen(true);
@@ -103,6 +143,13 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   function closePanel() {
     panelProgress.value = withTiming(0, { duration: 250 });
     setPanelOpen(false);
+  }
+
+  // Cleanup: delete all session-local video files and clear the map.
+  async function clearLocalVideoUris(map: Map<string, string>) {
+    for (const uri of map.values()) {
+      await deleteAsync(uri, { idempotent: true }).catch(() => {});
+    }
   }
 
   useEffect(() => {
@@ -116,6 +163,12 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       setMenuOpen(false);
       setPanelOpen(false);
       panelProgress.value = 0;
+      // Clear any locally-downloaded video files from the previous session.
+      setLocalVideoUris((prev) => {
+        clearLocalVideoUris(prev);
+        return new Map<string, string>();
+      });
+      setTriggerDownloadCounters(new Map<string, number>());
     }
   }, [visible, initialIndex, panelProgress]);
 
@@ -374,12 +427,40 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
     setMenuOpen(false);
     onDownload();
   }
+  function handleMenuPlayOffline() {
+    if (!current) return;
+    setMenuOpen(false);
+    // Idempotent: only bump if no download is already in flight for this key.
+    // LargeVideoPrompt will pick up the counter increment and start downloading.
+    setTriggerDownloadCounters((prev) => {
+      const next = new Map(prev);
+      next.set(current.key, (prev.get(current.key) ?? 0) + 1);
+      return next;
+    });
+  }
+
+  function handlePlayLocal(key: string, localUri: string) {
+    setLocalVideoUris((prev) => {
+      const next = new Map(prev);
+      next.set(key, localUri);
+      return next;
+    });
+  }
+
+  // Clean up all locally-downloaded video files when the modal closes.
+  function handleClose() {
+    setLocalVideoUris((prev) => {
+      clearLocalVideoUris(prev);
+      return new Map<string, string>();
+    });
+    onClose();
+  }
 
   return (
     <Modal
       visible={visible}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       transparent
       statusBarTranslucent
       navigationBarTranslucent>
@@ -414,11 +495,17 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                     : item.kind === 'video'
                     ? videoDisplayUrl
                     : entry?.originalUrl;
+                const itemHead = headCache.get(item.key);
+                const itemSizeBytes =
+                  itemHead?.status === 'ok' ? itemHead.data.sizeBytes : undefined;
+                const itemLocalUri = localVideoUris.get(item.key);
+                const itemTriggerDownload = triggerDownloadCounters.get(item.key) ?? 0;
                 return (
                   <PreviewSlide
                     file={item}
                     displayUrl={displayUrl}
                     originalUrl={entry?.originalUrl}
+                    previewUrl={entry?.previewUrl}
                     isActive={i === index}
                     isZoomed={i === index ? isZoomed : false}
                     width={pageWidth}
@@ -429,6 +516,11 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                     panelOpen={panelOpen}
                     panelProgress={panelProgress}
                     panelHeight={panelHeight}
+                    headStatus={itemHead?.status}
+                    sizeBytes={itemSizeBytes}
+                    localUri={itemLocalUri}
+                    triggerDownload={itemTriggerDownload}
+                    onPlayLocal={handlePlayLocal}
                   />
                 );
               }}
@@ -456,7 +548,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
           {/* Header — back button (left), ellipsis menu trigger (right). */}
           <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <Pressable
-              onPress={onClose}
+              onPress={handleClose}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Back"
@@ -479,7 +571,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             </Pressable>
           </View>
 
-          {/* Menu overlay — popover with Details + Download. */}
+          {/* Menu overlay — popover with Details + Save to Files + (conditionally) Play offline. */}
           {menuOpen && (
             <>
               <Pressable
@@ -506,12 +598,23 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                 <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
                 <MenuItem
                   icon="arrow.down.to.line"
-                  label="Download"
+                  label="Save to Files"
                   onPress={handleMenuDownload}
                   disabled={!currentDownloadUrl || downloading}
                   trailing={downloading ? <ActivityIndicator size="small" color={colors.tint} /> : null}
                   colors={colors}
                 />
+                {isCurrentSlideOfflineEligible && (
+                  <>
+                    <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
+                    <MenuItem
+                      icon="arrow.down.circle"
+                      label="Play offline"
+                      onPress={handleMenuPlayOffline}
+                      colors={colors}
+                    />
+                  </>
+                )}
               </View>
             </>
           )}
@@ -561,6 +664,8 @@ type SlideProps = {
   displayUrl: string | undefined;
   /** Original signed URL — used for video player fallback and Download button. */
   originalUrl: string | undefined;
+  /** Preview MP4 URL if the transcode job has completed (video only). */
+  previewUrl: string | undefined;
   isActive: boolean;
   isZoomed: boolean;
   width: number;
@@ -572,12 +677,23 @@ type SlideProps = {
   panelOpen: boolean;
   panelProgress: SharedValue<number>;
   panelHeight: number;
+  /** Status of the /head fetch for this file. */
+  headStatus: HeadEntry['status'] | undefined;
+  /** Content-Length from /head, in bytes. */
+  sizeBytes: number | undefined;
+  /** Local file:// URI if the user has already downloaded this video offline. */
+  localUri: string | undefined;
+  /** Bumped from the parent to trigger a download from the menu "Play offline" item. */
+  triggerDownload: number;
+  /** Called when a local download completes. Parent stores the URI in localVideoUris. */
+  onPlayLocal: (key: string, localUri: string) => void;
 };
 
 function PreviewSlide({
   file,
   displayUrl,
   originalUrl,
+  previewUrl,
   isActive,
   isZoomed,
   width,
@@ -588,6 +704,11 @@ function PreviewSlide({
   panelOpen,
   panelProgress,
   panelHeight,
+  headStatus,
+  sizeBytes,
+  localUri,
+  triggerDownload,
+  onPlayLocal,
 }: SlideProps) {
   const filename = basename(file.key);
 
@@ -619,26 +740,69 @@ function PreviewSlide({
       }
     });
 
+  // Determine what to render inside the video branch.
+  function renderVideoContent() {
+    if (!displayUrl) {
+      // URL not yet fetched.
+      return <ActivityIndicator color="#fff" />;
+    }
+
+    if (headStatus === 'loading') {
+      // /head in flight — withhold playback until we know the file size.
+      return <ActivityIndicator color="#fff" />;
+    }
+
+    // If we already have a local copy, play it directly.
+    if (localUri) {
+      return <VideoSlide uri={localUri} isActive={isActive} bottomInset={bottomInset} />;
+    }
+
+    // Large video with no preview MP4 — gate streaming and prompt the user.
+    if (
+      headStatus === 'ok' &&
+      previewUrl == null &&
+      sizeBytes != null &&
+      sizeBytes >= LARGE_VIDEO_THRESHOLD_BYTES
+    ) {
+      return (
+        <LargeVideoPrompt
+          originalUrl={originalUrl ?? displayUrl}
+          filename={filename}
+          isActive={isActive}
+          triggerDownload={triggerDownload}
+          onPlayLocal={(uri) => onPlayLocal(file.key, uri)}
+        />
+      );
+    }
+
+    // Stream: either headStatus === 'unavailable', or size is below threshold,
+    // or a preview MP4 is available (displayUrl is already the preview URL).
+    return <VideoSlide uri={displayUrl} isActive={isActive} bottomInset={bottomInset} />;
+  }
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View
         style={[{ width, height: '100%' }, slideAnimStyle]}
         pointerEvents={isActive ? 'auto' : 'none'}>
         <View style={styles.slide}>
-          {!displayUrl && <ActivityIndicator color="#fff" />}
-          {displayUrl && file.kind === 'image' && (
-            <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
-          )}
-          {file.kind === 'video' && displayUrl && (
-            <VideoSlide uri={displayUrl} isActive={isActive} bottomInset={bottomInset} />
-          )}
-          {displayUrl && file.kind === 'other' && (
-            <ThemedView style={styles.noPreview}>
-              <ThemedText type="defaultSemiBold">No preview available</ThemedText>
-              <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
-                {filename} can't be previewed in the app. Use Download to save it.
-              </ThemedText>
-            </ThemedView>
+          {file.kind === 'video' ? (
+            renderVideoContent()
+          ) : (
+            <>
+              {!displayUrl && <ActivityIndicator color="#fff" />}
+              {displayUrl && file.kind === 'image' && (
+                <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
+              )}
+              {displayUrl && file.kind === 'other' && (
+                <ThemedView style={styles.noPreview}>
+                  <ThemedText type="defaultSemiBold">No preview available</ThemedText>
+                  <ThemedText style={{ opacity: 0.7, textAlign: 'center' }}>
+                    {filename} can't be previewed in the app. Use Download to save it.
+                  </ThemedText>
+                </ThemedView>
+              )}
+            </>
           )}
         </View>
       </Animated.View>
@@ -649,6 +813,7 @@ function PreviewSlide({
 function VideoSlide({ uri, isActive, bottomInset }: { uri: string; isActive: boolean; bottomInset: number }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = false;
+    p.bufferOptions = VIDEO_BUFFER_OPTIONS;
   });
 
   useEffect(() => {
@@ -667,6 +832,184 @@ function VideoSlide({ uri, isActive, bottomInset }: { uri: string; isActive: boo
         contentFit="contain"
         nativeControls
       />
+    </View>
+  );
+}
+
+type DownloadState = 'idle' | 'downloading' | 'error';
+
+function LargeVideoPrompt({
+  originalUrl,
+  filename,
+  isActive,
+  triggerDownload,
+  onPlayLocal,
+}: {
+  originalUrl: string;
+  filename: string;
+  isActive: boolean;
+  triggerDownload: number;
+  onPlayLocal: (localUri: string) => void;
+}) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+
+  const [state, setState] = useState<DownloadState>('idle');
+  const [progress, setProgress] = useState(0);
+
+  // Stable refs so the cleanup effect doesn't need to re-subscribe.
+  const resumableRef = useRef<DownloadResumable | null>(null);
+  const localUriRef = useRef<string | null>(null);
+
+  async function startDownload() {
+    if (state === 'downloading') return;
+    // Unique filename avoids collisions between different slides / retries.
+    const random = Math.random().toString(36).slice(2, 8);
+    const target = `${documentDirectory}s3b-offline-${Date.now()}-${random}-${filename}`;
+    localUriRef.current = target;
+
+    setState('downloading');
+    setProgress(0);
+
+    const resumable = createDownloadResumable(
+      originalUrl,
+      target,
+      {},
+      (data) => {
+        const { totalBytesWritten, totalBytesExpectedToWrite } = data;
+        if (totalBytesExpectedToWrite > 0) {
+          setProgress(totalBytesWritten / totalBytesExpectedToWrite);
+        }
+      },
+    );
+    resumableRef.current = resumable;
+
+    try {
+      const result = await resumable.downloadAsync();
+      if (!result) {
+        // Cancelled — cleanup handled by the cancel path.
+        return;
+      }
+      localUriRef.current = result.uri;
+      onPlayLocal(result.uri);
+      // Parent will re-render this slide as VideoSlide — no further state needed.
+    } catch (err) {
+      setState('error');
+      Alert.alert(
+        'Download failed',
+        err instanceof Error ? err.message : 'Unknown error',
+      );
+      await deleteAsync(target, { idempotent: true }).catch(() => {});
+    }
+  }
+
+  async function cancelDownload() {
+    await resumableRef.current?.cancelAsync().catch(() => {});
+    resumableRef.current = null;
+    if (localUriRef.current) {
+      await deleteAsync(localUriRef.current, { idempotent: true }).catch(() => {});
+      localUriRef.current = null;
+    }
+    setState('idle');
+    setProgress(0);
+  }
+
+  // When the menu "Play offline" item bumps triggerDownload, auto-start if idle.
+  useEffect(() => {
+    if (triggerDownload > 0 && state === 'idle') {
+      startDownload();
+    }
+    // Only react to counter bumps, not to state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerDownload]);
+
+  // Cancel in-flight download and delete temp file when the slide goes off-screen
+  // or the component unmounts. This prevents orphaned downloads consuming bandwidth.
+  useEffect(() => {
+    if (isActive) return;
+    resumableRef.current?.cancelAsync().catch(() => {});
+    if (localUriRef.current) {
+      deleteAsync(localUriRef.current, { idempotent: true }).catch(() => {});
+      localUriRef.current = null;
+    }
+  }, [isActive]);
+
+  useEffect(() => {
+    return () => {
+      resumableRef.current?.cancelAsync().catch(() => {});
+      if (localUriRef.current) {
+        deleteAsync(localUriRef.current, { idempotent: true }).catch(() => {});
+      }
+    };
+  }, []);
+
+  return (
+    <View style={styles.largeVideoPrompt}>
+      <View
+        style={[
+          styles.largeVideoCard,
+          { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+        ]}>
+        <IconSymbol name="film" size={32} color={colors.tint} />
+        <ThemedText style={[Type.bodyStrong, { color: colors.text, textAlign: 'center' }]}>
+          {filename}
+        </ThemedText>
+        <ThemedText style={[Type.label, { color: colors.muted, textAlign: 'center' }]}>
+          This video is large — download to play offline?
+        </ThemedText>
+
+        {state === 'idle' && (
+          <Pressable
+            onPress={startDownload}
+            accessibilityRole="button"
+            accessibilityLabel="Play offline"
+            style={({ pressed }) => [
+              styles.largeVideoButton,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+            ]}>
+            <ThemedText style={[Type.label, { color: colors.onAccent }]}>Play offline</ThemedText>
+          </Pressable>
+        )}
+
+        {state === 'downloading' && (
+          <>
+            <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { backgroundColor: colors.tint, width: `${Math.round(progress * 100)}%` },
+                ]}
+              />
+            </View>
+            <ThemedText style={[Type.meta, { color: colors.muted }]}>
+              {Math.round(progress * 100)}%
+            </ThemedText>
+            <Pressable
+              onPress={cancelDownload}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel download"
+              style={({ pressed }) => [
+                styles.largeVideoButton,
+                { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 },
+              ]}>
+              <ThemedText style={[Type.label, { color: colors.text }]}>Cancel</ThemedText>
+            </Pressable>
+          </>
+        )}
+
+        {state === 'error' && (
+          <Pressable
+            onPress={() => { setState('idle'); startDownload(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry download"
+            style={({ pressed }) => [
+              styles.largeVideoButton,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+            ]}>
+            <ThemedText style={[Type.label, { color: colors.onAccent }]}>Retry</ThemedText>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -744,5 +1087,38 @@ const styles = StyleSheet.create({
   menuDivider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: Spacing.sm,
+  },
+  largeVideoPrompt: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  largeVideoCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    alignItems: 'center',
+    ...Shadow.cardElevated,
+  },
+  largeVideoButton: {
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
+    alignSelf: 'stretch',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: Radius.pill,
   },
 });
