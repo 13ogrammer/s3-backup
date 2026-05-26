@@ -25,9 +25,9 @@ DEST="${BIN_DIR}/ffmpeg-arm64"
 # johnvansickle.com static ARM64 build (n7.1.1-static).
 # Update these when upgrading ffmpeg.
 FFMPEG_RELEASE_URL="${FFMPEG_RELEASE_URL:-https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz}"
-# Expected SHA256 of the .tar.xz archive.
-# To refresh: curl -sL "$FFMPEG_RELEASE_URL" | sha256sum
-FFMPEG_SHA256="${FFMPEG_SHA256:-}"
+# Expected SHA256 of the .tar.xz archive (release-arm64-static, n7.1.1).
+# To refresh after a release bump: curl -sL "$FFMPEG_RELEASE_URL" | shasum -a 256
+FFMPEG_SHA256="${FFMPEG_SHA256:-f4149bb2b0784e30e99bdda85471c9b5930d3402014e934a5098b41d0f7201b1}"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -45,7 +45,16 @@ curl --fail --location --progress-bar --output "${ARCHIVE}" "${FFMPEG_RELEASE_UR
 
 if [[ -n "${FFMPEG_SHA256}" ]]; then
   echo "Verifying checksum..."
-  ACTUAL="$(sha256sum "${ARCHIVE}" | awk '{print $1}')"
+  # Prefer `sha256sum` (GNU coreutils, Linux default) if present; otherwise fall
+  # back to macOS's built-in `shasum -a 256`.
+  if command -v sha256sum &>/dev/null; then
+    ACTUAL="$(sha256sum "${ARCHIVE}" | awk '{print $1}')"
+  elif command -v shasum &>/dev/null; then
+    ACTUAL="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
+  else
+    echo "ERROR: neither sha256sum nor shasum is available — cannot verify checksum."
+    exit 1
+  fi
   if [[ "${ACTUAL}" != "${FFMPEG_SHA256}" ]]; then
     echo "ERROR: SHA256 mismatch!"
     echo "  Expected: ${FFMPEG_SHA256}"
@@ -60,10 +69,22 @@ else
 fi
 
 echo "Extracting binary..."
-tar -xJf "${ARCHIVE}" -C "${TMP_DIR}" --wildcards '*/ffmpeg' --strip-components=1
+# Extract the full archive — the johnvansickle release nests `ffmpeg` inside a
+# versioned directory. Avoid GNU-tar-only flags (--wildcards, --strip-components
+# matching) so this works under macOS bsdtar as well as GNU tar on Linux.
+tar -xJf "${ARCHIVE}" -C "${TMP_DIR}"
+
+# Find the extracted ffmpeg binary (not ffprobe, not ffmpeg.1 manpage).
+FFMPEG_SRC="$(find "${TMP_DIR}" -type f -name ffmpeg | head -n 1)"
+if [[ -z "${FFMPEG_SRC}" ]]; then
+  echo "ERROR: ffmpeg binary not found in extracted archive."
+  echo "  Archive may have changed shape — inspect: ${TMP_DIR}"
+  trap - EXIT  # leave TMP_DIR around for inspection
+  exit 1
+fi
 
 mkdir -p "${BIN_DIR}"
-cp "${TMP_DIR}/ffmpeg" "${DEST}"
+cp "${FFMPEG_SRC}" "${DEST}"
 chmod +x "${DEST}"
 
 echo ""
