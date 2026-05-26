@@ -40,8 +40,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ZoomableImage } from '@/components/zoomable-image';
 import { Colors, Radius, Shadow, Spacing, Type } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { api, type GetDerivedUrlResponse, type HeadResponse } from '@/lib/api';
+import { api, type HeadResponse } from '@/lib/api';
 import { basename } from '@/lib/format';
+import { useJobs } from '@/lib/jobs';
 
 export type PreviewFile = {
   key: string;
@@ -64,6 +65,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
+  const { addJob, allJobs } = useJobs();
 
   const { width: pageWidth, height: windowHeight } = useWindowDimensions();
   const panelHeight = Math.round(windowHeight * PANEL_OPEN_FRACTION);
@@ -72,8 +74,11 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
   const [downloading, setDownloading] = useState(false);
   // Dual-URL shape: previewUrl is the /get-derived-url preview tier for images
   // (1920px JPEG); originalUrl is the signed download URL used for video
-  // playback and the Download button.
+  // playback and the Download button. For videos, previewUrl is the low-bitrate
+  // MP4 preview once generated; nil while pending.
   const [urls, setUrls] = useState<Map<string, { previewUrl?: string; originalUrl?: string }>>(new Map());
+  // Tracks in-flight transcode job IDs keyed by video key. Cleared on preview URL arrival.
+  const [pendingTranscodeJobs, setPendingTranscodeJobs] = useState<Map<string, string>>(new Map());
   const [isZoomed, setIsZoomed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -105,6 +110,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
       setIndex(initialIndex);
       // Reset URL cache and head cache when reopening for a different list/index.
       setUrls(new Map<string, { previewUrl?: string; originalUrl?: string }>());
+      setPendingTranscodeJobs(new Map<string, string>());
       setHeadCache(new Map<string, HeadEntry>());
       setIsZoomed(false);
       setMenuOpen(false);
@@ -164,8 +170,58 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             })
             .catch(() => {});
         }
+      } else if (f.kind === 'video') {
+        // Video: fetch original URL for playback fallback + try to get a preview.
+        if (!existing?.originalUrl) {
+          api
+            .signDownload(f.key)
+            .then(({ url }) => {
+              if (cancelled) return;
+              setUrls((prev) => {
+                const entry = prev.get(f.key) ?? {};
+                if (entry.originalUrl) return prev;
+                const next = new Map(prev);
+                next.set(f.key, { ...entry, originalUrl: url });
+                return next;
+              });
+            })
+            .catch(() => {});
+        }
+        // Request the low-bitrate preview MP4. If already generated, use it.
+        // If generating, register the job so the strip shows progress and we
+        // hot-swap when done (handled by the job-completion watcher below).
+        if (!existing?.previewUrl && !pendingTranscodeJobs.has(f.key)) {
+          api
+            .getDerivedUrl(f.key, 'preview')
+            .then((res) => {
+              if (cancelled) return;
+              if ('status' in res && res.status === 'pending') {
+                // Transcode job enqueued — register it so JobsStrip shows progress.
+                const key = f.key;
+                const jobId = res.jobId;
+                setPendingTranscodeJobs((prev) => {
+                  if (prev.has(key)) return prev;
+                  const next = new Map(prev);
+                  next.set(key, jobId);
+                  return next;
+                });
+                addJob(jobId, { kind: 'video-transcode', key }).catch(() => {});
+              } else if ('url' in res && res.url) {
+                // Preview already existed — use it immediately.
+                const url = res.url;
+                setUrls((prev) => {
+                  const entry = prev.get(f.key) ?? {};
+                  if (entry.previewUrl) return prev;
+                  const next = new Map(prev);
+                  next.set(f.key, { ...entry, previewUrl: url });
+                  return next;
+                });
+              }
+            })
+            .catch(() => {});
+        }
       } else {
-        // Videos and other kinds: original URL is the only URL needed.
+        // Other kinds: original URL is the only URL needed.
         if (!existing?.originalUrl) {
           api
             .signDownload(f.key)
@@ -186,7 +242,40 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
     return () => {
       cancelled = true;
     };
+    // pendingTranscodeJobs intentionally omitted — we only want to trigger on
+    // index/file changes, not every time a job is registered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, index, files, urls]);
+
+  // Watch pending transcode jobs. When one completes, re-fetch the preview URL
+  // and hot-swap it into the video slide without requiring a modal close.
+  useEffect(() => {
+    if (pendingTranscodeJobs.size === 0) return;
+    for (const [key, jobId] of pendingTranscodeJobs) {
+      const record = allJobs.find((j) => j.jobId === jobId);
+      if (!record || record.status !== 'completed') continue;
+      // Job finished — fetch the preview URL and clear the pending entry.
+      setPendingTranscodeJobs((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+      api
+        .getDerivedUrl(key, 'preview')
+        .then((res) => {
+          if ('url' in res && res.url) {
+            const url = res.url;
+            setUrls((prev) => {
+              const entry = prev.get(key) ?? {};
+              const next = new Map(prev);
+              next.set(key, { ...entry, previewUrl: url });
+              return next;
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [allJobs, pendingTranscodeJobs]);
 
   // Lazy-fetch /head for the active slide (any kind). One fetch per key per session.
   // For non-images, /head still returns size + lastModified — useful in the details
@@ -317,10 +406,15 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
               onMomentumScrollEnd={onMomentumScrollEnd}
               renderItem={({ item, index: i }) => {
                 const entry = urls.get(item.key);
+                // For videos: use preview MP4 when ready, fall back to original.
+                const videoDisplayUrl = entry?.previewUrl ?? entry?.originalUrl;
                 const displayUrl =
                   item.kind === 'image'
                     ? entry?.previewUrl ?? entry?.originalUrl
+                    : item.kind === 'video'
+                    ? videoDisplayUrl
                     : entry?.originalUrl;
+                const isPendingPreview = item.kind === 'video' && pendingTranscodeJobs.has(item.key);
                 return (
                   <PreviewSlide
                     file={item}
@@ -336,6 +430,7 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
                     panelOpen={panelOpen}
                     panelProgress={panelProgress}
                     panelHeight={panelHeight}
+                    isPendingPreview={isPendingPreview}
                   />
                 );
               }}
@@ -464,9 +559,9 @@ function MenuItem({
 
 type SlideProps = {
   file: PreviewFile;
-  /** URL for display: preview-tier JPEG for images, original for video/other. */
+  /** URL for display: preview-tier JPEG for images, preview MP4 or original for video/other. */
   displayUrl: string | undefined;
-  /** Original signed URL — used for video player. */
+  /** Original signed URL — used for video player fallback and Download button. */
   originalUrl: string | undefined;
   isActive: boolean;
   isZoomed: boolean;
@@ -479,6 +574,8 @@ type SlideProps = {
   panelOpen: boolean;
   panelProgress: SharedValue<number>;
   panelHeight: number;
+  /** True while a video preview is being generated asynchronously. */
+  isPendingPreview?: boolean;
 };
 
 function PreviewSlide({
@@ -495,6 +592,7 @@ function PreviewSlide({
   panelOpen,
   panelProgress,
   panelHeight,
+  isPendingPreview,
 }: SlideProps) {
   const filename = basename(file.key);
 
@@ -536,8 +634,17 @@ function PreviewSlide({
           {displayUrl && file.kind === 'image' && (
             <ZoomableImage uri={displayUrl} onZoomChange={onZoomChange} />
           )}
-          {file.kind === 'video' && originalUrl && (
-            <VideoSlide uri={originalUrl} isActive={isActive} bottomInset={bottomInset} />
+          {file.kind === 'video' && displayUrl && (
+            <>
+              <VideoSlide uri={displayUrl} isActive={isActive} bottomInset={bottomInset} />
+              {isPendingPreview && (
+                <View style={styles.generatingPill} pointerEvents="none">
+                  <ThemedText style={[Type.meta, styles.generatingPillText]}>
+                    Generating preview…
+                  </ThemedText>
+                </View>
+              )}
+            </>
           )}
           {displayUrl && file.kind === 'other' && (
             <ThemedView style={styles.noPreview}>
@@ -607,6 +714,18 @@ const styles = StyleSheet.create({
   },
   slide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
+  generatingPill: {
+    position: 'absolute',
+    bottom: Spacing.xl,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  generatingPillText: {
+    color: '#fff',
+  },
   noPreview: {
     margin: Spacing.xl,
     padding: Spacing.xl,
