@@ -1,6 +1,13 @@
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { BUCKET, s3 } from './s3.js';
-import type { JobRecord, JobStatus, MergePolicy, MoveFailure } from './types.js';
+import type {
+  FolderMoveJobRecord,
+  JobRecord,
+  JobStatus,
+  MergePolicy,
+  MoveFailure,
+  TranscodeJobRecord,
+} from './types.js';
 
 function jobKey(jobId: string): string {
   return `.cache/jobs/${jobId}.json`;
@@ -37,8 +44,8 @@ export function createJobRecord(
   fromPrefix: string,
   toPrefix: string,
   total: number,
-  options?: { retryOf?: string; kind?: JobRecord['kind']; policy?: MergePolicy },
-): JobRecord {
+  options?: { retryOf?: string; kind?: 'folder-move' | 'merge'; policy?: MergePolicy },
+): FolderMoveJobRecord {
   const now = new Date().toISOString();
   const kind = options?.kind ?? 'folder-move';
   return {
@@ -58,8 +65,20 @@ export function createJobRecord(
   };
 }
 
+export function createTranscodeJobRecord(jobId: string, key: string): TranscodeJobRecord {
+  const now = new Date().toISOString();
+  return {
+    jobId,
+    kind: 'video-transcode',
+    key,
+    status: 'queued',
+    startedAt: now,
+    updatedAt: now,
+  };
+}
+
 export async function updateProgress(
-  record: JobRecord,
+  record: FolderMoveJobRecord,
   moved: number,
   failed: MoveFailure[],
 ): Promise<void> {
@@ -72,7 +91,10 @@ export async function updateProgress(
 export async function setCancelRequested(jobId: string): Promise<JobRecord | null> {
   const record = await readJob(jobId);
   if (!record) return null;
-  record.cancelRequested = true;
+  // cancelRequested only applies to folder-move / merge jobs.
+  if (record.kind === 'folder-move' || record.kind === 'merge') {
+    record.cancelRequested = true;
+  }
   record.updatedAt = new Date().toISOString();
   await writeJob(record);
   return record;

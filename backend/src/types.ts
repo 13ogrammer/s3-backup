@@ -87,7 +87,7 @@ export type JobStatus =
   | 'cancelled'
   | 'failed';
 
-export type JobRecord = {
+export type FolderMoveJobRecord = {
   jobId: string;
   kind: 'folder-move' | 'merge';
   fromPrefix: string;
@@ -107,6 +107,19 @@ export type JobRecord = {
   skipped?: number;
 };
 
+export type TranscodeJobRecord = {
+  jobId: string;
+  kind: 'video-transcode';
+  key: string;
+  status: JobStatus;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;
+};
+
+export type JobRecord = FolderMoveJobRecord | TranscodeJobRecord;
+
 export type MoveJobMessage = {
   jobId: string;
   fromPrefix: string;
@@ -115,6 +128,11 @@ export type MoveJobMessage = {
   // undefined means 'folder-move' for back-compat with in-flight messages
   kind?: 'folder-move' | 'merge';
   policy?: MergePolicy;
+};
+
+export type TranscodeJobMessage = {
+  jobId: string;
+  key: string;
 };
 
 export type MoveJobGetRequest = { jobId: string };
@@ -147,13 +165,15 @@ export type RestoreResponse = { restored: string[]; missing: string[] };
 
 export type DerivedTier = 'thumbnail' | 'preview';
 export type GetDerivedUrlRequest = { key: string; tier: DerivedTier };
-export type GetDerivedUrlResponse = {
-  url: string;
-  expiresIn: number;
-  tier: DerivedTier;
-  /** true when this request generated the derived asset; false when it was a cache hit */
-  generated: boolean;
-};
+export type GetDerivedUrlResponse =
+  | {
+      url: string;
+      expiresIn: number;
+      tier: DerivedTier;
+      /** true when this request generated the derived asset; false when it was a cache hit */
+      generated: boolean;
+    }
+  | { status: 'pending'; jobId: string; tier: 'preview' };
 export type GetDerivedUrlError = { url: null; error: 'unsupported_format' | string };
 
 export type FolderPreviewRequest = { prefix: string };

@@ -6,7 +6,7 @@ import { BUCKET, s3, sanitizePrefix } from './s3.js';
 import { invalidateAncestors } from './folderCountsCache.js';
 import { moveOneObject, mergeOneObject, KEEP_BOTH_CAP } from './handlers/__shared/moveOps.js';
 import { mapWithConcurrency } from './concurrency.js';
-import type { MoveJobMessage, MoveFailure } from './types.js';
+import type { MoveJobMessage, MoveFailure, FolderMoveJobRecord } from './types.js';
 
 const PROGRESS_FLUSH_INTERVAL = 100;
 const WORKER_PARALLELISM = Number(process.env.WORKER_PARALLELISM ?? 16);
@@ -15,11 +15,17 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
   const log = createLogger({ requestId: msg.jobId, route: 'worker' });
   log.info('worker start', { jobId: msg.jobId, fromPrefix: msg.fromPrefix });
 
-  const record = await readJob(msg.jobId);
-  if (!record) {
+  const rawRecord = await readJob(msg.jobId);
+  if (!rawRecord) {
     log.warn('job record not found', { jobId: msg.jobId });
     return;
   }
+  // MoveWorker only handles folder-move / merge; guard against unexpected kinds.
+  if (rawRecord.kind !== 'folder-move' && rawRecord.kind !== 'merge') {
+    log.warn('unexpected job kind in MoveWorker, skipping', { jobId: msg.jobId, kind: rawRecord.kind });
+    return;
+  }
+  const record = rawRecord as FolderMoveJobRecord;
 
   if (record.status === 'cancelled') {
     log.info('job already cancelled, skipping', { jobId: msg.jobId });
@@ -90,9 +96,9 @@ export async function processJob(msg: MoveJobMessage): Promise<void> {
   // PROGRESS_FLUSH_INTERVAL so cancel checks and progress writes happen
   // regularly even when concurrency would let the whole list race to completion.
   for (let batchStart = 0; batchStart < keys.length; batchStart += PROGRESS_FLUSH_INTERVAL) {
-    // Refresh the record to check for cancel.
+    // Refresh the record to check for cancel. Only FolderMoveJobRecord has cancelRequested.
     const fresh = await readJob(msg.jobId);
-    if (fresh?.cancelRequested) {
+    if (fresh && (fresh.kind === 'folder-move' || fresh.kind === 'merge') && fresh.cancelRequested) {
       await setTerminalStatus(record, 'cancelled');
       log.info('job cancelled by request', { jobId: msg.jobId, moved, failed: failed.length });
       return;
