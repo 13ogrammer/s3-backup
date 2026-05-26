@@ -22,7 +22,7 @@ export const AI_FAB_SIZE = 56;
 // Gap between the top of the tab bar and the bottom of the FAB.
 export const AI_FAB_GAP_ABOVE_TABBAR = Spacing.md;
 // Gap between the top of the FAB and any content/widget that must clear it.
-export const AI_FAB_GAP_ABOVE_FAB = Spacing.lg;
+export const AI_FAB_GAP_ABOVE_FAB = Spacing.sm;
 
 // Minimum content padding (no safe-area) for scroll views on devices with
 // insets.bottom === 0. Derived from: tab bar + gap + FAB + gap above FAB.
