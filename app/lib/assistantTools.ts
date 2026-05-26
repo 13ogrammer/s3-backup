@@ -447,16 +447,19 @@ function buildGetActiveJobsTool(
           };
         });
 
-        const moveJobs = jobRecords.map((r) => ({
-          jobId: r.jobId,
-          fromPrefix: r.fromPrefix,
-          toPrefix: r.toPrefix,
-          status: r.status,
-          total: r.total,
-          moved: r.moved,
-          progress: r.total > 0 ? r.moved / r.total : 0,
-          failedCount: r.failed.length,
-        }));
+        const moveJobs = jobRecords.flatMap((r) => {
+          if (r.kind === 'video-transcode') return [];
+          return [{
+            jobId: r.jobId,
+            fromPrefix: r.fromPrefix,
+            toPrefix: r.toPrefix,
+            status: r.status,
+            total: r.total,
+            moved: r.moved,
+            progress: r.total > 0 ? r.moved / r.total : 0,
+            failedCount: r.failed.length,
+          }];
+        });
 
         return { uploads, moveJobs };
       } catch (err) {

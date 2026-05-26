@@ -135,10 +135,9 @@ export function PreviewModal({ visible, files, initialIndex, onClose }: Props) {
             .getDerivedUrl(f.key, 'preview')
             .then((res) => {
               if (cancelled) return;
-              const url = (res as { url: string | null }).url !== null
-                ? (res as GetDerivedUrlResponse).url
-                : undefined;
-              if (!url) return;
+              // Narrow: image preview returns synchronous URL (not pending).
+              if ('status' in res || !('url' in res) || !res.url) return;
+              const url = res.url;
               setUrls((prev) => {
                 const entry = prev.get(f.key) ?? {};
                 if (entry.previewUrl) return prev;

@@ -300,12 +300,13 @@ export default function DuplicatesScreen() {
     api
       .getDerivedUrl(key, 'thumbnail')
       .then((res) => {
-        const url = (res as { url: string | null }).url;
-        if (!url) return;
+        // Thumbnail calls never return pending; narrow to URL variant.
+        if ('status' in res || !('url' in res) || !res.url) return;
+        const url = res.url;
         setThumbCache((prev) => {
           if (prev.has(key)) return prev;
           const next = new Map(prev);
-          next.set(key, (res as GetDerivedUrlResponse).url);
+          next.set(key, url);
           return next;
         });
       })

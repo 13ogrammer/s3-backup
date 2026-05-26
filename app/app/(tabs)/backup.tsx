@@ -522,16 +522,15 @@ export default function BrowseScreen() {
           .getDerivedUrl(row.key, 'thumbnail')
           .then((res) => {
             if (cancelled) return;
-            // res is GetDerivedUrlResponse | GetDerivedUrlError
-            if ((res as { url: null | string }).url !== null) {
-              const url = (res as GetDerivedUrlResponse).url;
-              setThumbUrlCache((prev) => {
-                if (prev.has(row.key)) return prev;
-                const next = new Map(prev);
-                next.set(row.key, url);
-                return next;
-              });
-            }
+            // Thumbnail calls never return pending; narrow to URL variant.
+            if ('status' in res || !('url' in res) || !res.url) return;
+            const url = res.url;
+            setThumbUrlCache((prev) => {
+              if (prev.has(row.key)) return prev;
+              const next = new Map(prev);
+              next.set(row.key, url);
+              return next;
+            });
           })
           .catch((err) => {
             console.warn('[Browse] getDerivedUrl failed for', row.key, err);

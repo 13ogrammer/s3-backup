@@ -9,6 +9,7 @@ import { useJobs } from '@/lib/jobs';
 import { JobDetailsModal } from '@/components/job-details-modal';
 import type { JobRecord } from '@/lib/api';
 import { useAiFabClearance } from '@/components/ai-fab';
+import { basename } from '@/lib/format';
 
 const AUTO_DISMISS_DELAY_MS = 4000;
 
@@ -92,13 +93,48 @@ function JobRow({
   onCancel: () => void;
   onTap: () => void;
 }) {
-  const pct = job.total > 0 ? Math.round((job.moved / job.total) * 100) : 0;
   const isRunning = job.status === 'queued' || job.status === 'running';
   const isCompleted = job.status === 'completed';
   const isWithErrors = job.status === 'completed-with-errors';
   const isCancelled = job.status === 'cancelled';
   const isFailed = job.status === 'failed';
 
+  if (job.kind === 'video-transcode') {
+    const filename = basename(job.key);
+    let statusText: string;
+    if (isCompleted) statusText = 'Preview ready';
+    else if (isWithErrors || isFailed) statusText = job.error ?? 'Failed';
+    else if (isCancelled) statusText = 'Cancelled';
+    else statusText = 'Generating preview…';
+
+    return (
+      <Pressable
+        onPress={onTap}
+        style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <ThemedText style={[Type.label, { color: colors.text }]} numberOfLines={1}>
+            Generating preview · {filename}
+          </ThemedText>
+          <ThemedText
+            style={[
+              Type.meta,
+              {
+                color: isCompleted
+                  ? colors.tint
+                  : isWithErrors || isFailed || isCancelled
+                  ? colors.danger
+                  : colors.muted,
+              },
+            ]}>
+            {statusText}
+          </ThemedText>
+        </View>
+      </Pressable>
+    );
+  }
+
+  // FolderMove / merge path.
+  const pct = job.total > 0 ? Math.round((job.moved / job.total) * 100) : 0;
   const fromName = job.fromPrefix.replace(/\/$/, '').split('/').pop() ?? job.fromPrefix;
   const toName = job.toPrefix.replace(/\/$/, '').split('/').pop() ?? job.toPrefix;
   const isMerge = job.kind === 'merge';

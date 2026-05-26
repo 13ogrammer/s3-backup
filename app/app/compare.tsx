@@ -362,12 +362,14 @@ export default function CompareScreen() {
     api
       .getDerivedUrl(key, 'thumbnail')
       .then((res) => {
-        const url = (res as { url: string | null }).url;
+        // Thumbnail never returns pending; narrow to the URL variant.
+        if ('status' in res || !('url' in res)) return;
+        const url = res.url;
         if (!url) return;
         setThumbCache((prev) => {
           if (prev.has(key)) return prev;
           const next = new Map(prev);
-          next.set(key, (res as GetDerivedUrlResponse).url);
+          next.set(key, url);
           return next;
         });
       })
@@ -815,7 +817,8 @@ export default function CompareScreen() {
       if (!isCompleted && !isAborted) continue;
 
       if (isCompleted) {
-        const failedKeySet = new Set((record.failed ?? []).map((f) => f.key));
+        const recordFailed = record.kind !== 'video-transcode' ? record.failed : [];
+        const failedKeySet = new Set(recordFailed.map((f) => f.key));
         const successKeys = trackedKeys.filter((k) => !failedKeySet.has(k));
 
         if (successKeys.length > 0) {
@@ -841,14 +844,14 @@ export default function CompareScreen() {
           }
         }
 
-        if (record.failed && record.failed.length > 0) {
-          const sample = record.failed
+        if (recordFailed.length > 0) {
+          const sample = recordFailed
             .slice(0, 5)
             .map((f) => `• ${basename(f.key)}: ${f.reason}`)
             .join('\n');
           showAlert(
             'Some moves failed',
-            `${record.failed.length} of ${trackedKeys.length} file(s) could not be moved:\n${sample}`,
+            `${recordFailed.length} of ${trackedKeys.length} file(s) could not be moved:\n${sample}`,
           );
         }
       } else {
