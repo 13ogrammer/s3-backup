@@ -15,12 +15,21 @@
 
 export const PREVIEW_PREFIX = '.previews/';
 export const PREVIEW_EXT = '.preview.jpg';
+export const VIDEO_PREVIEW_EXT = '.preview.mp4';
 
 export function previewKey(originalKey: string): string {
   const slashIdx = originalKey.lastIndexOf('/');
   const dotIdx = originalKey.lastIndexOf('.');
   const stripped = dotIdx > slashIdx ? originalKey.slice(0, dotIdx) : originalKey;
   return `${PREVIEW_PREFIX}${stripped}${PREVIEW_EXT}`;
+}
+
+/** Returns the `.previews/` path for a video's low-bitrate preview MP4. */
+export function videoPreviewKey(originalKey: string): string {
+  const slashIdx = originalKey.lastIndexOf('/');
+  const dotIdx = originalKey.lastIndexOf('.');
+  const stripped = dotIdx > slashIdx ? originalKey.slice(0, dotIdx) : originalKey;
+  return `${PREVIEW_PREFIX}${stripped}${VIDEO_PREVIEW_EXT}`;
 }
 
 export function previewPrefix(originalPrefix: string): string {
