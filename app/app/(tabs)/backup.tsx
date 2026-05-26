@@ -1,5 +1,5 @@
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -122,7 +122,22 @@ export default function BrowseScreen() {
   const router = useRouter();
   const { contentPaddingBottom, aboveFabBottom } = useAiFabClearance();
 
-  const { addJob } = useJobs();
+  const { addJob, activeJobs } = useJobs();
+  // Keys of videos currently being transcoded. Drives the per-tile loader
+  // overlay in the grid/list — replaces the global strip surface for this
+  // job kind.
+  const transcodingKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const job of activeJobs) {
+      if (
+        job.kind === 'video-transcode' &&
+        (job.status === 'queued' || job.status === 'running')
+      ) {
+        keys.add(job.key);
+      }
+    }
+    return keys;
+  }, [activeJobs]);
   const [overflowVisible, setOverflowVisible] = useState(false);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
@@ -1107,6 +1122,8 @@ export default function BrowseScreen() {
                 ? { ...item, previewUrl: thumbUrlCache.get(item.key) }
                 : item;
             const folderPreview = item.kind === 'folder' ? folderPreviewCache.get(item.prefix) : undefined;
+            const isTranscoding =
+              item.kind === 'file' && transcodingKeys.has(item.key);
             if (viewMode === 'grid') {
               return renderGridTile({
                 item: resolved,
@@ -1116,6 +1133,7 @@ export default function BrowseScreen() {
                 onTap: () => onTapRow(item),
                 onLongPress: () => onLongPressRow(item),
                 folderPreview,
+                isTranscoding,
               });
             }
             return renderListRow({
@@ -1126,6 +1144,7 @@ export default function BrowseScreen() {
               onTap: () => onTapRow(item),
               onLongPress: () => onLongPressRow(item),
               folderPreview,
+              isTranscoding,
             });
           }}
         />
@@ -1411,6 +1430,8 @@ type RowRenderProps = {
   onTap: () => void;
   onLongPress: () => void;
   folderPreview?: FolderPreviewState;
+  /** True while a video preview transcode is in flight for this item's key. */
+  isTranscoding?: boolean;
 };
 
 /**
@@ -1478,6 +1499,7 @@ function renderListRow({
   onTap,
   onLongPress,
   folderPreview,
+  isTranscoding,
 }: RowRenderProps) {
   const isFolder = item.kind === 'folder';
   const fp = folderPreview;
@@ -1508,39 +1530,46 @@ function renderListRow({
           )}
         </View>
       )}
-      {isFolder ? (
-        <FolderThumb
-          prefix={item.prefix}
-          size={THUMB_SIZE}
-          thumbs={fp?.status === 'ready' ? fp.thumbs : []}
-          loading={fp?.status === 'loading' || fp === undefined}
-          name={item.name}
-        />
-      ) : item.previewUrl ? (
-        <View style={styles.thumb}>
-          <Thumb
-            uri={item.previewUrl}
-            width={THUMB_SIZE}
-            height={THUMB_SIZE}
-            recyclingKey={item.key}
-            fallback={
-              <View style={[{ position: 'absolute', top: 0, left: 0, width: THUMB_SIZE, height: THUMB_SIZE }, styles.thumbSlot]}>
-                <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
-              </View>
-            }
+      <View>
+        {isFolder ? (
+          <FolderThumb
+            prefix={item.prefix}
+            size={THUMB_SIZE}
+            thumbs={fp?.status === 'ready' ? fp.thumbs : []}
+            loading={fp?.status === 'loading' || fp === undefined}
+            name={item.name}
           />
-        </View>
-      ) : item.mediaKind === 'video' ? (
-        <View style={[styles.thumb, styles.videoThumb]}>
-          <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoThumbText}>
-            ▶
-          </ThemedText>
-        </View>
-      ) : (
-        <View style={styles.thumbSlot}>
-          <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
-        </View>
-      )}
+        ) : item.previewUrl ? (
+          <View style={styles.thumb}>
+            <Thumb
+              uri={item.previewUrl}
+              width={THUMB_SIZE}
+              height={THUMB_SIZE}
+              recyclingKey={item.key}
+              fallback={
+                <View style={[{ position: 'absolute', top: 0, left: 0, width: THUMB_SIZE, height: THUMB_SIZE }, styles.thumbSlot]}>
+                  <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
+                </View>
+              }
+            />
+          </View>
+        ) : item.mediaKind === 'video' ? (
+          <View style={[styles.thumb, styles.videoThumb]}>
+            <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoThumbText}>
+              ▶
+            </ThemedText>
+          </View>
+        ) : (
+          <View style={styles.thumbSlot}>
+            <IconSymbol name="photo.on.rectangle" size={28} color={colors.icon} />
+          </View>
+        )}
+        {isTranscoding && (
+          <View style={styles.transcodingOverlay} pointerEvents="none">
+            <ActivityIndicator color="#fff" />
+          </View>
+        )}
+      </View>
       <View style={{ flex: 1 }}>
         <ThemedText style={styles.rowLabel} numberOfLines={1}>
           {item.name}
@@ -1567,6 +1596,7 @@ function renderGridTile({
   onTap,
   onLongPress,
   folderPreview,
+  isTranscoding,
 }: RowRenderProps) {
   const isFolder = item.kind === 'folder';
   const fp = folderPreview;
@@ -1620,6 +1650,11 @@ function renderGridTile({
           <ThemedText lightColor="#fff" darkColor="#fff" style={styles.videoBadgeText}>
             VIDEO
           </ThemedText>
+        </View>
+      )}
+      {isTranscoding && (
+        <View style={styles.transcodingOverlay} pointerEvents="none">
+          <ActivityIndicator color="#fff" />
         </View>
       )}
       {selected && (
@@ -1873,6 +1908,17 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   videoBadgeText: { fontSize: 10, fontWeight: '700' },
+  transcodingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: Radius.lg,
+  },
   empty: { textAlign: 'center', opacity: 0.6, padding: 32 },
   retryButton: {
     paddingHorizontal: 20,

@@ -39,7 +39,12 @@ export function JobsStrip() {
     return () => timers.forEach(clearTimeout);
   }, [activeJobs, dismissJob]);
 
-  if (activeJobs.length === 0) return null;
+  // Video-transcode progress is surfaced as a per-tile loader overlay on the
+  // Backup grid; the global strip would be redundant. Transcode jobs still
+  // live in activeJobs so PreviewModal's hot-swap detection works, and the
+  // auto-dismiss effect above still cleans them up on terminal status.
+  const visibleJobs = activeJobs.filter((j) => j.kind !== 'video-transcode');
+  if (visibleJobs.length === 0) return null;
 
   return (
     <>
@@ -52,7 +57,7 @@ export function JobsStrip() {
             ...Shadow.cardElevated,
           },
         ]}>
-        {activeJobs.map((job) => (
+        {visibleJobs.map((job) => (
           <JobRow
             key={job.jobId}
             job={job}
